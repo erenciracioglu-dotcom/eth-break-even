@@ -119,8 +119,9 @@ def local_basis(r):
 class Aux:
     """B = ([r]x[r])^Q, M0 = V0 f_I(W0), C^B and rows P_u(T) (Sections 4.1-4.3)."""
 
-    def __init__(self, r, Q, R, A0):
+    def __init__(self, r, Q, R, A0, perpoint=False):
         self.r, self.Q, self.R, self.A0 = r, Q, R, A0
+        self.perpoint = bool(perpoint)
         D = r ** (2 * Q)
         self.D = D
         idx = np.arange(D, dtype=np.int64)
@@ -160,6 +161,7 @@ class Aux:
         pairs = a * r + d
         Psi = np.empty((D, D), np.int64)
         js = np.empty(D, np.int64)
+        typ = np.empty((D, Q), np.int8)
         for k, choice in enumerate(itertools.product(range(len(loc)), repeat=Q)):
             v = np.ones(D, np.int64)
             j = 0
@@ -167,11 +169,21 @@ class Aux:
                 vec, sg = loc[c]
                 v *= vec[pairs[:, s]]
                 j += sg < 0
+                typ[k, s] = 0 if c < r else (1 if sg > 0 else 2)
             Psi[k] = v
             js[k] = j
-        self.Psi, self.js = Psi, js
+        self.Psi, self.js, self.typ = Psi, js, typ
         self.inI = (js >= A0) & (js <= A0 + R - 1)
         self.Cmeas = Psi[~self.inI]
+        if self.perpoint:
+            # m(j) = 1 - (-1)^j f_I(j, R, A0), exact Python integers (object dtype)
+            mmax = int(js.max())
+            mv = {j: 1 - (-1) ** j * f_I(j, R, A0) for j in range(-1, mmax + 1)}
+            F = np.empty(D, dtype=object)
+            for k in range(D):
+                jk = int(js[k])
+                F[k] = mv[jk - 1] + mv[jk]
+            self.Cmeas_t = [Psi[(typ[:, s] == 2) & (F != 0)] for s in range(Q)]
 
         # rows P_u(T), scaled by Lden = (R-1)! Q!   -- equation (4.10)
         QF = factorial(Q)
@@ -233,11 +245,12 @@ class Aux:
         ok, kdims = True, []
         for p in PRIMES:
             for t in range(1, self.Q + 1):
+                Cm = self.Cmeas_t[t - 1] if self.perpoint else self.Cmeas
                 P = self.Pt(t)
                 for g in range(self.r):
                     cols = np.nonzero(self.a[:, t - 1] == g)[0]
                     rows = np.nonzero(self.d[:, t - 1] != g)[0]
-                    good, rank = in_rowspace_mod(self.Cmeas[:, cols], P[np.ix_(rows, cols)], p)
+                    good, rank = in_rowspace_mod(Cm[:, cols], P[np.ix_(rows, cols)], p)
                     ok &= good
                     kdims.append(len(cols) - rank)
         return ok, min(kdims)
@@ -458,9 +471,24 @@ def build_design(aux, n, clauses, rng, designated=False, units=False, chunk=0):
         block = np.zeros((n, cB), np.int64)
         np.add.at(block, pos_v[c], aux.Cmeas[:, pos_y[c]].T)
         Chat[c * cB:(c + 1) * cB] = block.T
+    perpoint = bool(getattr(aux, "perpoint", False))
+    Chat_t = None
+    if perpoint:
+        Chat_t = []
+        for s in range(Q):
+            Cmt = getattr(aux, "Cmeas_t")[s]
+            cBt = Cmt.shape[0]
+            Ct = np.zeros((h * cBt, n), np.int64)
+            for c in range(h):
+                block = np.zeros((n, cBt), np.int64)
+                np.add.at(block, pos_v[c], Cmt[:, pos_y[c]].T)
+                Ct[c * cBt:(c + 1) * cBt] = block.T
+            Chat_t.append(Ct)
     out = dict(factors=factors, av=av, df=df, occ=occ, labels=labels, copy=copy, h=h,
                Prow=Prow, Chat=Chat, n=n, M=len(occ), clauses=clauses, unit_of=unit_of,
-               units=bool(units), chunk=int(chunk))
+               units=bool(units), chunk=int(chunk), perpoint=perpoint)
+    if perpoint:
+        out["Chat_t"] = Chat_t
     if designated:
         out["designated"] = True
         out["desig"] = desig
@@ -472,15 +500,18 @@ def check_design(aux, des):
     """Definition 3.1(4) on the actual variables, plus the refined accounting claims."""
     n, Q, r = des["n"], aux.Q, aux.r
     Prow, Chat, av, df, occ = des["Prow"], des["Chat"], des["av"], des["df"], des["occ"]
+    perpoint = bool(des.get("perpoint", False))
+    Chat_t = des["Chat_t"] if perpoint else None
     ok = True
     kdims = []
     for p in PRIMES:
         for t in range(1, Q + 1):
+            Ct = Chat_t[t - 1] if perpoint else Chat
             Pt = sum((t ** k) * Prow[k] for k in range(Prow.shape[0]))
             for g in range(r):
                 cols = np.nonzero(av[:, t - 1] == g)[0]
                 rows = [i for i, (f, v) in enumerate(occ) if df[f][t - 1] != g]
-                good, rank = in_rowspace_mod(Chat[:, cols], Pt[np.ix_(rows, cols)], p)
+                good, rank = in_rowspace_mod(Ct[:, cols], Pt[np.ix_(rows, cols)], p)
                 ok &= good
                 kdims.append(len(cols) - rank)
     # P_{f,v}(0) = delta_v
@@ -490,10 +521,11 @@ def check_design(aux, des):
     # refined accounting: groups touched per row, restricted abs sums
     max_groups, max_restr, nonzero_rows = 0, 0, 0
     for t in range(Q):
-        touched = np.zeros(Chat.shape[0], np.int64)
+        Ct = Chat_t[t] if perpoint else Chat
+        touched = np.zeros(Ct.shape[0], np.int64)
         for g in range(r):
             cols = av[:, t] == g
-            sub = Chat[:, cols]
+            sub = Ct[:, cols]
             nzr = np.any(sub != 0, axis=1)
             touched += nzr
             nonzero_rows += int(nzr.sum())

@@ -59,6 +59,7 @@ REGIME = "tight"
 AGGREGATED = True                    # head extension v3: Lemma 3.3 summed per U
 UNITS = True                         # head extension v4: clause units (greedy matching), needs designated
 CHUNK = 4096                         # head extension v5: connected chunk units of >= CHUNK vars
+PERPOINT = True                      # head extension v6: measurement matrices per evaluation point
 
 # delta grid for the tight regime (delta = 1.0 is exactly "freedman"), best deltas first so
 # that truncating the grid (very large lam) keeps the ones that matter
@@ -232,7 +233,7 @@ def _cfg12(lam, rs, est0_us, designated=True, units=UNITS, deltas=DELTAS, chunk=
 
 
 def _mk(r, Q, R, A0, regime, delta, designated=False, aggregated=AGGREGATED, units=UNITS,
-      chunk=CHUNK, modular=False):
+      chunk=CHUNK, modular=False, perpoint=PERPOINT):
     p = dict(r=int(r), Q=int(Q), R=int(R), A0=int(A0), regime=regime)
     if regime == "tight":
         p["delta"] = float(delta)
@@ -246,27 +247,29 @@ def _mk(r, Q, R, A0, regime, delta, designated=False, aggregated=AGGREGATED, uni
         p["chunk"] = int(chunk)
     if modular:
         p["modular"] = True
+    if perpoint:
+        p["perpoint"] = True
     return p
 
 
 def _scan(lam, regime, delta, r, Q, Rs, best, designated=False, aggregated=AGGREGATED,
-        units=UNITS, chunk=CHUNK, modular=False):
+        units=UNITS, chunk=CHUNK, modular=False, perpoint=PERPOINT):
     """Score the interval lengths Rs for (r, Q); keep the best candidate in `best`."""
     Rs = np.unique(Rs.astype(np.int64))
     Rs = Rs[(Rs >= 1) & (Rs <= Q + 1)]
     if Rs.size == 0:
         return best
     e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated, units,
-                              chunk, modular)
+                              chunk, modular, perpoint=perpoint)
     i = int(np.argmin(e))
     if best is None or e[i] < best[0]:
         return (float(e[i]), _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated,
-                                 aggregated, units, chunk, modular))
+                                 aggregated, units, chunk, modular, perpoint))
     return best
 
 
 def _coarse(lam, regime, delta, mld, cfg, designated=False, aggregated=AGGREGATED,
-            units=UNITS, chunk=CHUNK, modular=False):
+            units=UNITS, chunk=CHUNK, modular=False, perpoint=PERPOINT):
     """Stage 0: coarse scan over RSET x geometric Q x geometric R (guarantees a valid answer)."""
     best = None
     for r in RSET[::cfg["RSET_STRIDE"]]:
@@ -282,12 +285,12 @@ def _coarse(lam, regime, delta, mld, cfg, designated=False, aggregated=AGGREGATE
             Q = int(Q)
             Rs = np.unique(np.round(np.geomspace(1, Q + 1, cfg["N_R_COARSE"])).astype(np.int64))
             best = _scan(lam, regime, delta, r, Q, Rs, best, designated, aggregated, units,
-                         chunk, modular)
+                         chunk, modular, perpoint)
     return best
 
 
 def _cheap_r_scan(lam, regime, delta, mld, rs, cfg, designated=False, aggregated=AGGREGATED,
-                  units=UNITS, chunk=CHUNK, modular=False):
+                  units=UNITS, chunk=CHUNK, modular=False, perpoint=PERPOINT):
     """Stage 1: Q = Qmax, moderate R grid, for every r in rs. Returns [(e, r, params)]."""
     out = []
     for r in rs:
@@ -300,16 +303,16 @@ def _cheap_r_scan(lam, regime, delta, mld, rs, cfg, designated=False, aggregated
         if Rs.size == 0:
             continue
         e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated,
-                                  units, chunk, modular)
+                                  units, chunk, modular, perpoint=perpoint)
         i = int(np.argmin(e))
         out.append((float(e[i]), int(r),
                     _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated, aggregated,
-                        units, chunk, modular)))
+                        units, chunk, modular, perpoint)))
     return out
 
 
 def _deep(lam, regime, delta, r, Qmax, best, cfg, designated=False,
-          aggregated=AGGREGATED, units=UNITS, chunk=CHUNK, modular=False):
+          aggregated=AGGREGATED, units=UNITS, chunk=CHUNK, modular=False, perpoint=PERPOINT):
     """Stage 2: full Q ladder, dense R grid and an integer-R sweep for one r."""
     for Q in _Qladder(Qmax):
         Rs = np.unique(np.round(np.geomspace(1, Q + 1, cfg["N_R_FINE"])).astype(np.int64))
@@ -317,12 +320,12 @@ def _deep(lam, regime, delta, r, Qmax, best, cfg, designated=False,
         if Rs.size == 0:
             continue
         e, A = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated,
-                                units, chunk, modular)
+                                units, chunk, modular, perpoint=perpoint)
         i = int(np.argmin(e))
         if best is None or e[i] < best[0]:
             best = (float(e[i]),
                     _mk(r, Q, int(Rs[i]), int(A[i]), regime, delta, designated, aggregated,
-                        units, chunk, modular))
+                        units, chunk, modular, perpoint))
         # every integer R between the grid neighbours of the best R
         lo = int(Rs[i - 1]) if i > 0 else 1
         hi = int(Rs[i + 1]) if i + 1 < Rs.size else int(Q + 1)
@@ -389,20 +392,23 @@ def _tight(lam, modular=False, r_lo=R_LO, r_hi=R_HI):
     designated = True                      # head extension v2: designated occurrences
     units = UNITS                          # head extension v4: clause units
     chunk = CHUNK                          # head extension v5: connected chunk units
+    perpoint = PERPOINT                    # head extension v6: per-point measurement matrices
     cfg = _cfg0(lam)
     mld_ref = max_log2D(lam, regime, delta_ref, designated, units, chunk)
 
     # ---------- stage 0: coarse scan at the reference delta (valid answer + r window) -------
     best = _coarse(lam, regime, delta_ref, mld_ref, cfg, designated, AGGREGATED, units,
-                 chunk, modular)
+                 chunk, modular, perpoint)
     if best is None:
         r0 = int(2.0 ** (mld_ref / 2.0))
         if r0 < 2 or 2 * math.log2(r0) > mld_ref + 1e-9:
             return dict(r=2, Q=1, R=1, A0=0, regime=regime, delta=1.0, designated=True,
                         aggregated=AGGREGATED, units=units, chunk=chunk,
+                        **({"perpoint": True} if perpoint else {}),
                         **({"modular": True} if modular else {}))   # no labels
         return dict(r=int(r0), Q=1, R=1, A0=0, regime=regime, delta=delta_ref, designated=True,
                     aggregated=AGGREGATED, units=units, chunk=chunk,
+                    **({"perpoint": True} if perpoint else {}),
                     **({"modular": True} if modular else {}))
     rs = _r_window(best[1]["r"], cfg, r_lo, r_hi)
     est0_us = _est0(lam, cfg)
@@ -413,7 +419,7 @@ def _tight(lam, modular=False, r_lo=R_LO, r_hi=R_HI):
     for d in DELTAS[:cfg["N_DELTAS"]]:
         mld = max_log2D(lam, regime, d, designated, units, chunk)
         per_r = _cheap_r_scan(lam, regime, d, mld, rs, cfg, designated, AGGREGATED, units,
-                              chunk, modular)
+                              chunk, modular, perpoint)
         if not per_r:
             continue
         per_delta.append((min(e for e, _r, _p in per_r), d, per_r))
@@ -432,7 +438,7 @@ def _tight(lam, modular=False, r_lo=R_LO, r_hi=R_HI):
             deep_rs.append(best[1]["r"])
         for r in deep_rs:
             best = _deep(lam, regime, d, r, _Qmax(mld, r), best, cfg, designated, AGGREGATED,
-                         units, chunk, modular)
+                         units, chunk, modular, perpoint)
 
     return _polish(lam, best, regime, best[1].get("delta", delta_ref), modular)[1]
 

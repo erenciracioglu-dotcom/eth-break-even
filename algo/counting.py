@@ -189,6 +189,8 @@ class Counter:
         """Z_{t,E,U} for all E at once, computed group by group with representatives."""
         p, aux, des = self.p, self.aux, self.des
         av, df, Chat = des["av"], des["df"], des["Chat"]
+        if des.get("perpoint"):
+            Chat = des["Chat_t"][t - 1]
         n, J = self.n, self.J
         groups = [np.nonzero(av[:, t - 1] == g)[0] for g in range(aux.r)]
         cl_group = [df[f][t - 1] for f in range(len(self.clauses))]
@@ -245,6 +247,8 @@ class Counter:
         if st is None:
             p, aux, des = self.p, self.aux, self.des
             av, df, Chat = des["av"], des["df"], des["Chat"]
+            if des.get("perpoint"):
+                Chat = des["Chat_t"][t - 1]
             n = self.n
             groups = [np.nonzero(av[:, t - 1] == g)[0] for g in range(aux.r)]
             cl_group = [df[f][t - 1] for f in range(len(self.clauses))]

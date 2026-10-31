@@ -1,25 +1,26 @@
 {
- "ppsz": 29002,
- "sharp3sat": 6030,
- "brute": 1106,
- "e_at_2224173": 0.09051004942240486,
+ "ppsz": 25699,
+ "sharp3sat": 5621,
+ "brute": 1046,
+ "e_at_2224173": 0.08757500378530157,
  "params_ppsz": {
   "r": 28,
-  "Q": 3009,
-  "R": 184,
-  "A0": 1359,
+  "Q": 2665,
+  "R": 161,
+  "A0": 1205,
   "regime": "tight",
   "delta": 0.001,
   "designated": true,
   "aggregated": true,
   "units": true,
   "chunk": 4096,
-  "modular": true
+  "modular": true,
+  "perpoint": true
  },
  "regime": "tight",
- "iter": 9,
- "task": "T9",
- "updated": "2026-10-31 15:24:03",
+ "iter": 11,
+ "task": "T10",
+ "updated": "2026-10-31 17:10:32",
  "by_regime": {
   "paper": {
    "ppsz": 2140603,
@@ -44,20 +45,21 @@
    }
   },
   "tight": {
-   "ppsz": 29002,
-   "iter": 9,
+   "ppsz": 25699,
+   "iter": 11,
    "params": {
     "r": 28,
-    "Q": 3009,
-    "R": 184,
-    "A0": 1359,
+    "Q": 2665,
+    "R": 161,
+    "A0": 1205,
     "regime": "tight",
     "delta": 0.001,
     "designated": true,
     "aggregated": true,
     "units": true,
     "chunk": 4096,
-    "modular": true
+    "modular": true,
+    "perpoint": true
    }
   }
  }
