@@ -23,6 +23,14 @@ Search (regime "tight"):
 If choose_params is called with an explicit regime ("paper"/"freedman"), the single-regime
 three-stage search runs instead (same stages, no designated/aggregated/units extensions).
 
+choose_params_decision(lam) (cost model v5, yes/no targets) runs the very same search with
+modular=True: for a yes/no answer it is enough to know S(w) = sum_x prod_v w_v^(x_v) modulo a
+prime p with Q < p <= 2Q for random weights w, so every measurement value costs log2(2Q) bits
+instead of its exact value and the tail term is the modular one (assembly_public.value_bits).
+The winner has a smaller R at the same Q (r ~ 156 at lam = 2.2e6, e = 0.09051), so the stage-1
+r window is widened downwards (R_LO_DEC). choose_params itself is unchanged: modular is invalid
+for counting targets.
+
 designated = True (head extension v2): every clause reads one of its own variables directly, so
 only M_eff = 2n occurrences carry replacement rows; it enters through
 max_log2D(lam, "tight", delta, True) and exponents_over_R(..., True). units = True (head
@@ -59,6 +67,9 @@ REF_DELTA = 0.01                   # delta of the stage-0 coarse scan that fixes
 
 # stage-1 settings (cheap r scan: Q = Qmax, geometric R grid)
 R_LO, R_HI = 0.65, 1.50            # integer r window around the coarse r_best
+# decision (modular) target: the optimum sits at a larger r (fewer, shorter intervals at the
+# same Q), so the window is widened downwards
+R_LO_DEC, R_HI_DEC = 0.50, 1.50
 # stage-2 settings (deep refinement): Q ladder = Qmax, Qmax-1, Qmax-2 + Q_FRACS of Qmax
 Q_FRACS = (1.0, 0.999, 0.998, 0.995, 0.99, 0.98, 0.97, 0.95, 0.90)   # fractions of Qmax tried
 
@@ -221,7 +232,7 @@ def _cfg12(lam, rs, est0_us, designated=True, units=UNITS, deltas=DELTAS, chunk=
 
 
 def _mk(r, Q, R, A0, regime, delta, designated=False, aggregated=AGGREGATED, units=UNITS,
-      chunk=CHUNK):
+      chunk=CHUNK, modular=False):
     p = dict(r=int(r), Q=int(Q), R=int(R), A0=int(A0), regime=regime)
     if regime == "tight":
         p["delta"] = float(delta)
@@ -233,27 +244,29 @@ def _mk(r, Q, R, A0, regime, delta, designated=False, aggregated=AGGREGATED, uni
         p["units"] = True
     if units and chunk:
         p["chunk"] = int(chunk)
+    if modular:
+        p["modular"] = True
     return p
 
 
 def _scan(lam, regime, delta, r, Q, Rs, best, designated=False, aggregated=AGGREGATED,
-        units=UNITS, chunk=CHUNK):
+        units=UNITS, chunk=CHUNK, modular=False):
     """Score the interval lengths Rs for (r, Q); keep the best candidate in `best`."""
     Rs = np.unique(Rs.astype(np.int64))
     Rs = Rs[(Rs >= 1) & (Rs <= Q + 1)]
     if Rs.size == 0:
         return best
     e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated, units,
-                              chunk)
+                              chunk, modular)
     i = int(np.argmin(e))
     if best is None or e[i] < best[0]:
         return (float(e[i]), _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated,
-                                 aggregated, units, chunk))
+                                 aggregated, units, chunk, modular))
     return best
 
 
 def _coarse(lam, regime, delta, mld, cfg, designated=False, aggregated=AGGREGATED,
-            units=UNITS, chunk=CHUNK):
+            units=UNITS, chunk=CHUNK, modular=False):
     """Stage 0: coarse scan over RSET x geometric Q x geometric R (guarantees a valid answer)."""
     best = None
     for r in RSET[::cfg["RSET_STRIDE"]]:
@@ -269,12 +282,12 @@ def _coarse(lam, regime, delta, mld, cfg, designated=False, aggregated=AGGREGATE
             Q = int(Q)
             Rs = np.unique(np.round(np.geomspace(1, Q + 1, cfg["N_R_COARSE"])).astype(np.int64))
             best = _scan(lam, regime, delta, r, Q, Rs, best, designated, aggregated, units,
-                         chunk)
+                         chunk, modular)
     return best
 
 
 def _cheap_r_scan(lam, regime, delta, mld, rs, cfg, designated=False, aggregated=AGGREGATED,
-                  units=UNITS, chunk=CHUNK):
+                  units=UNITS, chunk=CHUNK, modular=False):
     """Stage 1: Q = Qmax, moderate R grid, for every r in rs. Returns [(e, r, params)]."""
     out = []
     for r in rs:
@@ -287,16 +300,16 @@ def _cheap_r_scan(lam, regime, delta, mld, rs, cfg, designated=False, aggregated
         if Rs.size == 0:
             continue
         e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated,
-                                  units, chunk)
+                                  units, chunk, modular)
         i = int(np.argmin(e))
         out.append((float(e[i]), int(r),
                     _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated, aggregated,
-                        units, chunk)))
+                        units, chunk, modular)))
     return out
 
 
 def _deep(lam, regime, delta, r, Qmax, best, cfg, designated=False,
-          aggregated=AGGREGATED, units=UNITS, chunk=CHUNK):
+          aggregated=AGGREGATED, units=UNITS, chunk=CHUNK, modular=False):
     """Stage 2: full Q ladder, dense R grid and an integer-R sweep for one r."""
     for Q in _Qladder(Qmax):
         Rs = np.unique(np.round(np.geomspace(1, Q + 1, cfg["N_R_FINE"])).astype(np.int64))
@@ -304,12 +317,12 @@ def _deep(lam, regime, delta, r, Qmax, best, cfg, designated=False,
         if Rs.size == 0:
             continue
         e, A = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated,
-                                units, chunk)
+                                units, chunk, modular)
         i = int(np.argmin(e))
         if best is None or e[i] < best[0]:
             best = (float(e[i]),
                     _mk(r, Q, int(Rs[i]), int(A[i]), regime, delta, designated, aggregated,
-                        units, chunk))
+                        units, chunk, modular))
         # every integer R between the grid neighbours of the best R
         lo = int(Rs[i - 1]) if i > 0 else 1
         hi = int(Rs[i + 1]) if i + 1 < Rs.size else int(Q + 1)
@@ -318,11 +331,11 @@ def _deep(lam, regime, delta, r, Qmax, best, cfg, designated=False,
         hi = min(hi, lo + cfg["MAX_INT_R"])
         if hi > lo:
             best = _scan(lam, regime, delta, r, Q, np.arange(lo, hi + 1, dtype=np.int64), best,
-                         designated, aggregated, units, chunk)
+                         designated, aggregated, units, chunk, modular)
     return best
 
 
-def _polish(lam, best, regime, delta):
+def _polish(lam, best, regime, delta, decision=False):
     """Final check: a couple of A0 shifts around the winner."""
     p = dict(best[1])
     for d in (-2, -1, 0, 1, 2):
@@ -330,15 +343,15 @@ def _polish(lam, best, regime, delta):
         cand["A0"] = int(p["A0"]) + d
         if cand["A0"] < 0 or cand["A0"] + cand["R"] - 1 > cand["Q"]:
             continue
-        s = exponent_of(cand, lam)
+        s = exponent_of(cand, lam, decision=decision)
         if s.get("valid") and s["e"] < best[0]:
             best = (float(s["e"]), cand)
     return best
 
 
-def _r_window(r_best, cfg):
-    rs = list(range(max(2, int(math.floor(R_LO * r_best))),
-                    max(2, int(math.ceil(R_HI * r_best))) + 1))
+def _r_window(r_best, cfg, r_lo=R_LO, r_hi=R_HI):
+    rs = list(range(max(2, int(math.floor(r_lo * r_best))),
+                    max(2, int(math.ceil(r_hi * r_best))) + 1))
     if len(rs) > cfg["MAX_R_WINDOW"]:      # keep the window centred, strided
         stride = math.ceil(len(rs) / cfg["MAX_R_WINDOW"])
         rs = rs[::stride]
@@ -370,10 +383,8 @@ def _single_regime(lam, regime):
     return _polish(lam, best, regime, 1.0)[1]
 
 
-def choose_params(lam, regime=None):
-    if regime is not None and regime != "tight":
-        return _single_regime(lam, regime)
-
+def _tight(lam, modular=False, r_lo=R_LO, r_hi=R_HI):
+    """The "tight" three-stage search. modular=True scores the yes/no (mod p) target."""
     regime, delta_ref = "tight", REF_DELTA
     designated = True                      # head extension v2: designated occurrences
     units = UNITS                          # head extension v4: clause units
@@ -383,15 +394,17 @@ def choose_params(lam, regime=None):
 
     # ---------- stage 0: coarse scan at the reference delta (valid answer + r window) -------
     best = _coarse(lam, regime, delta_ref, mld_ref, cfg, designated, AGGREGATED, units,
-                 chunk)
+                 chunk, modular)
     if best is None:
         r0 = int(2.0 ** (mld_ref / 2.0))
         if r0 < 2 or 2 * math.log2(r0) > mld_ref + 1e-9:
             return dict(r=2, Q=1, R=1, A0=0, regime=regime, delta=1.0, designated=True,
-                        aggregated=AGGREGATED, units=units, chunk=chunk)   # no labels
+                        aggregated=AGGREGATED, units=units, chunk=chunk,
+                        **({"modular": True} if modular else {}))   # no labels
         return dict(r=int(r0), Q=1, R=1, A0=0, regime=regime, delta=delta_ref, designated=True,
-                    aggregated=AGGREGATED, units=units, chunk=chunk)
-    rs = _r_window(best[1]["r"], cfg)
+                    aggregated=AGGREGATED, units=units, chunk=chunk,
+                    **({"modular": True} if modular else {}))
+    rs = _r_window(best[1]["r"], cfg, r_lo, r_hi)
     est0_us = _est0(lam, cfg)
     cfg = _cfg12(lam, rs, est0_us)     # stages 1-2 sized from the exact r window
 
@@ -400,7 +413,7 @@ def choose_params(lam, regime=None):
     for d in DELTAS[:cfg["N_DELTAS"]]:
         mld = max_log2D(lam, regime, d, designated, units, chunk)
         per_r = _cheap_r_scan(lam, regime, d, mld, rs, cfg, designated, AGGREGATED, units,
-                              chunk)
+                              chunk, modular)
         if not per_r:
             continue
         per_delta.append((min(e for e, _r, _p in per_r), d, per_r))
@@ -408,7 +421,7 @@ def choose_params(lam, regime=None):
             if e < best[0]:
                 best = (e, p)
     if not per_delta:
-        return _polish(lam, best, regime, delta_ref)[1]
+        return _polish(lam, best, regime, delta_ref, modular)[1]
 
     # ---------- stage 2: deep refinement of the best r for the best few deltas ----------
     per_delta.sort(key=lambda t: t[0])
@@ -419,6 +432,20 @@ def choose_params(lam, regime=None):
             deep_rs.append(best[1]["r"])
         for r in deep_rs:
             best = _deep(lam, regime, d, r, _Qmax(mld, r), best, cfg, designated, AGGREGATED,
-                         units, chunk)
+                         units, chunk, modular)
 
-    return _polish(lam, best, regime, best[1].get("delta", delta_ref))[1]
+    return _polish(lam, best, regime, best[1].get("delta", delta_ref), modular)[1]
+
+
+def choose_params(lam, regime=None):
+    if regime is not None and regime != "tight":
+        return _single_regime(lam, regime)
+    return _tight(lam, False)
+
+
+def choose_params_decision(lam):
+    """Parameters for the yes/no (decision) target: every coefficient is an integer mod p with
+    Q < p <= 2Q, so each measurement value costs log2(2Q) bits instead of its exact value
+    (modular=True). The optimum has a smaller R at the same Q, so the r window is widened
+    downwards. choose_params (counting) is unchanged: modular is invalid for counting targets."""
+    return _tight(lam, True, R_LO_DEC, R_HI_DEC)

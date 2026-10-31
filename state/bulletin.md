@@ -1,4 +1,5 @@
 # Bulletin (latest first)
+- 2026-10-31 14:52:15 iter 008 T8 attempt 1: ACCEPTED - ppsz threshold 193,841 -> 57,882; e at 2224173 0.178130 -> 0.119529 (70.14% lower threshold)
 - 2026-10-31 14:10:18 iter 007 T7 attempt 1: ACCEPTED - gates pass, no regression: ppsz threshold 193,841 -> 193,841; e at 2224173 0.178130 -> 0.178130
 - 2026-10-31 13:28:39 iter 006 T6 attempt 1: ACCEPTED - ppsz threshold 273,036 -> 193,841; e at 2224173 0.199206 -> 0.178130 (29.01% lower threshold)
 - 2026-10-31 13:05:42 iter 005 T5 attempt 1: ACCEPTED - ppsz threshold 438,437 -> 273,036; e at 2224173 0.225870 -> 0.199206 (37.73% lower threshold)

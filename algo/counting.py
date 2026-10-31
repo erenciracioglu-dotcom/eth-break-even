@@ -7,9 +7,16 @@ measurement tuples, sum every group separately using representatives), which is 
 algorithm of the paper. Hermite interpolation of the Taylor data then gives H(0) mod p.
 
 PUBLIC API (the referee calls these; keep names):
-  Counter(aux, des).taylor_inclusion_exclusion(t, Zfun=None), .Z_group_separated(t, S, U),
-  .taylor_aggregated(t, Zagg=None), .Zagg_brute(t, S, U), .Zagg_group_separated(t, S, U),
-  .restricted_sums, .hermite_H0(data), .Q;  brute_count(n, clauses)
+  Counter(aux, des, p=PRIMES[0], residue_keys=False, weights=None).taylor_inclusion_exclusion(t,
+  Zfun=None), .Z_group_separated(t, S, U), .taylor_aggregated(t, Zagg=None), .Zagg_brute(t, S, U),
+  .Zagg_group_separated(t, S, U), .restricted_sums, .hermite_H0(data), .fibre_counts(t), .Q;
+  brute_count(n, clauses)
+
+Modular form (cost model v5, yes/no targets): with residue_keys=True the fibres of every group
+are keyed by the measurement values mod p (they only matter mod p), and with weights = w (int
+array of length n, entries mod p) every assignment x carries the factor prod_v w_v^(x_v), so
+Hermite interpolation of the aggregated Taylor data gives the weighted count
+S(w) = sum over satisfying x of prod_v w_v^(x_v) mod p.
 
 Aggregated form (cost model v3): Lemma 3.3 summed per U,
   sum_x p_x(x) = sum_{|U| <= q} sum_{x >= U} w_K(|x - U|) p_x(1_U),  K = q - |U|,
@@ -66,8 +73,9 @@ def brute_count(n, clauses):
 
 
 class Counter:
-    def __init__(self, aux, des, p=PRIMES[0]):
+    def __init__(self, aux, des, p=PRIMES[0], residue_keys=False, weights=None):
         self.aux, self.des, self.p = aux, des, p
+        self.residue_keys = bool(residue_keys)      # fibre keys = measurement values mod p
         self.n, self.Q = des["n"], aux.Q
         clauses = des["clauses"]
         self.clauses = clauses
@@ -92,6 +100,18 @@ class Counter:
         xs = np.arange(N)
         self.X = ((xs[:, None] >> np.arange(self.n)[None, :]) & 1).astype(np.int64)
         self.pop = self.X.sum(axis=1)
+        # self.wX[x] = prod over v with x_v = 1 of w_v (mod p); all ones when weights is None
+        if weights is None:
+            self.wX = np.ones(N, np.int64)
+        else:
+            w = np.asarray(weights, np.int64).reshape(-1) % p
+            if w.size != self.n:
+                raise ValueError("weights must have length n")
+            self.wX = np.ones(N, np.int64)
+            for v in range(self.n):
+                if w[v] != 1:
+                    sel = self.X[:, v] == 1
+                    self.wX[sel] = (self.wX[sel] * int(w[v])) % p
         self.restricted_sums = 0
         self._grp = {}
 
@@ -235,7 +255,13 @@ class Counter:
                 bits = ((lm[:, None] >> np.arange(k)[None, :]) & 1).astype(np.int64)
                 gmask = (bits << vars_g[None, :]).sum(axis=1) if k else np.zeros(1, np.int64)
                 Cg = Chat[:, vars_g]
-                keys = [tuple(row) for row in (bits @ Cg.T)] if k else [()]
+                if k:
+                    vals = bits @ Cg.T
+                    if self.residue_keys:
+                        vals = vals % p
+                    keys = [tuple(int(x) for x in row) for row in vals]
+                else:
+                    keys = [()]
                 fib = {}
                 for i, kk in enumerate(keys):
                     fib.setdefault(kk, []).append(int(gmask[i]))
@@ -246,6 +272,10 @@ class Counter:
             st = (groups, cl_group, grp_mask, grp_bits, grp_Cg, loc)
             self._grp[key] = st
         return st
+
+    def fibre_counts(self, t):
+        """Number of fibres (distinct measurement keys) of every group of point t."""
+        return [len(fib) for fib in self.group_structure(t)[-1]]
 
     def taylor_aggregated(self, t, Zagg=None):
         """Aggregated Lemma 3.3: sum_{|U| <= q} sum_{x >= U} w_K(|x - U|) p_x(1_U), K = q - |U|."""
@@ -274,6 +304,7 @@ class Counter:
         w = np.zeros(int(m.size), np.int64)
         for j in range(K + 1):
             w = (w + ((-1) ** j) * np.array([comb(int(mm), j) for mm in m], np.int64)) % p
+        w = (w * self.wX[sel]) % p          # weight prod_v w_v^(x_v) of each assignment x
         return (g[:, sel] * w[None, :]).sum(axis=1) % p
 
     def Zagg_group_separated(self, t, S, U):
@@ -312,9 +343,11 @@ class Counter:
                     per_group.append(None)
                     break
                 mk = mem[keep]
+                # weight of x_g: members only carry bits of group g
+                vals = (vals[:, keep] * self.wX[mk][None, :]) % p
                 # members only carry bits of group g, so this is the number of ones outside U_g
                 c = np.array([int(bin(int(mm)).count("1")) for mm in mk], np.int64) - popg[g]
-                Pg = np.einsum("im,mj->ij", vals[:, keep], binom_tab[c]) % p  # (J, Ky)
+                Pg = np.einsum("im,mj->ij", vals, binom_tab[c]) % p  # (J, Ky)
                 per_group.append(Pg)
             if any(Pg is None for Pg in per_group):
                 continue
