@@ -479,3 +479,33 @@ Cost model (appd_model2.py), log2 n break-even vs 2^n / 1.637^n / 1.307^n / 1.11
   modes' tuple, source-mode linear forms raised to their exponents); no blocked function, no file access. The
   agent met its stop condition at about 25 minutes, kept running its own extra tests and was stopped by the
   55-minute wall; the referee scored the files it left.
+
+## Appendix D: levers examined after round 5 and set aside (head, 2026-11-01 02:00)
+Where the exponent sits: at every used node level K p_t = 2 (1 + delta) f M^2 / (u - 1) (independent of i), so a
+call costs about (2 pi / ln 2) sqrt(2 (1 + delta) f / (u - 1)) M bits, and u is capped by the label budget,
+about log2 M / (2 log2 r) (Bernstein over the r^(2u) wire types) or log2 M / log2(r(r + 1)) (padding). The binding
+term is the root's mode sum (Qwen's T16 analysis finds the same). Ideas checked and not pursued:
+- Low-cut partitions instead of random labels (fewer crossing modes, smaller children): the packing needs every
+  orientation class of a pattern filled, i.e. crossing wires whose directions vary independently across the label
+  coordinates; one partition reused (even relabelled) fills only 2 of 2^a' classes. Independent low-cut partitions
+  would be needed per coordinate, and with chunks the wires (about n) are already the boundary incidences, so a
+  k-level bisection (at most k n / 3 cut incidences for max-degree-3 incidence graphs) gives no smaller crossing
+  fraction than random labels.
+- Symbols that depend on lower slot bits (a trie instead of a product per packet): locality at node t still holds
+  (row x and column x + t share bits below i), and the padding term improves from log2(r(r+1)/2) to log2(r^2/2)
+  per coordinate (about 3% in log2 n), but a tile's target rows then lie in several groups, so modes need one copy
+  per target group and K grows. Net loss.
+- Per-row weights: rows with v2(t - y0 + x) = v gain i + 1 - v per moment order, but splitting the modes by row
+  class multiplies the mode count (effective K grows by the harmonic number H_(i+1)). Finer tiles (step 2^(i+1+k))
+  give 2^k (k + 1)^-1 times the effective K. No gain.
+- Base-B slots (B = 3, 4) would cut the precision factor 6 to B(B + 1)/(B - 1)^2, but locality at a level needs
+  col_sym(d + t_i) = row_sym(d) for every nonzero digit t_i, which forces one group unless every digit value gets
+  its own label coordinate; the doubled label cost cancels the gain.
+- Precision-aware children: V_g[gamma] is needed only mod 2^(p_t - w_src,g(gamma)), but the headroom a_1 - u_1 that
+  absorbs the inherited precision changes by O(1) bits only.
+- Decision via isolation (minimum-weight solution unique, S mod 2^(2 n^2)): the target precision is negligible
+  against the recovery loss 6 h D, so yes/no costs the same as counting; no separate yes/no route.
+- Leaves summed over variables below depth 1: the deeper children also contain packet vertices whose port bits
+  remain, about the edge-bit count already charged.
+Conclusion: after T16's parameter search, no further head step with a sound and checkable gain is in sight;
+round 5 ends there.
