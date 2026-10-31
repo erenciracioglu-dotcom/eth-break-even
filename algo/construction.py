@@ -568,3 +568,148 @@ def check_design(aux, des):
                 max_groups_per_row=max_groups, max_restricted_abs=max_restr,
                 bound_restricted=2 ** (Q - 1), paper_bound_abs=aux.D,
                 max_full_abs=int(np.abs(Chat).sum(axis=1).max()) if Chat.shape[0] else 0)
+
+
+# ------------------------------------------------- GF(p^2) rows (cost model v8, smallprime)
+def gf_nonresidue(p):
+    """Least x >= 2 with pow(x, (p - 1) // 2, p) == p - 1 (quadratic non-residue mod p)."""
+    x = 2
+    while pow(x, (p - 1) // 2, p) != p - 1:
+        x += 1
+    return x
+
+
+def gf_mul(x, y, c, p):
+    """Product of (a, b) and (a2, b2) in GF(p^2) = GF(p)[s] / (s^2 - c)."""
+    a, b = x
+    a2, b2 = y
+    return ((a * a2 + c * b * b2) % p, (a * b2 + a2 * b) % p)
+
+
+def gf_inv(x, c, p):
+    """Inverse of x != (0, 0): N = a^2 - c b^2, Ni = N^(p-2), inverse = (a Ni, -b Ni)."""
+    a, b = x
+    N = (a * a - c * b * b) % p
+    Ni = pow(N, p - 2, p)
+    return (a * Ni % p, (-b) * Ni % p)
+
+
+def gf_rows(aux, des, p, finv=None):
+    """Rows P_u(T) of the smallprime (GF(p^2)) variant, cost model v8.
+
+    The interpolation nodes are the first aux.Q nonzero elements of GF(p^2) = GF(p)[s]/(s^2 - c),
+    listed with b = 0, 1, 2, ... and, inside each b, a = 0, 1, ..., p - 1, skipping (0, 0); node t
+    (t = 1..aux.Q) is nodes[t - 1]. The row of a label u is
+        P_u(T) = delta_u - M0[u, :] + sum_y M0[u, y] prod_{s in S(u,y)} (1 - T * beta_s),
+    where S(u, y) = {s in 1..Q : aux.a[y, s-1] != aux.d[u, s-1]} and beta_s is the inverse of
+    nodes[s - 1]. Written out, P_u is an int64 array of shape (R, aux.D, 2): the coefficient of
+    T^k in column y at index k, every entry in [0, p); here it is built column-group-wise (the
+    columns y are grouped by their mismatch set S(u, y), so each product polynomial is built
+    once) and dropped straight into the design rows. Requires p an odd prime above aux.R - 1 (so
+    that (R - 1)! is invertible mod p) and p*p > aux.Q (so that the nodes exist and are
+    distinct). finv is the inverse of aux.fac modulo p; by default it is pow(aux.fac % p, p - 2, p)
+    (a wrong value makes Definition 3.1(4) fail). Returns dict(c=c, nodes=nodes, Prow_gf=Prow_gf)
+    with the design rows Prow_gf of shape (R, M, n, 2) built from these P_u exactly as
+    build_design builds Prow from aux.Pc (designated occurrences carry the constant row 1 at
+    degree 0).
+    """
+    p = int(p)
+    if p < 3 or not is_prime(p):
+        raise ValueError("p must be an odd prime")
+    if p <= aux.R - 1:
+        raise ValueError("p must exceed aux.R - 1")
+    if p * p <= aux.Q:
+        raise ValueError("need p*p > aux.Q so that the first aux.Q nodes are distinct")
+    c = gf_nonresidue(p)
+    Q, R, D = aux.Q, aux.R, aux.D
+    if finv is None:
+        finv = pow(aux.fac % p, p - 2, p)
+    finv = int(finv) % p
+
+    # ---- (a) nodes: first Q nonzero elements of GF(p^2), b = 0,1,2,..., inside b: a = 0..p-1
+    # (the flat index b * p + a of the nonzero elements skips (0, 0), so node j has b*p+a = j+1)
+    flat = np.arange(1, Q + 1, dtype=np.int64)
+    nodes = np.stack([flat % p, flat // p], axis=1)          # (Q, 2), node t = nodes[t - 1]
+    # ---- inverses beta_s = nodes[s-1]^(-1) as int64 pairs
+    a_ = nodes[:, 0]
+    b_ = nodes[:, 1]
+    N = (a_ * a_ - c * b_ * b_) % p
+    Ni = np.array([pow(int(v), p - 2, p) for v in N], np.int64)
+    beta = np.stack([a_ * Ni % p, (-b_) * Ni % p], axis=1)     # (Q, 2)
+
+    # ---- (b) M0 mod p, scaled by the inverse of (R-1)!
+    M0 = (aux.M0s % p) * finv % p
+
+    # ---- (c) the polynomial row P_u(T) of every label u, coefficient k of T^k at index k:
+    #      P_u(T) = delta_u - M0[u, :] + sum_y M0[u, y] prod_{s in S(u,y)} (1 - T * beta_s).
+    # The columns y are grouped by their mismatch set S (a bitmask over the Q positions), so each
+    # product polynomial is built once. Only y with M0[u, y] != 0 contribute, and those have
+    # |S(u, y)| <= R - 1 (Lemma 4.2), so no coefficient above T^(R-1) appears.
+    shift = (1 << np.arange(Q, dtype=np.int64))
+
+    def mask_of(u, ys):
+        return ((aux.a[ys] != aux.d[u]) * shift).sum(axis=1)
+
+    cache = {}
+
+    def coeffs_of(m):
+        """coefficients (deg + 1, 2) of prod_{s in S} (1 - T * beta_s), S the set of mask m."""
+        cf = cache.get(int(m))
+        if cf is None:
+            S = [int(s) for s in range(Q) if (m >> s) & 1]
+            cf = np.zeros((len(S) + 1, 2), np.int64)
+            cf[0] = (1, 0)
+            deg = 0
+            for s in S:                                       # cf *= (1 - T * beta_s)
+                bs = beta[s]
+                nxt = np.zeros_like(cf)
+                for k in range(deg + 1):
+                    pr = gf_mul(cf[k], bs, c, p)
+                    nxt[k] = (nxt[k] + cf[k]) % p
+                    nxt[k + 1] = (nxt[k + 1] - pr) % p
+                cf = nxt
+                deg += 1
+            cache[int(m)] = cf
+        return cf
+
+    # ---- (d) design rows, exactly as build_design builds Prow from aux.Pc
+    occ, M, n = des["occ"], des["M"], des["n"]
+    desig = des["desig"] if "desig" in des else np.zeros(M, bool)
+    labels, copy, h = des["labels"], des["copy"], des["h"]
+    Prow_gf = np.zeros((R, M, n, 2), np.int64)
+    nd_idx = np.nonzero(~desig)[0]
+    pos_y = [[] for _ in range(h)]
+    pos_v = [[] for _ in range(h)]
+    for i in nd_idx:
+        f, v = occ[i]
+        pos_y[int(copy[i])].append(int(labels[i]))
+        pos_v[int(copy[i])].append(int(v))
+    pos_y = [np.array(x, np.int64) for x in pos_y]
+    pos_v = [np.array(x, np.int64) for x in pos_v]
+    for i in nd_idx:
+        cu = int(copy[i])
+        u = int(labels[i])
+        ys, vs = pos_y[cu], pos_v[cu]
+        # constant part delta_u - M0[u, :] of every column y of this copy class
+        base = (-M0[u, ys]) % p
+        at = np.nonzero(ys == u)[0]
+        if at.size:
+            base[at[0]] = (base[at[0]] + 1) % p
+        np.add.at(Prow_gf, (0, i, vs, 0), base)
+        # the replacement part sum_y M0[u, y] * prod_{s in S(u,y)} (1 - T * beta_s)
+        vals = M0[u, ys]
+        keep = vals != 0                                 # zero columns contribute nothing
+        ys2, vs2, vals = ys[keep], vs[keep], vals[keep]
+        if ys2.size == 0:
+            continue
+        ms = mask_of(u, ys2)
+        for m in np.unique(ms):
+            sel = ms == m
+            cf = coeffs_of(m)
+            for k in range(min(cf.shape[0], R)):
+                if np.any(cf[k]):
+                    np.add.at(Prow_gf[k, i], vs2[sel], vals[sel, None] * cf[k][None, :])
+    for i in np.nonzero(desig)[0]:                        # constant rows, degree 0
+        Prow_gf[0, int(i), int(occ[i][1]), 0] = 1
+    Prow_gf %= p
+    return dict(c=c, nodes=nodes, Prow_gf=Prow_gf)

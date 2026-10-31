@@ -247,6 +247,7 @@ def _mk(r, Q, R, A0, regime, delta, designated=False, aggregated=AGGREGATED, uni
         p["chunk"] = int(chunk)
     if modular:
         p["modular"] = True
+        p["smallprime"] = True      # v8: the prime only has to exceed R - 1 (construction.gf_rows)
     if perpoint:
         p["perpoint"] = True
     if eadapt:
@@ -262,7 +263,7 @@ def _scan(lam, regime, delta, r, Q, Rs, best, designated=False, aggregated=AGGRE
     if Rs.size == 0:
         return best
     e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated, units,
-                              chunk, modular, perpoint=perpoint)
+                              chunk, modular, perpoint=perpoint, smallprime=bool(modular))
     i = int(np.argmin(e))
     if best is None or e[i] < best[0]:
         return (float(e[i]), _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated,
@@ -305,7 +306,7 @@ def _cheap_r_scan(lam, regime, delta, mld, rs, cfg, designated=False, aggregated
         if Rs.size == 0:
             continue
         e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated,
-                                  units, chunk, modular, perpoint=perpoint)
+                                  units, chunk, modular, perpoint=perpoint, smallprime=bool(modular))
         i = int(np.argmin(e))
         out.append((float(e[i]), int(r),
                     _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated, aggregated,
@@ -322,7 +323,7 @@ def _deep(lam, regime, delta, r, Qmax, best, cfg, designated=False,
         if Rs.size == 0:
             continue
         e, A = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated,
-                                units, chunk, modular, perpoint=perpoint)
+                                units, chunk, modular, perpoint=perpoint, smallprime=bool(modular))
         i = int(np.argmin(e))
         if best is None or e[i] < best[0]:
             best = (float(e[i]),
@@ -376,7 +377,8 @@ def _eadapt_rescan(lam, best, regime, decision=False):
             if Rs.size == 0:
                 continue
             e, _A = exponents_over_R(lam, r, Q, Rs, regime, delta, True, AGGREGATED, UNITS,
-                                     CHUNK, decision, perpoint=True, eadapt=True)
+                                     CHUNK, decision, perpoint=True, eadapt=True,
+                                     smallprime=bool(decision))
             i = int(np.argmin(e))
             if out is None or float(e[i]) < out[0]:
                 out = (float(e[i]), _mk(r, Q, int(Rs[i]), 0, regime, delta, True, AGGREGATED,
