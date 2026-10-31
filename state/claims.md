@@ -112,6 +112,58 @@ it are reverted.
   give exact counts with units; the head's reference implementation passes referee v4.
   Caveat: head-level sketch, not peer reviewed.
 
+- chunk [AUDITED as a head proof sketch, 2026-10-31 15:00; unit structure, the (1 + 1/L) n bound
+  and exact counts are checked by referee v5 whenever a score uses it]: units are connected chunks
+  of the variable graph G (variables adjacent when they share a clause) instead of matched clauses.
+  A component of G with fewer than L variables is one unit; a larger one is cut bottom-up along a
+  BFS spanning tree (a vertex whose pending subtree reaches L vertices closes a unit; the leftover
+  at the root, fewer than L vertices, joins a unit holding one of its tree children). Every unit is
+  connected through clauses with >= 2 of its variables and, in a large component, has L to
+  1 + 7(L - 1) variables (G has degree <= 6). Each clause is designated to the unit holding most of
+  its variables, and all of those are read directly (constant rows, as in 'designated').
+  1. Bound: let s_f = max_U |f cap U| - 1. A clause with >= 2 variables in U is internal to U and,
+     for widths <= 3, internal to at most one unit. A unit connected through its internal clauses
+     has sum (|f cap U| - 1) >= |U| - 1 over them (a connected hypergraph on |U| vertices). So in
+     a large component C: M_eff(C) = sum_f (|f| - 1 - s_f) <= (M_C - |F_C|) - n_C + u_C, with
+     M_C <= 3 n_C and |F_C| >= M_C / 3, hence M_C - |F_C| <= 2 n_C and M_eff(C) <= n_C + u_C
+     <= (1 + 1/L) n_C. Small components contribute 0. Hence M_eff <= (1 + 1/L) n.
+  2. Group sizes: units of <= 7L variables move together; Chernoff with weights <= 7L still gives
+     |S_t,g| = (1 + o(1)) n/r at these n.
+  3. Balancing: labels of non-designated occurrences are (a_unit(v), a_unit(f)), pairs of schedules
+     of two different units that share a clause. Colour the unit conflict graph (degree <= 42L, so
+     <= 42L + 1 colours) and fix the unit schedules colour by colour; one unit's choice moves at
+     most 9 * 7L = 63L occurrences. The multi-stage Bernstein argument of 'designated' with
+     b' = 63L and s = 42L + 1 stages gives a worst stage exponent >= delta^2 (M_eff/D) / (7224 L^2),
+     so D ln(172 L D) <= delta^2 M_eff / (8192 L^2) suffices (about 29 bits of log2 D at L = 256).
+  Evidence: the head's reference implementation passes referee v5 (exact counts with L = 2 and 3;
+  M_eff below (1 + 1/L) n on random bounded formulas with n = 1200 to 1500 and L = 2 to 64, and on
+  unions of Fano planes).
+  Caveat: head-level sketch, not peer reviewed.
+
+- modular [AUDITED as a head proof sketch, 2026-10-31 15:00; weighted counts mod small primes with
+  residue-keyed fibres are checked by referee v5 whenever a score uses it; yes/no targets only]:
+  decide satisfiability by S(w) = sum over satisfying x of prod_v w_v^(x_v) for w uniform in
+  GF(p^k)^n, with a prime Q < p <= 2Q (Bertrand) and p^k >= 2n. S is multilinear with 0/1
+  coefficients and degree <= n, so for a satisfiable formula S(w) = 0 with probability <= 1/2
+  (Schwartz-Zippel), and S(w) = 0 always otherwise: one-sided error, amplified by repetition (PPSZ,
+  the 1.307^n competitor, is randomized as well).
+  1. The factor w_v^(x_v) depends on x_v only; at point t it joins the group of v, so the design
+     conditions and deg_T H do not change.
+  2. Every coefficient is p-integral: the rows are integers over Lden = (R-1)! Q!; the coefficients
+     that express P_u(t) on S_h through C_h are (1 - mu_psi) psi_u / <psi, psi> with mu_psi in
+     Z / (R-1)! and <psi, psi> a power of 2; Hermite interpolation needs the nodes 1..Q distinct
+     mod p; the w_K weights are integers.
+  3. With all coefficients in GF(p), a clause of group g sees another group h only through
+     C_h x_h mod p. Keying the fibres X_t,g by residues still partitions {0,1}^S_g, and the
+     identity of Lemma 3.2 (distributivity) holds over GF(p^k), so the sum over residue tuples of
+     prod_g B_t,g is H_w(t). A measurement value costs log2 p <= log2(2Q) bits instead of
+     log2(2^Q + 1).
+  4. Exact counting cannot use this cheaply: recovering #F needs about n bits, i.e. CRT over primes
+     up to about n, which costs about log2 n > Q bits per value.
+  Evidence: the head's reference implementation passes referee v5 (weighted counts equal the frozen
+  brute force mod 3, 5 and 7; an implementation with integer keys fails the fibre check).
+  Caveat: head-level sketch, not peer reviewed.
+
 ## Results that depend on a provisional regime
 - 2026-10-31 12:14:25 iter 002 (T2): ppsz threshold 1,117,111 uses regime 'freedman' -> PROVISIONAL until the head audits that regime. [head: regime audited 12:05, this result stands as audited]
 - 2026-10-31 12:28:56 iter 003 (T3): ppsz threshold 1,070,239 uses regime 'tight' -> PROVISIONAL until the head audits that regime.

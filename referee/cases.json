@@ -284,5 +284,195 @@
    "n": 1200,
    "seed": 2357
   }
+ ],
+ "chunk_counts": [
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 6151,
+   "L": 2
+  },
+  {
+   "cfg": [
+    2,
+    3,
+    3,
+    0
+   ],
+   "n": 6,
+   "m": 0,
+   "type": "bounded",
+   "seed": 8215,
+   "L": 3
+  },
+  {
+   "cfg": [
+    3,
+    2,
+    2,
+    0
+   ],
+   "n": 6,
+   "m": 8,
+   "type": "random",
+   "seed": 9431,
+   "L": 2
+  },
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 7,
+   "m": 9,
+   "type": "random",
+   "seed": 4300,
+   "L": 3
+  }
+ ],
+ "chunk_measure": [
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 1500,
+   "family": "bounded",
+   "L": 2,
+   "seed": 7717
+  },
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 1500,
+   "family": "bounded",
+   "L": 3,
+   "seed": 2903
+  },
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 1200,
+   "family": "bounded",
+   "L": 8,
+   "seed": 5101,
+   "copies": false
+  },
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 1200,
+   "family": "bounded",
+   "L": 64,
+   "seed": 6007,
+   "copies": false
+  },
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 700,
+   "family": "fano",
+   "L": 3,
+   "seed": 3301,
+   "copies": false
+  },
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 700,
+   "family": "fano",
+   "L": 5,
+   "seed": 3307,
+   "copies": false
+  }
+ ],
+ "modular_counts": [
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 1913,
+   "p": 3,
+   "L": 2
+  },
+  {
+   "cfg": [
+    2,
+    3,
+    3,
+    0
+   ],
+   "n": 6,
+   "m": 0,
+   "type": "bounded",
+   "seed": 2687,
+   "p": 5,
+   "L": 0
+  },
+  {
+   "cfg": [
+    3,
+    2,
+    2,
+    0
+   ],
+   "n": 6,
+   "m": 8,
+   "type": "random",
+   "seed": 3833,
+   "p": 3,
+   "L": 0
+  },
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 6,
+   "m": 0,
+   "type": "bounded",
+   "seed": 4241,
+   "p": 7,
+   "L": 3
+  }
  ]
 }

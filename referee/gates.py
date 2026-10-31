@@ -1,4 +1,4 @@
-"""FROZEN referee gates, version 4. Usage: python gates.py <algo_dir> <verify|measure|score> <out_json>
+"""FROZEN referee gates, version 5. Usage: python gates.py <algo_dir> <verify|measure|score> <out_json>
 
 Runs the agent's code from <algo_dir> in this separate process; only frozen code decides.
 Version 2 adds the 'tight' regime and, when construction.build_design accepts designated=True,
@@ -8,6 +8,11 @@ Version 3 adds, when counting.Counter offers taylor_aggregated and Zagg_group_se
 exact counts with Lemma 3.3 aggregated per U and the number of restricted sums per point.
 Version 4 adds, when build_design accepts units=True, checks of clause units: units are the
 variable sets of clauses (a maximal matching), share one schedule, and give exact counts.
+Version 5 adds, when build_design accepts chunk=L, checks of chunk units (connected units of
+>= L variables, small components whole, (1 + 1/L) n bound on real and adversarial formulas),
+and, when Counter accepts residue_keys and weights, weighted counts mod a small prime with
+measurement fibres keyed by residues; the score gate scores yes/no targets with
+model.choose_params_decision when the model offers it.
 """
 import inspect
 import json
@@ -81,7 +86,170 @@ def unit_problems(des, clauses):
     return probs
 
 
-def designated_problems(aux, des, units=False, clauses=None):
+def var_graph(n, clauses):
+    adj = [set() for _ in range(n)]
+    for cl in clauses:
+        vs = sorted({int(v) for v, _ in cl})
+        for x in vs:
+            adj[x].update(y for y in vs if y != x)
+    return adj
+
+
+def components(n, clauses):
+    adj = var_graph(n, clauses)
+    comp = -np.ones(n, np.int64)
+    for s in range(n):
+        if comp[s] >= 0:
+            continue
+        comp[s] = s
+        stack = [s]
+        while stack:
+            u = stack.pop()
+            for w in adj[u]:
+                if comp[w] < 0:
+                    comp[w] = s
+                    stack.append(w)
+    return comp, adj
+
+
+def chunk_problems(des, clauses, L):
+    """Chunk units: small components are one unit; in larger ones every unit has L to
+    1 + (deg + 1)(L - 1) variables and is connected through clauses with >= 2 of its variables."""
+    if des.get("units") is not True:
+        return ["design is not marked units=True"]
+    if int(des.get("chunk", 0)) != int(L):
+        return [f"design is not marked chunk={L}"]
+    av = np.asarray(des["av"])
+    n = av.shape[0]
+    unit_of = np.asarray(des.get("unit_of", []))
+    if unit_of.shape != (n,):
+        return ["des['unit_of'] must hold one unit id per variable"]
+    comp, adj = components(n, clauses)
+    deg = max((len(x) for x in adj), default=0)
+    cap = 1 + (deg + 1) * (L - 1)
+    csize = {}
+    for v in range(n):
+        csize[int(comp[v])] = csize.get(int(comp[v]), 0) + 1
+    members = {}
+    for v in range(n):
+        members.setdefault(int(unit_of[v]), []).append(v)
+    nbr = [set() for _ in range(n)]
+    for cl in clauses:
+        byu = {}
+        for v in {int(v) for v, _ in cl}:
+            byu.setdefault(int(unit_of[v]), []).append(v)
+        for vs in byu.values():
+            if len(vs) >= 2:
+                for x in vs:
+                    nbr[x].update(y for y in vs if y != x)
+    probs = []
+    for u, vs in members.items():
+        cs = {int(comp[v]) for v in vs}
+        if len(cs) != 1:
+            probs.append(f"unit {u} spans {len(cs)} components")
+            continue
+        size_c = csize[cs.pop()]
+        if any(not np.array_equal(av[vs[0]], av[v]) for v in vs):
+            probs.append(f"unit {u}: its variables do not share one schedule")
+        if size_c < L:
+            if len(vs) != size_c:
+                probs.append(f"unit {u}: a component of {size_c} < L variables must be a single unit")
+        elif not (L <= len(vs) <= cap):
+            probs.append(f"unit {u} has {len(vs)} variables, outside [{L}, {cap}]")
+        if len(vs) > 1:
+            seen, stack = {vs[0]}, [vs[0]]
+            while stack:
+                x = stack.pop()
+                for y in nbr[x]:
+                    if y not in seen:
+                        seen.add(y)
+                        stack.append(y)
+            if len(seen) != len(vs):
+                probs.append(f"unit {u} is not connected through its clauses")
+        if len(probs) >= 5:
+            break
+    return probs[:5]
+
+
+def designation_problems(des):
+    """Per factor: the designated occurrences are all occurrences in one unit with the most of them."""
+    occ = des["occ"]
+    desig = np.asarray(des.get("desig", []), dtype=bool)
+    unit_of = np.asarray(des.get("unit_of", []))
+    per_f = {}
+    for i, (f, _v) in enumerate(occ):
+        per_f.setdefault(f, []).append(i)
+    probs = []
+    for f, idx in per_f.items():
+        cnt = {}
+        for i in idx:
+            u = int(unit_of[occ[i][1]])
+            cnt[u] = cnt.get(u, 0) + 1
+        du = {int(unit_of[occ[i][1]]) for i in idx if desig[i]}
+        if len(du) != 1:
+            probs.append(f"factor {f}: designated occurrences lie in {len(du)} units")
+            continue
+        u = du.pop()
+        if cnt[u] != max(cnt.values()):
+            probs.append(f"factor {f}: its designated unit does not hold the most of its occurrences")
+        if sum(1 for i in idx if desig[i]) != cnt[u]:
+            probs.append(f"factor {f}: not every occurrence in its designated unit is designated")
+        if len(probs) >= 5:
+            break
+    return probs
+
+
+def fano_formula(k, rng):
+    """k disjoint Fano planes (7 variables, 7 clauses of width 3, every variable in 3 clauses)."""
+    lines = [(0, 1, 2), (0, 3, 4), (0, 5, 6), (1, 3, 5), (1, 4, 6), (2, 3, 6), (2, 4, 5)]
+    perm = rng.permutation(7 * k)
+    clauses = []
+    for b in range(k):
+        for ln in lines:
+            clauses.append([(int(perm[7 * b + x]), bool(rng.random() < 0.5)) for x in ln])
+    return clauses
+
+
+def weighted_brute(n, clauses, w, p):
+    """Frozen sum over satisfying x of prod_v w_v^(x_v) mod p."""
+    xs = np.arange(1 << n)
+    sat = np.ones(xs.shape, bool)
+    for cl in clauses:
+        c = np.zeros(xs.shape, bool)
+        for v, pos in cl:
+            bit = (xs >> v) & 1
+            c |= (bit == 1) if pos else (bit == 0)
+        sat &= c
+    tot = 0
+    for x in xs[sat]:
+        prod = 1
+        for v in range(n):
+            if (int(x) >> v) & 1:
+                prod = prod * int(w[v]) % p
+        tot = (tot + prod) % p
+    return tot
+
+
+def fibres_frozen(aux, des, t, p=None):
+    """Number of distinct measurement keys per group at point t (exact, or residues mod p)."""
+    av, Chat = np.asarray(des["av"]), np.asarray(des["Chat"])
+    out = []
+    for g in range(aux.r):
+        vars_g = np.nonzero(av[:, t - 1] == g)[0]
+        k = len(vars_g)
+        if k == 0:
+            out.append(1)
+            continue
+        lm = np.arange(1 << k)
+        bits = ((lm[:, None] >> np.arange(k)[None, :]) & 1).astype(np.int64)
+        vals = bits @ Chat[:, vars_g].T
+        if p is not None:
+            vals = vals % p
+        out.append(len({tuple(int(x) for x in row) for row in vals}))
+    return out
+
+
+def designated_problems(aux, des, units=False, clauses=None, chunk=0):
     """Frozen checks of one designated design; returns a list of problems (empty = fine)."""
     if des.get("designated") is not True:
         return ["design is not marked designated=True"]
@@ -106,7 +274,7 @@ def designated_problems(aux, des, units=False, clauses=None):
         bad = [f for f in factors if per_factor.get(f, 0) < 1]
         if bad:
             probs.append(f"{len(bad)} factors have no designated occurrence")
-        probs += unit_problems(des, clauses)
+        probs += chunk_problems(des, clauses, chunk) if chunk else unit_problems(des, clauses)
     else:
         bad = [f for f in factors if per_factor.get(f, 0) != 1]
         if bad:
@@ -237,6 +405,83 @@ def verify():
             uok &= ok
         out["units_verified"] = bool(uok and ran > 0)
         out["ok"] &= uok
+    out["chunk_supported"] = bool(out["units_supported"]) and supports_param(build_design, "chunk")
+    out["chunk_verified"] = False
+    if out["chunk_supported"]:
+        cok, ran = True, 0
+        for c in CASES["chunk_counts"]:
+            ran += 1
+            rng = np.random.default_rng(c["seed"])
+            aux = Aux(*c["cfg"])
+            cl = make_formula(c, rng)
+            L = int(c["L"])
+            des = build_design(aux, c["n"], cl, rng, designated=True, units=True, chunk=L)
+            probs = designated_problems(aux, des, units=True, clauses=cl, chunk=L) + designation_problems(des)
+            rep = check_design(aux, des)
+            if not (rep["kernel_condition"] and rep["P0_delta"]):
+                probs.append("kernel condition or P(0) = delta failed")
+            h0, b, J = run_count(aux, des, cl, c["n"])
+            desig = np.asarray(des.get("desig", []), dtype=bool)
+            nd = sum(1 for i, (f, _v) in enumerate(des["occ"]) if f < len(cl) and i < desig.size and not desig[i])
+            j_exp = nd * (aux.R - 1) // aux.Q + 1
+            if J != j_exp:
+                probs.append(f"Taylor order J = {J}, expected {j_exp} from the non-designated clause occurrences")
+            if c["type"] == "bounded" and int(des.get("M_eff", 0)) > (1 + 1 / L) * c["n"] + 1e-9:
+                probs.append(f"M_eff = {des.get('M_eff')} above (1 + 1/L) n")
+            ok = (h0 == b) and not probs
+            out["items"].append({"kind": "chunk_count", "cfg": c["cfg"], "n": c["n"], "L": L, "ok": ok, "H0": h0,
+                                 "brute": b, "J": J, "J_expected": j_exp, "M_eff": int(des.get("M_eff", -1)),
+                                 "problems": probs[:5]})
+            cok &= ok
+        out["chunk_verified"] = bool(cok and ran > 0)
+        out["ok"] &= cok
+    out["modular_supported"] = bool(out["aggregated_supported"] and out["designated_supported"]
+                                    and supports_param(Counter.__init__, "residue_keys")
+                                    and supports_param(Counter.__init__, "weights")
+                                    and hasattr(Counter, "fibre_counts"))
+    out["modular_verified"] = False
+    if out["modular_supported"]:
+        mok, ran, merged = True, 0, False
+        for c in CASES["modular_counts"]:
+            L = int(c.get("L", 0))
+            if L and not out["chunk_supported"]:
+                continue
+            ran += 1
+            rng = np.random.default_rng(c["seed"])
+            aux = Aux(*c["cfg"])
+            cl = make_formula(c, rng)
+            kw = {"designated": True}
+            if L:
+                kw.update(units=True, chunk=L)
+            des = build_design(aux, c["n"], cl, rng, **kw)
+            p = int(c["p"])
+            # one extra measurement row p * (1, ..., 1): a valid, redundant measurement that is 0 mod p,
+            # so exact integer keys split fibres that residue keys must keep together
+            des = dict(des, Chat=np.vstack([np.asarray(des["Chat"], np.int64),
+                                            p * np.ones((1, c["n"]), np.int64)]))
+            wrng = np.random.default_rng(c["seed"] + 1)
+            for _ in range(16):                     # weights with a nonzero weighted count when possible
+                w = wrng.integers(1, p, size=c["n"])
+                if weighted_brute(c["n"], cl, w, p):
+                    break
+            C = Counter(aux, des, p=p, residue_keys=True, weights=w)
+            data, probs = {}, []
+            for t in range(1, aux.Q + 1):
+                data[t] = C.taylor_aggregated(t, Zagg=lambda t_, S, U: C.Zagg_group_separated(t_, S, U))
+                got = [int(x) for x in C.fibre_counts(t)]
+                exp = fibres_frozen(aux, des, t, p)
+                if got != exp:
+                    probs.append(f"t={t}: fibres per group {got}, expected {exp} (keys mod {p})")
+                if sum(exp) < sum(fibres_frozen(aux, des, t, None)):
+                    merged = True
+            h0, ref = int(C.hermite_H0(data)) % p, weighted_brute(c["n"], cl, w, p)
+            ok = (h0 == ref) and not probs
+            out["items"].append({"kind": "modular_count", "cfg": c["cfg"], "n": c["n"], "p": p, "L": L, "ok": ok,
+                                 "H0": h0, "weighted_brute": ref, "problems": probs[:3]})
+            mok &= ok
+        out["modular_merged"] = bool(merged)
+        out["modular_verified"] = bool(mok and ran > 0 and merged)
+        out["ok"] &= mok
     return out
 
 
@@ -315,37 +560,69 @@ def measure():
                                  "checks": checks, "M_eff": m_eff, "D": D, "h": h, "h_bound": round(hb, 1),
                                  "problems": probs[:5], "degree": deg})
             out["ok"] &= ok
+    if supports_designated(build_design) and supports_param(build_design, "units") and supports_param(build_design, "chunk"):
+        chunk_measure(out, Aux, random_bounded_formula, build_design)
     return out
+
+
+def chunk_measure(out, Aux, random_bounded_formula, build_design):
+    for d in CASES["chunk_measure"]:
+        r, Q, R, A0 = d["cfg"]
+        rng = np.random.default_rng(d["seed"])
+        aux = Aux(r, Q, R, A0)
+        if d["family"] == "fano":
+            n = 7 * (d["n"] // 7)
+            cl = fano_formula(n // 7, rng)
+        else:
+            n = d["n"]
+            cl = random_bounded_formula(n, rng)
+        L = int(d["L"])
+        des = build_design(aux, n, cl, rng, designated=True, units=True, chunk=L)
+        probs = designated_problems(aux, des, units=True, clauses=cl, chunk=L) + designation_problems(des)
+        m_eff, D, h = int(des.get("M_eff", 0)), int(aux.D), int(des["h"])
+        checks = {"chunk_structure": not probs, "m_eff_bound": m_eff <= (1 + 1 / L) * n + 1e-9}
+        if d.get("copies", True):
+            checks["copies_h"] = h <= 2 * m_eff / D
+        ok = all(checks.values())
+        out["items"].append({"cfg": d["cfg"], "n": n, "family": d["family"], "L": L, "regime": "chunk", "ok": ok,
+                             "checks": checks, "M_eff": m_eff, "bound": round((1 + 1 / L) * n, 1), "D": D, "h": h,
+                             "problems": probs[:5]})
+        out["ok"] &= ok
 
 
 def score():
     """Runs the agent's search; records every (lam, params, e) query. The parent process
     re-scores every query with a clean copy of the assembly, so this process is untrusted."""
     from model import choose_params
+    try:
+        from model import choose_params_decision
+    except ImportError:
+        choose_params_decision = None
     calls = {"n": 0, "secs": 0.0}
     queries = []
 
-    def f(lam):
+    def f(lam, decision=False):
+        fn = choose_params_decision if (decision and choose_params_decision is not None) else choose_params
         t0 = time.time()
-        p = choose_params(int(lam))
+        p = fn(int(lam))
         calls["n"] += 1
         calls["secs"] += time.time() - t0
-        p = {k: (int(v) if k in ("r", "Q", "R", "A0") else v) for k, v in dict(p).items()}
-        s = A.exponent_of(p, int(lam))
+        p = {k: (int(v) if k in ("r", "Q", "R", "A0", "chunk") else v) for k, v in dict(p).items()}
+        s = A.exponent_of(p, int(lam), decision=decision)
         e = s["e"] if s["valid"] else 9.0
-        queries.append({"lam": int(lam), "params": p, "e": e})
+        queries.append({"lam": int(lam), "params": p, "e": e, "decision": bool(decision)})
         return e, p, s
 
-    def first_lam(target, lo=10 ** 3, hi=10 ** 13):
-        if f(hi)[0] >= target:
+    def first_lam(target, decision=False, lo=10 ** 3, hi=10 ** 13):
+        if f(hi, decision)[0] >= target:
             return None
-        if f(lo)[0] < target:
+        if f(lo, decision)[0] < target:
             return lo
         while hi / lo > 1.0005 and hi - lo > 1:
             mid = int(round(math.sqrt(lo * hi)))
             if mid in (lo, hi):
                 break
-            if f(mid)[0] < target:
+            if f(mid, decision)[0] < target:
                 hi = mid
             else:
                 lo = mid
@@ -353,9 +630,11 @@ def score():
 
     res = {}
     for key in ("ppsz", "sharp3sat", "brute"):
-        lam = first_lam(A.TARGETS[key])
-        res[key] = lam
-    e_ref, p_ref, s_ref = f(2224173)
+        res[key] = first_lam(A.TARGETS[key], decision=key in A.DECISION_TARGETS)
+    for key, target in A.REPORT_TARGETS.items():
+        res[key] = first_lam(target, decision=True)
+    res["decision_model"] = choose_params_decision is not None
+    e_ref, p_ref, s_ref = f(2224173, decision=True)
     res["e_at_2224173"] = e_ref
     res["params_at_2224173"] = p_ref
     res["terms_at_2224173"] = s_ref.get("terms")

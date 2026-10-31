@@ -42,4 +42,21 @@ for lam in (300000, 2224173, 5000000):
         print(f"SMOKE FAIL: choose_params took {dt:.1f}s at lam={lam} (limit 3s)")
         sys.exit(1)
     print(f"lam={lam}: e={s['e']:.5f} params={p} ({dt:.2f}s)")
+try:
+    from model import choose_params_decision
+except ImportError:
+    choose_params_decision = None
+if choose_params_decision is not None:
+    for lam in (30000, 300000, 2224173):
+        t1 = time.time()
+        p = choose_params_decision(lam)
+        s = exponent_of(p, lam, decision=True)
+        dt = time.time() - t1
+        if not s["valid"]:
+            print(f"SMOKE FAIL: invalid decision params at lam={lam}: {p} ({s['reason']})")
+            sys.exit(1)
+        if dt > 3.0:
+            print(f"SMOKE FAIL: choose_params_decision took {dt:.1f}s at lam={lam} (limit 3s)")
+            sys.exit(1)
+        print(f"decision lam={lam}: e={s['e']:.5f} params={p} ({dt:.2f}s)")
 print(f"target e < {TARGETS['ppsz']:.5f};  smoke ok in {time.time() - t0:.1f}s")

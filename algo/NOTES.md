@@ -60,3 +60,19 @@ Qmax = floor(max_log2D(lam, regime) / (2 log2 r)).
   max_log2D(lam, regime, delta, True, True) and exponents_over_R(lam, r, Q, Rs, regime, delta,
   True, aggregated, True), and return units=True. The hidden referee counts units parameters only
   when its own hidden checks of build_design(..., designated=True, units=True) pass.
+
+## Version 5 of the cost model (2026-10-31)
+
+- Parameter chunk (int L, 2 <= L <= 4096, needs units=True): units are connected chunks of the
+  variable graph with at least L variables (a component with fewer than L variables is one unit).
+  Worst case M_eff <= (1 + 1/L) n instead of 12n/7. Call max_log2D(lam, regime, delta, True, True, L)
+  and exponents_over_R(lam, r, Q, Rs, regime, delta, True, aggregated, True, L) and return chunk=L.
+  The referee counts chunk parameters only when its hidden checks of
+  build_design(..., designated=True, units=True, chunk=L) pass.
+- Parameter modular (bool, needs designated and aggregated; yes/no targets only): the yes/no
+  question is answered by a weighted count mod a prime p with Q < p <= 2Q, so a measurement value
+  costs log2(2Q) bits instead of Q. Only exponent_of(params, lam, decision=True) accepts it; the
+  referee scores the 1.307^n target with model.choose_params_decision(lam) when model.py defines
+  it (and with choose_params otherwise). Counting targets always use choose_params. The referee
+  counts modular parameters only when its hidden checks of Counter(..., residue_keys=True,
+  weights=w) pass.
