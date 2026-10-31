@@ -1,0 +1,17 @@
+{
+ "lemma_cfgs": [[2, 2, 2, 0], [2, 3, 3, 0], [2, 4, 3, 0], [3, 2, 2, 0]],
+ "designs": [
+  {"cfg": [2, 3, 3, 0], "n": 600, "seed": 90210},
+  {"cfg": [2, 4, 3, 0], "n": 1500, "seed": 4242}
+ ],
+ "counts": [
+  {"cfg": [2, 2, 2, 0], "n": 6, "m": 9, "type": "random", "seed": 31337},
+  {"cfg": [2, 3, 3, 0], "n": 6, "m": 9, "type": "random", "seed": 2718},
+  {"cfg": [3, 2, 2, 0], "n": 6, "m": 0, "type": "bounded", "seed": 1618},
+  {"cfg": [2, 2, 2, 0], "n": 7, "m": 11, "type": "random", "seed": 5772}
+ ],
+ "measure_designs": [
+  {"cfg": [2, 2, 2, 0], "n": 1100, "seed": 777, "regime": "paper"},
+  {"cfg": [2, 3, 3, 0], "n": 2400, "seed": 888, "regime": "freedman"}
+ ]
+}

@@ -1,0 +1,10 @@
+TASK {{id}} (attempt {{attempt}} of {{max_attempts}}): {{title}}
+
+Files you may edit: {{files}}
+
+{{spec}}
+
+Current best, as measured by the hidden referee: ppsz threshold lam = {{ppsz}}; e at lam=2224173 = {{e_ref}} (regime "{{regime}}").
+{{feedback}}
+Stop when {{stop}}.
+You have at most {{steps}} tool steps; keep the last few for a final smoke.py run and your report.

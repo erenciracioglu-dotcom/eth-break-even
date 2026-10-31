@@ -1,0 +1,11 @@
+work/
+logs/
+.venv/
+__pycache__/
+*.pyc
+*.tmp
+STOP
+loop.lock
+report.html
+state/status.json
+state/test_log.jsonl
