@@ -829,5 +829,94 @@
    "perpoint": true,
    "eadapt": true
   }
+ ],
+ "edges_counts": [
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 6,
+   "m": 9,
+   "type": "random",
+   "seed": 9001
+  },
+  {
+   "cfg": [
+    3,
+    2,
+    2,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 9013,
+   "designated": true,
+   "L": 2
+  },
+  {
+   "cfg": [
+    3,
+    3,
+    3,
+    0
+   ],
+   "n": 6,
+   "m": 0,
+   "type": "bounded",
+   "seed": 9019,
+   "designated": true,
+   "perpoint": true
+  },
+  {
+   "cfg": [
+    3,
+    2,
+    2,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 9027,
+   "designated": true,
+   "L": 2,
+   "perpoint": true,
+   "eadapt": true,
+   "p": 5
+  },
+  {
+   "cfg": [
+    4,
+    2,
+    2,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 9039,
+   "designated": true,
+   "perpoint": true,
+   "p": 3
+  },
+  {
+   "cfg": [
+    2,
+    3,
+    3,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 9043,
+   "designated": true,
+   "L": 3,
+   "eadapt": true
+  }
  ]
 }

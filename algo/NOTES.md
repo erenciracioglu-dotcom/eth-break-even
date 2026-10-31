@@ -118,3 +118,16 @@ Qmax = floor(max_log2D(lam, regime) / (2 log2 r)).
   and return smallprime=True. The referee counts smallprime parameters only when its hidden checks of
   construction.gf_rows(aux, des, p) pass (Definition 3.1(4) at every GF(p^2) node and the weighted count
   from Taylor data at the nodes).
+
+## Version 9 of the cost model (2026-10-31)
+
+- Parameter edges (bool, needs contract): Counter.taylor_edges(t) computes the Taylor data H(t + z) mod z^J
+  inside the group-by-group contraction. At point t a replaced occurrence (clause in group d, variable in
+  group a != d) is an edge: its row meets only the groups d and a, and its z-part on group a has no
+  z^0 term. Every clause is expanded multilinearly in these z-parts, so the contraction carries one bit per
+  open edge (at most J - 1 bits set) instead of enumerating one restricted sum per set U. The Taylor term
+  becomes E H2(x / E) with E = (1 + delta) m_eff eps(r), eps(r) = assembly_public.edges_factor(r) (about
+  1/2), instead of H2(x). Pass edges=True to exponents_over_R / exponent_of (keyword) together with
+  contract=True and return edges=True. The referee counts edges parameters only when its hidden checks pass
+  (two-group support of every replaced row at every point, taylor_edges equal to a direct evaluation of the
+  Taylor data at every point, exact and weighted counts).

@@ -1,4 +1,4 @@
-"""FROZEN cost assembly (the referee scores with this file). Version 8 (2026-10-31).
+"""FROZEN cost assembly (the referee scores with this file). Version 9 (2026-10-31).
 
 Bounded-occurrence 3-CNF (each variable in <= 3 clauses, clauses of width <= 3), counting
 algorithm of Sections 2-4 of "The Exponential Time Hypothesis is False". Exponents per
@@ -10,7 +10,8 @@ Editing that copy does not change any score.
 Parameters: r, Q, R, A0 (integers), regime (string), delta (float, regime "tight" only),
 designated (bool, default False), aggregated (bool, default False), units (bool, default False),
 chunk (int, default 0), modular (bool, default False), perpoint (bool, default False),
-eadapt (bool, default False), contract (bool, default False), smallprime (bool, default False).
+eadapt (bool, default False), contract (bool, default False), smallprime (bool, default False),
+edges (bool, default False).
 
 Regimes (how many labels D may be balanced and how many copies h that costs):
   paper    : Lemma 4.5 as written, 2(b+w) D^2 <= M, h <= M/D + sqrt(2(b+w) M)
@@ -99,8 +100,21 @@ value is a residue mod p: log2 p bits with p the least odd prime above max(R - 1
 log2(2Q). The referee checks GF(p^2) rows (construction.gf_rows) with p < Q: Definition 3.1(4) at
 every node, P(0) = delta, degree, and the weighted count recovered from Taylor data at the nodes.
 
-A score that uses designated, aggregated, units, chunk, modular, perpoint, eadapt, contract or
-smallprime also needs the verify gate to confirm exact counts with that construction or counting
+edges = True (head extension v9, audited as a sketch; needs contract): at a point t the row of a
+replaced occurrence (clause in group d, variable in group a) meets only the groups d and a, and its
+z-part on group a is B_i = z * (...) (the factor 1 - T / t vanishes at t). Expanding every clause
+multilinearly in the B_i, H(t + z) mod z^J is a sum over sets S of such occurrences with |S| < J of
+products over the groups, so the group-by-group elimination of 'contract' can carry one bit per open
+occurrence (one end processed, the other not) instead of enumerating one restricted sum per set U.
+At the worst elimination step the open and touched occurrences are a share
+eps(r) = max_k [2(k - 1)(r - k) + 2(r - 1)] / r^2 (about 1/2) of the replaced ones, so the Taylor term
+becomes E H2(x / E) with E = (1 + delta) m_eff eps(r) instead of H2(x) (E when x >= E / 2), added to
+the contracted measurement term (an upper bound: both maxima are taken separately). The referee checks
+the two-group support of every replaced row on real designs and exact (and weighted) counts with
+Counter.taylor_edges against a frozen direct evaluation of the Taylor data at every point.
+
+A score that uses designated, aggregated, units, chunk, modular, perpoint, eadapt, contract, smallprime
+or edges also needs the verify gate to confirm exact counts with that construction or counting
 routine (see referee.py).
 """
 import math
@@ -319,6 +333,25 @@ def _inner_eadapt(Q, es, Rs, perpoint):
     return np.where(full, 0.0, bad)
 
 
+def edges_factor(r):
+    """eps(r): share of the replaced occurrences whose edge bit is open or touched while sequential
+    elimination processes the worst group (v9 'edges')."""
+    r = int(r)
+    if r < 2:
+        return 1.0
+    return max(2 * (k - 1) * (r - k) + 2 * (r - 1) for k in range(1, r + 1)) / float(r * r)
+
+
+def taylor_edges(x, r, m):
+    """(1/n) log2 sum_{j <= x n} C(E n, j) with E = m * eps(r) (edge bits instead of sets U)."""
+    E = m * edges_factor(r)
+    if x <= 0:
+        return 0.0
+    if x >= 0.5 * E:
+        return E
+    return E * H2(x / E)
+
+
 def contract_factor(r):
     """phi(r): share of the half-bonds that sequential elimination of the r groups enumerates at once."""
     r = int(r)
@@ -367,6 +400,7 @@ def _extra(params, regime):
     perpoint, eadapt = _flag(params, "perpoint"), _flag(params, "eadapt")
     contract = _flag(params, "contract")
     smallprime = _flag(params, "smallprime")
+    edges = _flag(params, "edges")
     delta = 1.0
     if regime == "tight":
         delta = float(params["delta"])
@@ -384,7 +418,9 @@ def _extra(params, regime):
         raise ValueError("contract needs aggregated = True")
     if smallprime and not modular:
         raise ValueError("smallprime needs modular = True")
-    return delta, designated, aggregated, units, chunk, modular, perpoint, eadapt, contract, smallprime
+    if edges and not contract:
+        raise ValueError("edges needs contract = True")
+    return delta, designated, aggregated, units, chunk, modular, perpoint, eadapt, contract, smallprime, edges
 
 
 def exponent_of(params, lam, decision=False):
@@ -395,7 +431,7 @@ def exponent_of(params, lam, decision=False):
         regime = params.get("regime", "paper")
         if regime not in REGIMES:
             return dict(valid=False, reason=f"unknown regime {regime}")
-        delta, designated, aggregated, units, chunk, modular, perpoint, eadapt, contract, smallprime = _extra(params, regime)
+        delta, designated, aggregated, units, chunk, modular, perpoint, eadapt, contract, smallprime, edges = _extra(params, regime)
     except Exception as exc:                    # malformed parameters
         return dict(valid=False, reason=f"bad params: {exc}")
     if r < 2 or Q < 1 or R < 1 or A0 < 0 or A0 + R - 1 > Q:
@@ -407,17 +443,21 @@ def exponent_of(params, lam, decision=False):
         return dict(valid=False, reason="label space D too large for the balancing regime")
     out = tail_out(Q, r, R, A0, perpoint, eadapt)
     rows_per_n = groups_per_row(r) * hD_over_n(lam, log2D, regime, delta, designated, units, chunk) * out
-    terms = dict(taylor=taylor_term(occ_per_n(designated, units, chunk) * row_degree(R) / Q, aggregated),
+    m_occ = occ_per_n(designated, units, chunk)
+    tay = (taylor_edges(m_occ * row_degree(R) / Q, r, (1.0 + delta) * m_occ) if edges
+           else taylor_term(m_occ * row_degree(R) / Q, aggregated))
+    terms = dict(taylor=tay,
                  meas=rows_per_n * value_bits(Q, modular, smallprime, R) * (contract_factor(r) if contract else 1.0),
                  groups=1.0 / r)
     return dict(valid=True, e=sum(terms.values()), terms=terms, out=out, log2D=log2D, regime=regime,
                 delta=delta, designated=designated, aggregated=aggregated, units=units, chunk=chunk,
-                modular=modular, perpoint=perpoint, eadapt=eadapt, contract=contract, smallprime=smallprime,
+                modular=modular, perpoint=perpoint, eadapt=eadapt, contract=contract, smallprime=smallprime, edges=edges,
                 decision=bool(decision))
 
 
 def exponents_over_R(lam, r, Q, Rs, regime, delta=1.0, designated=False, aggregated=False, units=False,
-                     chunk=0, modular=False, perpoint=False, eadapt=False, contract=False, smallprime=False):
+                     chunk=0, modular=False, perpoint=False, eadapt=False, contract=False, smallprime=False,
+                     edges=False):
     """Vectorised helper for searches: e for each interval length in Rs (best A0 each; A0 = 0 with
     eadapt, where the windows are fixed by the equal-pair count)."""
     Rs = np.asarray(Rs, np.int64)
@@ -443,7 +483,10 @@ def exponents_over_R(lam, r, Q, Rs, regime, delta=1.0, designated=False, aggrega
     log2D = 2 * Q * math.log2(r)
     rows = groups_per_row(r) * hD_over_n(lam, log2D, regime, delta, designated, units, chunk) * best
     m = occ_per_n(designated, units, chunk)
-    tay = np.array([taylor_term(m * row_degree(int(R)) / Q, aggregated) for R in Rs])
+    if edges:
+        tay = np.array([taylor_edges(m * row_degree(int(R)) / Q, r, (1.0 + delta) * m) for R in Rs])
+    else:
+        tay = np.array([taylor_term(m * row_degree(int(R)) / Q, aggregated) for R in Rs])
     if smallprime:
         vb = np.array([value_bits(Q, modular, True, int(R)) for R in Rs])
     else:
@@ -453,3 +496,4 @@ def exponents_over_R(lam, r, Q, Rs, regime, delta=1.0, designated=False, aggrega
 # VERSION6_MARK
 # VERSION7_MARK
 # VERSION8_MARK
+# VERSION9_MARK

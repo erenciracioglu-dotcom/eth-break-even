@@ -249,6 +249,26 @@ it are reverted.
   1 - T alpha_s instead of 1 - T / alpha_s, constant identity rows) fail on every frozen design.
   Caveat: head-level sketch, not peer reviewed.
 
+- edges [AUDITED as a head proof sketch, 2026-10-31 18:20; the two-group support of the rows and
+  taylor_edges against a direct evaluation of the Taylor data are checked by referee v9 whenever a score uses it]:
+  1. Two-group support: M0[u, y] != 0 only if y agrees with u or with u swapped at every position, so at point
+     t the group a_y(t) is a_u(t) or d_u(t); hence every coefficient of P_u(T) is zero outside the clause's
+     group d and the variable's group a (also on real designs: copies map labels to variables of the same group).
+  2. On group a != d every column y has t in S(u, y), so Phi_uy(t + z) = (-z / t) Phi'_uy(t + z): the z-part
+     B_i there has no z^0 term, while the constant part is the measured (I - M0) row (Lemma 4.3).
+  3. Multilinearity: Phi_f(A + B) = sum over subsets E of the clause's edges of (prod_E B_i) d_E Phi_f(A), so
+     H(t + z) mod z^J = sum over edge sets E with |E| < J of products over groups (A depends on its own group
+     and on half-bond keys, B_i on group a_i only). Sequential elimination carries the bits of the edges
+     between processed and unprocessed groups; the step for group k touches the edges of
+     2(k - 1)(r - k) + 2(r - 1) ordered group pairs, each holding about m_eff n / r^2 edges, so at most
+     sum_{j < J} C(E n, j) bit patterns with E = m_eff eps(r) (times 1 + delta for fluctuations); this
+     replaces the sum over sets U (C(n, <= q)). The key states and the 2^{n/r} own assignments multiply as
+     in 'contract'; the cost model adds the two maxima (an upper bound).
+  Evidence: the head's reference Counter.taylor_edges equals the direct Taylor data at every point and gives
+  exact and weighted (mod p, residue keys) counts on 63 designs (r = 2, 3, 4; with and without designation,
+  chunk units, perpoint and eadapt); a variant without the edge terms fails. Caveat: head-level sketch,
+  not peer reviewed.
+
 ## Results that depend on a provisional regime
 - 2026-10-31 12:14:25 iter 002 (T2): ppsz threshold 1,117,111 uses regime 'freedman' -> PROVISIONAL until the head audits that regime. [head: regime audited 12:05, this result stands as audited]
 - 2026-10-31 12:28:56 iter 003 (T3): ppsz threshold 1,070,239 uses regime 'tight' -> PROVISIONAL until the head audits that regime.

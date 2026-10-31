@@ -1,4 +1,4 @@
-"""FROZEN referee gates, version 8. Usage: python gates.py <algo_dir> <verify|measure|score> <out_json>
+"""FROZEN referee gates, version 9. Usage: python gates.py <algo_dir> <verify|measure|score> <out_json>
 
 Runs the agent's code from <algo_dir> in this separate process; only frozen code decides.
 Version 2 adds the 'tight' regime and, when construction.build_design accepts designated=True,
@@ -24,6 +24,9 @@ pair {g, h} (the bond condition behind assembly 'contract').
 Version 8 adds, when construction.gf_rows exists, frozen checks of replacement rows over GF(p^2) with a
 prime p < Q (assembly 'smallprime'): nodes, P(0) = delta, degree, Definition 3.1(4) at every node mod p,
 and the weighted count from Taylor data at the nodes (direct evaluation, Hermite interpolation).
+Version 9 adds, when counting.Counter offers taylor_edges, a frozen check that every replaced row meets
+only the groups of its clause and its variable at every point, and that taylor_edges(t) equals the frozen
+direct Taylor data at every point with exact (and weighted) counts (assembly 'edges').
 """
 import inspect
 import math as _math_unused
@@ -872,6 +875,137 @@ def smallprime_verify(out, Aux, build_design):
     out["ok"] &= ok_all
 
 
+# ------------------------------------------------ v9: edge contraction of the Taylor terms
+def edge_problems(aux, des):
+    """Frozen: at every point t every replaced (non-designated) occurrence row, every coefficient of T,
+    is zero on the variables outside the clause's group and the variable's group."""
+    Prow, av, df, occ = np.asarray(des["Prow"]), np.asarray(des["av"]), np.asarray(des["df"]), des["occ"]
+    desig = np.asarray(des.get("desig", np.zeros(len(occ), bool)), bool)
+    probs = []
+    for t in range(1, aux.Q + 1):
+        for i, (f, v) in enumerate(occ):
+            if desig[i]:
+                continue
+            g_cl, g_var = int(df[f][t - 1]), int(av[v][t - 1])
+            other = np.nonzero((av[:, t - 1] != g_cl) & (av[:, t - 1] != g_var))[0]
+            if other.size and np.any(Prow[:, i][:, other]):
+                probs.append(f"t={t}, occurrence {i}: the row meets a group other than its clause's and variable's")
+                if len(probs) >= 5:
+                    return probs
+    return probs
+
+
+def _smul_int(a, b, p):
+    J = a.shape[0]
+    c = np.zeros(np.broadcast_shapes(a.shape, b.shape), np.int64)
+    for i in range(J):
+        if not np.any(a[i]):
+            continue
+        c[i:] = (c[i:] + (a[i][None, ...] * b[:J - i]) % p) % p
+    return c
+
+
+def direct_taylor(aux, des, t, p, w=None):
+    """Frozen: sum_x w(x) prod_clauses Phi(P(t + z) x) mod (p, z^J), J = d (R - 1) // Q + 1, with d the
+    number of replaced clause occurrences; rows P = Prow / Lden mod p (integer point t)."""
+    occ, clauses = des["occ"], des["clauses"]
+    desig = np.asarray(des.get("desig", np.zeros(len(occ), bool)), bool)
+    n, Q, R = des["n"], aux.Q, aux.R
+    d = sum(1 for i, (f, _v) in enumerate(occ) if f < len(clauses) and not desig[i])
+    J = d * (R - 1) // Q + 1
+    invL = pow(int(aux.Lden) % p, p - 2, p)
+    P = (np.asarray(des["Prow"], np.int64) % p) * invL % p
+    K = P.shape[0]
+    S = np.zeros((J,) + P.shape[1:], np.int64)
+    for i in range(min(K, J)):
+        acc = np.zeros(P.shape[1:], np.int64)
+        for k in range(i, K):
+            acc = (acc + (math.comb(k, i) * pow(t, k - i, p)) % p * P[k]) % p
+        S[i] = acc
+    N = 1 << n
+    X = ((np.arange(N)[:, None] >> np.arange(n)[None, :]) & 1).astype(np.int64)
+    wX = np.ones(N, np.int64)
+    if w is not None:
+        for v in range(n):
+            wX = np.where(X[:, v] == 1, wX * (int(w[v]) % p) % p, wX)
+    forms = np.stack([(X @ S[i].T) % p for i in range(J)])          # (J, N, M)
+    occ_index = {fv: i for i, fv in enumerate(occ)}
+    total = np.zeros((J, N), np.int64)
+    total[0] = 1
+    for f, cl in enumerate(clauses):
+        prod = np.zeros((J, N), np.int64)
+        prod[0] = 1
+        for v, pos in cl:
+            s = forms[:, :, occ_index[(f, v)]]
+            if pos:
+                u = (-s) % p
+                u[0] = (1 - s[0]) % p
+            else:
+                u = s
+            prod = _smul_int(prod, u, p)
+        phi = (-prod) % p
+        phi[0] = (1 - prod[0]) % p
+        total = _smul_int(total, phi, p)
+    return (total * wX[None, :] % p).sum(axis=1) % p
+
+
+def edges_verify(out, Aux, build_design, Counter):
+    """v9 section of the verify gate: Counter.taylor_edges(t) equals the frozen direct Taylor data at every
+    point, Hermite interpolation gives the exact (or weighted) count, and every replaced row meets at most
+    the two groups of its edge at every point."""
+    out["edges_supported"] = bool(out.get("contract_verified")) and hasattr(Counter, "taylor_edges")
+    out["edges_verified"] = False
+    if not out["edges_supported"]:
+        return
+    import math
+    ok_all, ran = True, 0
+    for c in CASES["edges_counts"]:
+        pp, ea = bool(c.get("perpoint")), bool(c.get("eadapt"))
+        L, desg, p = int(c.get("L", 0)), bool(c.get("designated")), c.get("p")
+        if (pp and not out.get("perpoint_supported")) or (ea and not out.get("eadapt_supported")):
+            continue
+        if (desg and not out["designated_supported"]) or (L and not out["chunk_supported"]) \
+                or (p and not out["modular_supported"]):
+            continue
+        ran += 1
+        rng = np.random.default_rng(c["seed"])
+        aux = Aux(*c["cfg"], **pe_kw(pp, ea))
+        cl = make_formula(c, rng)
+        kw = {"designated": True} if desg else {}
+        if L:
+            kw.update(units=True, chunk=L)
+        des = build_design(aux, c["n"], cl, rng, **kw)
+        probs = edge_problems(aux, des)
+        w = None
+        if p:
+            p = int(p)
+            wrng = np.random.default_rng(c["seed"] + 1)
+            for _ in range(16):
+                w = wrng.integers(1, p, size=c["n"])
+                if weighted_brute(c["n"], cl, w, p):
+                    break
+            C = Counter(aux, des, p=p, residue_keys=True, weights=w)
+            ref = weighted_brute(c["n"], cl, w, p)
+        else:
+            C = Counter(aux, des)
+            ref = brute(c["n"], cl)
+        pc = int(C.p)
+        data = {}
+        for t in range(1, aux.Q + 1):
+            got = np.asarray(C.taylor_edges(t), np.int64).reshape(-1) % pc
+            exp = direct_taylor(aux, des, t, pc, w)
+            data[t] = got
+            if got.shape != exp.shape or not np.array_equal(got, exp):
+                probs.append(f"t={t}: taylor_edges differs from the direct Taylor data")
+        h0 = int(C.hermite_H0(data)) % (p if p else (1 << 62))
+        ok = (h0 == ref) and not probs
+        out["items"].append({"kind": "edges_count", "cfg": c["cfg"], "n": c["n"], "perpoint": pp, "eadapt": ea,
+                             "L": L, "p": p, "ok": ok, "H0": h0, "reference": ref, "problems": probs[:5]})
+        ok_all &= ok
+    out["edges_verified"] = bool(ok_all and ran > 0)
+    out["ok"] &= ok_all
+
+
 def make_formula(c, rng):
     from construction import random_formula, random_bounded_formula
     if c["type"] == "random":
@@ -1073,6 +1207,7 @@ def verify():
     pe_verify(out, Aux, build_design, Counter)
     contract_verify(out, Aux, build_design, Counter)
     smallprime_verify(out, Aux, build_design)
+    edges_verify(out, Aux, build_design, Counter)
     return out
 
 
@@ -1250,3 +1385,4 @@ if __name__ == "__main__":
 # VERSION6_MARK
 # VERSION7_MARK
 # VERSION8_MARK
+# VERSION9_MARK
