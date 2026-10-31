@@ -440,10 +440,29 @@ def fibres_at(aux, des, t, p=None):
     return out
 
 
+def flag_supported(Aux, name):
+    """A construction flag counts as supported when Aux accepts it and records it (aux.<name> True)."""
+    if not supports_param(Aux.__init__, name):
+        return False
+    try:
+        return bool(getattr(Aux(2, 2, 2, 0, **{name: True}), name, False))
+    except Exception:
+        return False
+
+
+def pe_kw(pp, ea):
+    kw = {}
+    if pp:
+        kw["perpoint"] = True
+    if ea:
+        kw["eadapt"] = True
+    return kw
+
+
 def pe_verify(out, Aux, build_design, Counter):
     """v6 section of the verify gate."""
-    out["perpoint_supported"] = supports_param(Aux.__init__, "perpoint")
-    out["eadapt_supported"] = supports_param(Aux.__init__, "eadapt")
+    out["perpoint_supported"] = flag_supported(Aux, "perpoint")
+    out["eadapt_supported"] = flag_supported(Aux, "eadapt")
     out["perpoint_verified"] = False
     out["eadapt_verified"] = False
     if not (out["perpoint_supported"] or out["eadapt_supported"]):
@@ -461,7 +480,7 @@ def pe_verify(out, Aux, build_design, Counter):
         pp, ea = bool(c.get("perpoint")), bool(c.get("eadapt"))
         if (pp and not out["perpoint_supported"]) or (ea and not out["eadapt_supported"]):
             continue
-        aux = Aux(*c["cfg"], perpoint=pp, eadapt=ea)
+        aux = Aux(*c["cfg"], **pe_kw(pp, ea))
         rep = aux.report()
         probs = [k for k in LEMMA_KEYS if not bool(rep.get(k))]
         probs = ([f"report fails: {', '.join(probs)}"] if probs else []) + aux_pe_problems(aux, pp, ea)
@@ -480,7 +499,7 @@ def pe_verify(out, Aux, build_design, Counter):
                 or (p and not out["modular_supported"]):
             continue
         rng = np.random.default_rng(c["seed"])
-        aux = Aux(*c["cfg"], perpoint=pp, eadapt=ea)
+        aux = Aux(*c["cfg"], **pe_kw(pp, ea))
         cl = make_formula(c, rng)
         kw = {"designated": True} if desg else {}
         if L:
