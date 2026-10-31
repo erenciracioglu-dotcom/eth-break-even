@@ -30,6 +30,15 @@ adds 2 log2 delta - 7 bits) and through exponents_over_R(..., True) (taylor term
 of 3 occurrences per variable, h D / n = 2(1 + delta) instead of 3(1 + delta)). The returned
 dict carries designated=True. The optimum moves to a larger r (about 48-50 at lam = 2.2e6,
 72 at lam = 5e6) and e drops from 0.30409 to 0.22587 at lam = 2224173.
+
+units = True (head extension v4, needs designated=True) is used on the same path: a greedy
+maximal matching of clauses turns whole clauses into "units" that share one group schedule, so
+all their occurrences are read directly and only M_eff <= 12n/7 occurrences carry replacement
+rows. It enters through max_log2D(lam, "tight", delta, True, True) (taylor x = 12(R-1)/(7Q),
+h D / n = (1 + delta) 12/7, D ln(76 D) <= delta^2 M_eff / 1024) and through
+exponents_over_R(..., True, True, True). The optimum moves to r ~ 72-77 at lam = 2.2e6 and e
+drops from 0.19921 to 0.17813 at lam = 2224173. Legacy regime paths ("paper"/"freedman") keep
+units=False.
 """
 import math
 import time
@@ -41,6 +50,7 @@ RSET = [2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52,
         68, 72, 80, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096]
 REGIME = "tight"
 AGGREGATED = True                    # head extension v3: Lemma 3.3 summed per U
+UNITS = True                         # head extension v4: clause units (greedy matching), needs designated
 
 # delta grid for the tight regime (delta = 1.0 is exactly "freedman")
 DELTAS = (1.0, 0.3, 0.1, 0.03, 0.01, 0.003, 0.001, 0.0001)
@@ -87,7 +97,7 @@ def _Qmax(mld, r):
     return int(math.floor(mld / (2 * math.log2(r))))
 
 
-def _mk(r, Q, R, A0, regime, delta, designated=False, aggregated=AGGREGATED):
+def _mk(r, Q, R, A0, regime, delta, designated=False, aggregated=AGGREGATED, units=UNITS):
     p = dict(r=int(r), Q=int(Q), R=int(R), A0=int(A0), regime=regime)
     if regime == "tight":
         p["delta"] = float(delta)
@@ -95,24 +105,26 @@ def _mk(r, Q, R, A0, regime, delta, designated=False, aggregated=AGGREGATED):
         p["designated"] = True
     if aggregated:
         p["aggregated"] = True
+    if units:
+        p["units"] = True
     return p
 
 
-def _scan(lam, regime, delta, r, Q, Rs, best, designated=False, aggregated=AGGREGATED):
+def _scan(lam, regime, delta, r, Q, Rs, best, designated=False, aggregated=AGGREGATED, units=UNITS):
     """Score the interval lengths Rs for (r, Q); keep the best candidate in `best`."""
     Rs = np.unique(Rs.astype(np.int64))
     Rs = Rs[(Rs >= 1) & (Rs <= Q + 1)]
     if Rs.size == 0:
         return best
-    e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated)
+    e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated, units)
     i = int(np.argmin(e))
     if best is None or e[i] < best[0]:
         return (float(e[i]), _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated,
-                                 aggregated))
+                                 aggregated, units))
     return best
 
 
-def _coarse(lam, regime, delta, mld, designated=False, aggregated=AGGREGATED):
+def _coarse(lam, regime, delta, mld, designated=False, aggregated=AGGREGATED, units=UNITS):
     """Stage 0: coarse scan over RSET x geometric Q x geometric R (guarantees a valid answer)."""
     best = None
     for r in RSET:
@@ -127,11 +139,11 @@ def _coarse(lam, regime, delta, mld, designated=False, aggregated=AGGREGATED):
         for Q in Qs:
             Q = int(Q)
             Rs = np.unique(np.round(np.geomspace(1, Q + 1, N_R_COARSE)).astype(np.int64))
-            best = _scan(lam, regime, delta, r, Q, Rs, best, designated, aggregated)
+            best = _scan(lam, regime, delta, r, Q, Rs, best, designated, aggregated, units)
     return best
 
 
-def _cheap_r_scan(lam, regime, delta, mld, rs, designated=False, aggregated=AGGREGATED):
+def _cheap_r_scan(lam, regime, delta, mld, rs, designated=False, aggregated=AGGREGATED, units=UNITS):
     """Stage 1: Q = Qmax, moderate R grid, for every r in rs. Returns [(e, r, params)]."""
     out = []
     for r in rs:
@@ -143,15 +155,16 @@ def _cheap_r_scan(lam, regime, delta, mld, rs, designated=False, aggregated=AGGR
         Rs = Rs[(Rs >= 1) & (Rs <= Q + 1)]
         if Rs.size == 0:
             continue
-        e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated)
+        e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated, units)
         i = int(np.argmin(e))
         out.append((float(e[i]), int(r),
-                    _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated, aggregated)))
+                    _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated, aggregated,
+                        units)))
     return out
 
 
 def _deep(lam, regime, delta, r, Qmax, best, t_start, designated=False,
-          aggregated=AGGREGATED, deadline=DEADLINE):
+          aggregated=AGGREGATED, deadline=DEADLINE, units=UNITS):
     """Stage 2: full Q ladder, dense R grid and an integer-R sweep for one r."""
     for Q in _Qladder(Qmax):
         if time.time() - t_start > deadline:
@@ -160,11 +173,12 @@ def _deep(lam, regime, delta, r, Qmax, best, t_start, designated=False,
         Rs = Rs[(Rs >= 1) & (Rs <= Q + 1)]
         if Rs.size == 0:
             continue
-        e, A = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated)
+        e, A = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated, units)
         i = int(np.argmin(e))
         if best is None or e[i] < best[0]:
             best = (float(e[i]),
-                    _mk(r, Q, int(Rs[i]), int(A[i]), regime, delta, designated, aggregated))
+                    _mk(r, Q, int(Rs[i]), int(A[i]), regime, delta, designated, aggregated,
+                        units))
         # every integer R between the grid neighbours of the best R
         lo = int(Rs[i - 1]) if i > 0 else 1
         hi = int(Rs[i + 1]) if i + 1 < Rs.size else int(Q + 1)
@@ -172,7 +186,8 @@ def _deep(lam, regime, delta, r, Qmax, best, t_start, designated=False,
         hi = min(int(Q + 1), max(hi, int(Rs[i]) + MAX_INT_R // 2))
         hi = min(hi, lo + MAX_INT_R)
         if hi > lo:
-            best = _scan(lam, regime, delta, r, Q, np.arange(lo, hi + 1, dtype=np.int64), best, designated)
+            best = _scan(lam, regime, delta, r, Q, np.arange(lo, hi + 1, dtype=np.int64), best,
+                         designated, aggregated, units)
     return best
 
 
@@ -202,14 +217,15 @@ def _r_window(r_best):
 def _single_regime(lam, regime, t_start):
     """Legacy path: explicit regime ("paper" / "freedman"), three-stage search."""
     mld = max_log2D(lam, regime)
-    best = _coarse(lam, regime, 1.0, mld, False, False)
+    best = _coarse(lam, regime, 1.0, mld, False, False, False)
     if best is None:
         r0 = int(2.0 ** (mld / 2.0))
         if r0 < 2 or 2 * math.log2(r0) > mld + 1e-9:
             return dict(r=2, Q=1, R=1, A0=0, regime=regime)   # regime allows no labels at all
         return dict(r=int(r0), Q=1, R=1, A0=0, regime=regime)
     rs = _r_window(best[1]["r"])
-    per_r = [(e, r, p) for (e, r, p) in _cheap_r_scan(lam, regime, 1.0, mld, rs, False, False)
+    per_r = [(e, r, p) for (e, r, p) in _cheap_r_scan(lam, regime, 1.0, mld, rs, False, False,
+                                                      False)
              if time.time() - t_start <= DEADLINE]
     for _e, _r, p in per_r:
         if best is None or _e < best[0]:
@@ -220,7 +236,8 @@ def _single_regime(lam, regime, t_start):
     for r in deep_rs:
         if time.time() - t_start > DEADLINE:
             break
-        best = _deep(lam, regime, 1.0, r, _Qmax(mld, r), best, t_start, False, False)
+        best = _deep(lam, regime, 1.0, r, _Qmax(mld, r), best, t_start, False, False,
+                     DEADLINE, False)
     return _polish(lam, best, regime, 1.0)[1]
 
 
@@ -231,17 +248,18 @@ def choose_params(lam, regime=None):
 
     regime, delta_ref = "tight", REF_DELTA
     designated = True                      # head extension v2: designated occurrences
-    mld_ref = max_log2D(lam, regime, delta_ref, designated)
+    units = UNITS                          # head extension v4: clause units
+    mld_ref = max_log2D(lam, regime, delta_ref, designated, units)
 
     # ---------- stage 0: coarse scan at the reference delta (valid answer + r window) -------
-    best = _coarse(lam, regime, delta_ref, mld_ref, designated, AGGREGATED)
+    best = _coarse(lam, regime, delta_ref, mld_ref, designated, AGGREGATED, units)
     if best is None:
         r0 = int(2.0 ** (mld_ref / 2.0))
         if r0 < 2 or 2 * math.log2(r0) > mld_ref + 1e-9:
             return dict(r=2, Q=1, R=1, A0=0, regime=regime, delta=1.0, designated=True,
-                        aggregated=AGGREGATED)                        # regime allows no labels
+                        aggregated=AGGREGATED, units=units)     # regime allows no labels
         return dict(r=int(r0), Q=1, R=1, A0=0, regime=regime, delta=delta_ref, designated=True,
-                    aggregated=AGGREGATED)
+                    aggregated=AGGREGATED, units=units)
     rs = _r_window(best[1]["r"])
 
     # ---------- stage 1: cheap Q = Qmax r scan for every delta in the grid ----------
@@ -249,8 +267,8 @@ def choose_params(lam, regime=None):
     for d in DELTAS:
         if time.time() - t_start > DEADLINE:
             break
-        mld = max_log2D(lam, regime, d, designated)
-        per_r = _cheap_r_scan(lam, regime, d, mld, rs, designated, AGGREGATED)
+        mld = max_log2D(lam, regime, d, designated, units)
+        per_r = _cheap_r_scan(lam, regime, d, mld, rs, designated, AGGREGATED, units)
         if not per_r:
             continue
         per_delta.append((min(e for e, _r, _p in per_r), d, per_r))
@@ -263,7 +281,7 @@ def choose_params(lam, regime=None):
     # ---------- stage 2: deep refinement of the best r for the best few deltas ----------
     per_delta.sort(key=lambda t: t[0])
     for _e0, d, per_r in per_delta[:N_DEEP_DELTAS]:
-        mld = max_log2D(lam, regime, d, designated)
+        mld = max_log2D(lam, regime, d, designated, units)
         deep_rs = [r for _e, r, _p in sorted(per_r, key=lambda t: t[0])[:N_DEEP_R_AGG]]
         if best[1].get("delta") == d and best[1]["r"] not in deep_rs:
             deep_rs.append(best[1]["r"])
@@ -271,6 +289,6 @@ def choose_params(lam, regime=None):
             if time.time() - t_start > DEADLINE_TIGHT:
                 break
             best = _deep(lam, regime, d, r, _Qmax(mld, r), best, t_start, designated,
-                                AGGREGATED, DEADLINE_TIGHT)
+                                AGGREGATED, DEADLINE_TIGHT, units)
 
     return _polish(lam, best, regime, best[1].get("delta", delta_ref))[1]

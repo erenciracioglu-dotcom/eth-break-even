@@ -9,8 +9,9 @@ PUBLIC API (the referee calls these; keep names and return fields):
   Aux(r, Q, R, A0).report() -> dict with f_interp, eigen, orthogonal, support, P0_delta,
                                degree, separation, min_kernel_dim
   random_formula(n, m, rng), random_bounded_formula(n, rng)
-  build_design(aux, n, clauses, rng, designated=False) -> dict (keys used: Prow, Chat, av, df,
-      occ, h, n, M, clauses; plus designated, desig, M_eff when designated=True)
+  build_design(aux, n, clauses, rng, designated=False, units=False) -> dict (keys used: Prow,
+      Chat, av, df, occ, h, n, M, clauses; plus designated, desig, M_eff when designated=True;
+      plus units, unit_of always)
   check_design(aux, des) -> dict (keys used: kernel_condition, P0_delta, min_kernel_dim,
                                max_groups_per_row, max_restricted_abs)
 """
@@ -269,7 +270,7 @@ def random_formula(n, m, rng, k=3):
     return clauses
 
 
-def build_design(aux, n, clauses, rng, designated=False):
+def build_design(aux, n, clauses, rng, designated=False, units=False):
     """Sections 4.4-4.5: schedules, labels, copies, rows P_{f,v}(T), matrices C_{t,g}.
 
     designated=True (head extension, cost model v2): every factor f (each clause and each
@@ -280,15 +281,54 @@ def build_design(aux, n, clauses, rng, designated=False):
     position, so labels, copies, h, pos_y, pos_v and Chat come from the non-designated
     occurrences only (h = 0 when there are none). Extra keys: designated, desig (bool flag per
     occurrence, in occ order), M_eff = number of non-designated occurrences.
+
+    units=True (head extension, cost model v4; needs designated=True): a greedy maximal
+    matching of the clauses in order -- a clause of at least 2 variables is matched when none
+    of its variables is in a unit yet, and its variables then form a "unit": unit_of[v] is the
+    clause's first variable and av[v] = av[first variable], so the whole unit shares one group
+    schedule. Variables of unmatched clauses are their own unit. Designation then happens per
+    unit: for every factor f the unit with the most occurrences of f (first such unit in occ
+    order on ties) has ALL its occurrences of f designated, and df[f] = av[v] of one of them;
+    so every matched clause is read entirely directly. With units=False the result is exactly
+    as in v2 (one designated occurrence, the first, per factor). Extra keys: units, unit_of
+    (int array of length n, the head variable of every variable's unit).
     """
+    if units and not designated:
+        raise ValueError("units=True needs designated=True")
     r, Q, R = aux.r, aux.Q, aux.R
     used = {v for cl in clauses for v, _ in cl}
     factors = [[v for v, _ in cl] for cl in clauses] + [[v] for v in range(n) if v not in used]
     av = rng.integers(0, r, size=(n, Q))
     df = rng.integers(0, r, size=(len(factors), Q))
+    unit_of = np.arange(n, dtype=np.int64)
+    if units:
+        in_unit = np.zeros(n, bool)
+        for cl in clauses:
+            vs = [v for v, _ in cl]
+            if len(vs) >= 2 and not any(in_unit[v] for v in vs):
+                head = vs[0]
+                for v in vs:
+                    in_unit[v] = True
+                    unit_of[v] = head
+                    av[v] = av[head]              # one shared group schedule per unit
     occ = [(f, v) for f, sc in enumerate(factors) for v in sc]
+    start = np.concatenate(([0], np.cumsum([len(sc) for sc in factors]))).astype(np.int64)
     desig = np.zeros(len(occ), bool)
-    if designated:
+    if designated and units:
+        for f in range(len(factors)):
+            lo, hi = int(start[f]), int(start[f + 1])
+            cnt, first = {}, {}
+            for j, i in enumerate(range(lo, hi)):
+                u = int(unit_of[occ[i][1]])
+                cnt[u] = cnt.get(u, 0) + 1
+                first.setdefault(u, j)
+            best_c = max(cnt.values())
+            best_u = min((u for u, c in cnt.items() if c == best_c), key=lambda u: first[u])
+            for i in range(lo, hi):
+                if int(unit_of[occ[i][1]]) == best_u:
+                    desig[i] = True
+                    df[f] = av[occ[i][1]]         # every variable of a unit has the same av
+    elif designated:
         seen = set()
         for i, (f, v) in enumerate(occ):
             if f not in seen:
@@ -331,7 +371,8 @@ def build_design(aux, n, clauses, rng, designated=False):
         np.add.at(block, pos_v[c], aux.Cmeas[:, pos_y[c]].T)
         Chat[c * cB:(c + 1) * cB] = block.T
     out = dict(factors=factors, av=av, df=df, occ=occ, labels=labels, copy=copy, h=h,
-               Prow=Prow, Chat=Chat, n=n, M=len(occ), clauses=clauses)
+               Prow=Prow, Chat=Chat, n=n, M=len(occ), clauses=clauses, unit_of=unit_of,
+               units=bool(units))
     if designated:
         out["designated"] = True
         out["desig"] = desig

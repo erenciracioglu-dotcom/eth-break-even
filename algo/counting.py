@@ -78,8 +78,10 @@ class Counter:
         invL = pow(aux.Lden % p, p - 2, p)
         self.P = (des["Prow"] % p) * invL % p                    # (K, M, n), unscaled mod p
         if des.get("designated"):
-            # designated occurrences carry no replacement row: only |I_f| - 1 per clause count
-            d = sum(len(cl) - 1 for cl in clauses)
+            # designated occurrences carry no replacement row: only the clause occurrences
+            # that are NOT designated count (with units a clause may have none of them)
+            d = sum(1 for i, (f, _v) in enumerate(des["occ"])
+                    if f < len(clauses) and not des["desig"][i])
         else:
             d = sum(len(cl) for cl in clauses)
         self.dH = d * (aux.R - 1)                                # deg_T H <= d (R-1)
