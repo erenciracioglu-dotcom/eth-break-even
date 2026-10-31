@@ -624,5 +624,94 @@
    "designated": true,
    "p": 3
   }
+ ],
+ "contract_counts": [
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 6,
+   "m": 9,
+   "type": "random",
+   "seed": 7001
+  },
+  {
+   "cfg": [
+    3,
+    2,
+    2,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 7013,
+   "designated": true,
+   "L": 2
+  },
+  {
+   "cfg": [
+    3,
+    3,
+    3,
+    0
+   ],
+   "n": 6,
+   "m": 0,
+   "type": "bounded",
+   "seed": 7019,
+   "designated": true,
+   "perpoint": true
+  },
+  {
+   "cfg": [
+    3,
+    2,
+    2,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 7027,
+   "designated": true,
+   "L": 2,
+   "perpoint": true,
+   "eadapt": true,
+   "p": 5
+  },
+  {
+   "cfg": [
+    4,
+    2,
+    2,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 7039,
+   "designated": true,
+   "perpoint": true,
+   "p": 3
+  },
+  {
+   "cfg": [
+    2,
+    3,
+    3,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 7043,
+   "designated": true,
+   "L": 3,
+   "eadapt": true
+  }
  ]
 }

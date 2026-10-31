@@ -1,4 +1,4 @@
-"""FROZEN referee gates, version 6. Usage: python gates.py <algo_dir> <verify|measure|score> <out_json>
+"""FROZEN referee gates, version 7. Usage: python gates.py <algo_dir> <verify|measure|score> <out_json>
 
 Runs the agent's code from <algo_dir> in this separate process; only frozen code decides.
 Version 2 adds the 'tight' regime and, when construction.build_design accepts designated=True,
@@ -18,6 +18,9 @@ measurement matrices (Aux.Cmeas_t, design key Chat_t) and of equal-pair windows:
 point with the measurements used there (auxiliary rows and real designs), row counts against the
 frozen formula, two groups per row, restricted sums, P(0) = delta, degree, and exact (or weighted,
 mod p, residue-keyed) counts.
+Version 7 adds, when counting.Counter offers Zagg_contracted, exact (and weighted) counts with the groups
+summed one at a time, and a frozen check that clauses of group g see group h only through the rows of the
+pair {g, h} (the bond condition behind assembly 'contract').
 """
 import inspect
 import json
@@ -527,6 +530,100 @@ def pe_verify(out, Aux, build_design, Counter):
     out["ok"] &= okf["pp"] and okf["ea"]
 
 
+# ------------------------------------------------ v7: contraction of the group sums
+def bond_problems(aux, des):
+    """Frozen check behind 'contract': at every point every measurement row touches at most 2 groups,
+    and for every clause of group g and every other group h, its replacement rows restricted to S_h
+    lie in the span of the rows of the pair {g, h} restricted to S_h (mod a prime)."""
+    Q, r = aux.Q, aux.r
+    Prow = np.asarray(des["Prow"], np.int64)
+    av, df, occ = np.asarray(des["av"]), np.asarray(des["df"]), des["occ"]
+    p = FROZEN_P
+    PrM = Prow % p
+    probs = []
+    for t in range(1, Q + 1):
+        Cm = meas_at(des, t)
+        cols_of = [np.nonzero(av[:, t - 1] == g)[0] for g in range(r)]
+        touch = np.zeros((r, Cm.shape[0]), bool)
+        for g in range(r):
+            if cols_of[g].size:
+                touch[g] = np.any(Cm[:, cols_of[g]] != 0, axis=1)
+        if Cm.shape[0] and int(touch.sum(axis=0).max()) > 2:
+            probs.append(f"t={t}: a measurement row touches more than 2 groups")
+        Pt = np.zeros(PrM.shape[1:], np.int64)
+        for k in range(PrM.shape[0]):
+            Pt = (Pt + (pow(t, k, p) * PrM[k]) % p) % p
+        for g in range(r):
+            rows = [i for i, (f, _v) in enumerate(occ) if df[f][t - 1] == g]
+            if not rows:
+                continue
+            for h in range(r):
+                if h == g or not cols_of[h].size:
+                    continue
+                pair = touch[h] & (touch.sum(axis=0) - touch[g] - touch[h] == 0)
+                sub = Cm[pair][:, cols_of[h]]
+                if not _in_rowspace_mod(sub, Pt[np.ix_(rows, cols_of[h])], p):
+                    probs.append(f"t={t}: clauses of group {g} see group {h} outside the rows of the pair")
+                    break
+            if len(probs) >= 5:
+                break
+        if len(probs) >= 5:
+            break
+    return probs[:5]
+
+
+def contract_verify(out, Aux, build_design, Counter):
+    """v7 section of the verify gate: exact (or weighted) counts with Counter.Zagg_contracted."""
+    out["contract_supported"] = bool(out.get("aggregated_supported")) and hasattr(Counter, "Zagg_contracted")
+    out["contract_verified"] = False
+    if not out["contract_supported"]:
+        return
+    ok_all, ran = True, 0
+    for c in CASES["contract_counts"]:
+        pp, ea = bool(c.get("perpoint")), bool(c.get("eadapt"))
+        L, desg, p = int(c.get("L", 0)), bool(c.get("designated")), c.get("p")
+        if (pp and not out.get("perpoint_supported")) or (ea and not out.get("eadapt_supported")):
+            continue
+        if (desg and not out["designated_supported"]) or (L and not out["chunk_supported"]) \
+                or (p and not out["modular_supported"]):
+            continue
+        ran += 1
+        rng = np.random.default_rng(c["seed"])
+        kw_aux = {}
+        if pp:
+            kw_aux["perpoint"] = True
+        if ea:
+            kw_aux["eadapt"] = True
+        aux = Aux(*c["cfg"], **kw_aux)
+        cl = make_formula(c, rng)
+        kw = {"designated": True} if desg else {}
+        if L:
+            kw.update(units=True, chunk=L)
+        des = build_design(aux, c["n"], cl, rng, **kw)
+        probs = bond_problems(aux, des)
+        if p:
+            p = int(p)
+            wrng = np.random.default_rng(c["seed"] + 1)
+            for _ in range(16):
+                w = wrng.integers(1, p, size=c["n"])
+                if weighted_brute(c["n"], cl, w, p):
+                    break
+            C = Counter(aux, des, p=p, residue_keys=True, weights=w)
+            ref = weighted_brute(c["n"], cl, w, p)
+        else:
+            C = Counter(aux, des)
+            ref = brute(c["n"], cl)
+        data = {t: C.taylor_aggregated(t, Zagg=lambda t_, S, U: C.Zagg_contracted(t_, S, U))
+                for t in range(1, aux.Q + 1)}
+        h0 = int(C.hermite_H0(data)) % (p if p else (1 << 62))
+        ok = (h0 == ref) and not probs
+        out["items"].append({"kind": "contract_count", "cfg": c["cfg"], "n": c["n"], "perpoint": pp, "eadapt": ea,
+                             "L": L, "p": p, "ok": ok, "H0": h0, "reference": ref, "problems": probs[:5]})
+        ok_all &= ok
+    out["contract_verified"] = bool(ok_all and ran > 0)
+    out["ok"] &= ok_all
+
+
 def make_formula(c, rng):
     from construction import random_formula, random_bounded_formula
     if c["type"] == "random":
@@ -726,6 +823,7 @@ def verify():
         out["modular_verified"] = bool(mok and ran > 0 and merged)
         out["ok"] &= mok
     pe_verify(out, Aux, build_design, Counter)
+    contract_verify(out, Aux, build_design, Counter)
     return out
 
 
@@ -901,3 +999,4 @@ if __name__ == "__main__":
     with open(OUT, "w", encoding="utf-8") as fh:
         json.dump(result, fh, indent=1, default=str)
 # VERSION6_MARK
+# VERSION7_MARK

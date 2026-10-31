@@ -95,3 +95,14 @@ Qmax = floor(max_log2D(lam, regime) / (2 log2 r)).
   eadapt parameters only when its hidden checks of Aux(..., eadapt=True) pass.
 - assembly_public.tail_out(Q, r, R, A0, perpoint=False, eadapt=False) gives the measured fraction
   (argument order Q, r, R, A0).
+
+## Version 7 of the cost model (2026-10-31)
+
+- Parameter contract (bool, needs aggregated): the groups of a point are summed one at a time
+  (variable elimination) by Counter.Zagg_contracted instead of enumerating every measurement tuple.
+  A clause of group g sees group h only through the rows of the pair {g, h} restricted to h, so the
+  carried table is keyed by the half-bonds between processed and remaining groups; the measurement
+  term is multiplied by phi(r) = assembly_public.contract_factor(r) (about 1/2). Pass contract=True
+  to exponents_over_R / exponent_of (keyword) and return contract=True. The referee counts contract
+  parameters only when its hidden checks (the bond condition on real designs, exact counts with
+  Zagg_contracted) pass.

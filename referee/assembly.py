@@ -1,4 +1,4 @@
-"""FROZEN cost assembly (the referee scores with this file). Version 6 (2026-10-31).
+"""FROZEN cost assembly (the referee scores with this file). Version 7 (2026-10-31).
 
 Bounded-occurrence 3-CNF (each variable in <= 3 clauses, clauses of width <= 3), counting
 algorithm of Sections 2-4 of "The Exponential Time Hypothesis is False". Exponents per
@@ -10,7 +10,7 @@ Editing that copy does not change any score.
 Parameters: r, Q, R, A0 (integers), regime (string), delta (float, regime "tight" only),
 designated (bool, default False), aggregated (bool, default False), units (bool, default False),
 chunk (int, default 0), modular (bool, default False), perpoint (bool, default False),
-eadapt (bool, default False).
+eadapt (bool, default False), contract (bool, default False).
 
 Regimes (how many labels D may be balanced and how many copies h that costs):
   paper    : Lemma 4.5 as written, 2(b+w) D^2 <= M, h <= M/D + sqrt(2(b+w) M)
@@ -79,8 +79,19 @@ For large Q (more than 300 values of e within 14 sd) the sum over e is taken in 
 between fixed quantiles, each scored at its smallest e (the largest spread), and the mass beyond 14 standard deviations counts as fully measured, so the
 value is an upper bound.
 
-A score that uses designated, aggregated, units, chunk, modular, perpoint or eadapt also needs
-the verify gate to confirm exact counts with that construction or counting routine (see referee.py).
+contract = True (head extension v7, audited as a sketch; needs aggregated): sum the groups one at a
+time instead of enumerating every measurement tuple. Every measurement row touches at most two groups
+at a point, and a clause of group g sees group h only through the rows of the pair {g, h} restricted
+to h (its half-bond pi_{h->g}; checked by the referee on real designs). So H(t) = sum_x prod_g A_g is
+a tensor network on the complete graph of the r groups, and eliminating the groups in a fixed order
+enumerates, when group k is added, its own assignments, the full bonds between the k - 1 earlier and
+the r - k later groups, the earlier halves of the bonds to the earlier groups and the later halves of
+the bonds to the later groups: 2(k-1)(r-k) + (r-1) half-bonds instead of all r(r-1). The measurement
+term is multiplied by
+   phi(r) = max_k [2 (k - 1)(r - k) + r - 1] / (r (r - 1))     (about 1/2; phi(24) = 287/552).
+
+A score that uses designated, aggregated, units, chunk, modular, perpoint, eadapt or contract also
+needs the verify gate to confirm exact counts with that construction or counting routine (see referee.py).
 """
 import math
 import numpy as np
@@ -252,6 +263,14 @@ def _inner_eadapt(Q, es, Rs, perpoint):
     return np.where(full, 0.0, bad)
 
 
+def contract_factor(r):
+    """phi(r): share of the half-bonds that sequential elimination of the r groups enumerates at once."""
+    r = int(r)
+    if r < 2:
+        return 1.0
+    return max(2 * (k - 1) * (r - k) + r - 1 for k in range(1, r + 1)) / float(r * (r - 1))
+
+
 def tail_out(Q, r, R, A0, perpoint=False, eadapt=False):
     """Fraction of basis vectors that must be measured (at every point, with perpoint):
     base Pr[Bin(Q, p) outside [A0, A0+R-1]]; see the module notes for perpoint and eadapt."""
@@ -290,6 +309,7 @@ def _extra(params, regime):
     designated, aggregated, units = _flag(params, "designated"), _flag(params, "aggregated"), _flag(params, "units")
     chunk, modular = _chunk(params), _flag(params, "modular")
     perpoint, eadapt = _flag(params, "perpoint"), _flag(params, "eadapt")
+    contract = _flag(params, "contract")
     delta = 1.0
     if regime == "tight":
         delta = float(params["delta"])
@@ -303,7 +323,9 @@ def _extra(params, regime):
         raise ValueError("chunk needs units = True")
     if modular and not (designated and aggregated):
         raise ValueError("modular needs designated = True and aggregated = True")
-    return delta, designated, aggregated, units, chunk, modular, perpoint, eadapt
+    if contract and not aggregated:
+        raise ValueError("contract needs aggregated = True")
+    return delta, designated, aggregated, units, chunk, modular, perpoint, eadapt, contract
 
 
 def exponent_of(params, lam, decision=False):
@@ -314,7 +336,7 @@ def exponent_of(params, lam, decision=False):
         regime = params.get("regime", "paper")
         if regime not in REGIMES:
             return dict(valid=False, reason=f"unknown regime {regime}")
-        delta, designated, aggregated, units, chunk, modular, perpoint, eadapt = _extra(params, regime)
+        delta, designated, aggregated, units, chunk, modular, perpoint, eadapt, contract = _extra(params, regime)
     except Exception as exc:                    # malformed parameters
         return dict(valid=False, reason=f"bad params: {exc}")
     if r < 2 or Q < 1 or R < 1 or A0 < 0 or A0 + R - 1 > Q:
@@ -327,15 +349,15 @@ def exponent_of(params, lam, decision=False):
     out = tail_out(Q, r, R, A0, perpoint, eadapt)
     rows_per_n = groups_per_row(r) * hD_over_n(lam, log2D, regime, delta, designated, units, chunk) * out
     terms = dict(taylor=taylor_term(occ_per_n(designated, units, chunk) * row_degree(R) / Q, aggregated),
-                 meas=rows_per_n * value_bits(Q, modular),
+                 meas=rows_per_n * value_bits(Q, modular) * (contract_factor(r) if contract else 1.0),
                  groups=1.0 / r)
     return dict(valid=True, e=sum(terms.values()), terms=terms, out=out, log2D=log2D, regime=regime,
                 delta=delta, designated=designated, aggregated=aggregated, units=units, chunk=chunk,
-                modular=modular, perpoint=perpoint, eadapt=eadapt, decision=bool(decision))
+                modular=modular, perpoint=perpoint, eadapt=eadapt, contract=contract, decision=bool(decision))
 
 
 def exponents_over_R(lam, r, Q, Rs, regime, delta=1.0, designated=False, aggregated=False, units=False,
-                     chunk=0, modular=False, perpoint=False, eadapt=False):
+                     chunk=0, modular=False, perpoint=False, eadapt=False, contract=False):
     """Vectorised helper for searches: e for each interval length in Rs (best A0 each; A0 = 0 with
     eadapt, where the windows are fixed by the equal-pair count)."""
     Rs = np.asarray(Rs, np.int64)
@@ -362,6 +384,7 @@ def exponents_over_R(lam, r, Q, Rs, regime, delta=1.0, designated=False, aggrega
     rows = groups_per_row(r) * hD_over_n(lam, log2D, regime, delta, designated, units, chunk) * best
     m = occ_per_n(designated, units, chunk)
     tay = np.array([taylor_term(m * row_degree(int(R)) / Q, aggregated) for R in Rs])
-    e = tay + rows * value_bits(Q, modular) + 1.0 / r
+    e = tay + rows * value_bits(Q, modular) * (contract_factor(r) if contract else 1.0) + 1.0 / r
     return e, bestA
 # VERSION6_MARK
+# VERSION7_MARK

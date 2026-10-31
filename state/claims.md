@@ -200,6 +200,31 @@ it are reverted.
   numerical search, which found nothing lower. Combined with perpoint: (2,4,2,1): 28, (2,5,3,1): 46.
   Caveat: head-level sketch, not peer reviewed.
 
+- contract [AUDITED as a head proof sketch, 2026-10-31 17:05; the bond condition and exact counts
+  with Zagg_contracted are checked by referee v7 whenever a score uses it]:
+  1. Bond structure: every auxiliary measurement row (a basis vector psi) has a position-t factor
+     supported on one unordered pair {a, b} of groups (or one group), so it touches at most 2 groups
+     at t; after the substitution of Step 4 a row may meet fewer groups, never more.
+  2. A clause of group g = d_u(t) with a replaced occurrence u (variable in group h = a_u(t)) has
+     P_u(t) = L_t[u, :] + (own-group part), and L_t[u, :] is a combination of the psi with psi_u != 0,
+     whose position-t factor sits on the pair {h, g}. So its form restricted to any group h' != g is 0
+     unless h' = h, and then lies in the span of the rows of the pair {g, h} restricted to h. The
+     T-dependent part uses only partial swaps of u (groups a_u(t), d_u(t)). Designated occurrences are
+     read in their own group.
+  3. Hence H(t) (and every restricted sum Z_{t,U}) is sum_x prod_g A_g(x_g, (pi_{h->g}(x_h))_h): a tensor
+     network on the complete graph of the r groups. Eliminating the groups in a fixed order, the step
+     that adds group k enumerates its assignments, the full bonds between the k - 1 earlier and the
+     r - k later groups, the earlier halves of its bonds to earlier groups and the later halves of its
+     bonds to later groups: 2(k-1)(r-k) + r - 1 half-bonds, against r(r-1) when every measurement tuple
+     is enumerated. Each half-bond costs the same bits as before (values of its rows restricted to one
+     group), so the measurement term is multiplied by phi(r) = max_k [2(k-1)(r-k) + r - 1] / (r(r-1)).
+     The Taylor and group terms are unchanged; memory becomes exponential (time is what is compared).
+  Evidence: the head's reference implementation passes referee v7 (exact and weighted counts with
+  r = 2, 3, 4, with and without perpoint and eadapt; the bond condition holds on every design); a
+  variant that does not enumerate the later half-bonds fails. Note: in small designs a pair row can
+  meet only one group, so a half-bond must use the rows that touch g and no group other than g and h.
+  Caveat: head-level sketch, not peer reviewed.
+
 ## Results that depend on a provisional regime
 - 2026-10-31 12:14:25 iter 002 (T2): ppsz threshold 1,117,111 uses regime 'freedman' -> PROVISIONAL until the head audits that regime. [head: regime audited 12:05, this result stands as audited]
 - 2026-10-31 12:28:56 iter 003 (T3): ppsz threshold 1,070,239 uses regime 'tight' -> PROVISIONAL until the head audits that regime.
