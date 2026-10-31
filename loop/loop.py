@@ -271,12 +271,24 @@ def ws_stats(ws):
     return files, total
 
 
+RESERVED_NAMES = {"con", "prn", "aux", "nul"} | {f"com{i}" for i in range(1, 10)} | {f"lpt{i}" for i in range(1, 10)}
+
+
 def ws_files(ws):
+    """Relative paths of the files in the workspace. Windows device names (an agent's `> nul` in bash
+    creates a file literally called nul) make os.path.relpath fail, so they are only reported."""
     out = []
     for root, _dirs, names in os.walk(ws):
         if "__pycache__" in root:
             continue
-        out += [os.path.relpath(os.path.join(root, n), ws).replace("\\", "/") for n in names]
+        for n in names:
+            if n.split(".")[0].lower() in RESERVED_NAMES:
+                out.append(f"{n} (device name, ignored)")
+                continue
+            try:
+                out.append(os.path.relpath(os.path.join(root, n), ws).replace("\\", "/"))
+            except ValueError:
+                out.append(f"{n} (unreadable path, ignored)")
     return out
 
 

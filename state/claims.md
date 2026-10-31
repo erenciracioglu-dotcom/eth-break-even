@@ -283,3 +283,159 @@ it are reverted.
 - 2026-10-31 17:56:02 iter 015 (T13): ppsz threshold 22,118 uses regime 'tight' -> PROVISIONAL until the head audits that regime.
 - 2026-10-31 18:07:59 iter 016 (T12): ppsz threshold 18,817 uses regime 'tight' -> PROVISIONAL until the head audits that regime.
 - 2026-10-31 20:13:04 iter 021 (T14b): ppsz threshold 10,086 uses regime 'tight' -> PROVISIONAL until the head audits that regime.
+
+## External review notes (Gemini, 2026-10-31 21:40) and the head's checks
+- edges: the per-pair link bound is deterministic given the label balance. At point t the projection
+  u -> (a_u(t), d_u(t)) splits B into r^2 fibres of exactly D / r^2 labels, so with c_u <= (1 + delta) M_eff / D
+  every ordered group pair carries at most (1 + delta) M_eff / r^2 replaced occurrences; the step for group k
+  therefore touches at most (1 + delta) M_eff eps(r) edges. No adversarial formula can concentrate them.
+- edges with chunk units: links between two chunks share one label and move as a block in the balancing;
+  the chunk regime bound already pays for blocks (the 8192 L^2 term), so nothing changes.
+- smallprime / modular: weights must come from an extension field GF(p^m) with p^m >= 2n (a satisfiable
+  formula built from n/3 disjoint clauses would vanish mod p with weights in GF(p) alone). The modular and
+  smallprime audits above already prescribe GF(p^k) weights with p^k >= 2n, so the stated error bound holds.
+- Appendix D: Gemini's tile halving in D.4.5 does not hold (every tile of a packet with unequal
+  symbols receives crossings from the other group). The first-pass cost model of 21:55 is superseded
+  by the section "Appendix D route (tensor contraction): head extensions" below.
+
+## Appendix D route (tensor contraction): head extensions
+[AUDITED as head proof sketches, 2026-10-31 22:45; exact identities checked by
+work/head/appD/appd_toy.py; cost model work/head/appD/appd_model2.py. Not run through the loop or the referee.]
+
+Setting: Theorem D.1 on the clause-variable network of a 3-CNF in which every variable occurs at
+most three times. A variable with d <= 3 occurrences is one equality vertex, so the network is
+already bipartite (no subdivision): M <= 3n wires. Exponents are compared as in the main route
+(polynomial factors ignored); memory may be exponential.
+
+- appd-tight [accounting of the paper's own algorithm]:
+  1. Multiplicities q_t = h max(0, u - i) with h = ceil(M(2L - 1) / (L(2u - 2 + 2^(1-u)))) ~ M/(u - 1)
+     already give sum_t q_t > M(2L - 1) (the paper takes h = ceil(3M/u) and counts odd points only).
+  2. Precision: -v2(E_t(0)) = h D_t sum_j (j/2^j) min(j, u - i) <= 6 h D_t (only 2 h D_t at i = u - 1).
+     The evaluation loss (q_t - 1)(a + 1 - i) and the inherited precision fit under that slack once
+     2^(a-u+1) >= (p_in + 4M(a+1))(u - 1)/(4M): a - u ~ 2 log2 u at the root, a_d - a_(d-1) - u_d ~
+     log2 r below it. Hence p_t <= 6 h D_t (1 + o(1)) at the worst node (i = 0).
+  3. Modes: (1 + delta) M / L packets with 2^(i+1) tiles each; a fraction 1 - 1/r of the packets has
+     unequal symbols at coordinate i, so K = 2 (1 + delta)(1 - 1/r) M / D_t modes of each weight, and
+     the paper's generating-function bound gives log2 N <= (2 pi / ln 2) sqrt(K p_t / 6).
+  4. Sharper weights (optional; negligible in the model, large in toys): every crossing entry of
+     W(t + alpha z) is divisible by 2^(a+1-i), because C(t + alpha z)/C'(0) is divisible by
+     alpha = 2^(a+1) and v2(t - y0 + x) <= i; so w_Z = a + 1 - i + b is valid. The toy code asserts
+     both weight rules coefficientwise.
+- appd-bernstein [label balancing for Lemma D.3]: the main-route 'tight' argument (two-stage
+  Bernstein with explicit product pessimistic estimators) applied to the vertex labels in [r]^a gives
+  every pair-label load <= (1 + delta) M / D_arr once M / D_arr >= C Delta ln(D_arr) / delta^2
+  (Delta = maximum degree: 3 at the root, 2L below it), and per coordinate and symbol at most
+  (1 + delta) M / r real ports on each side. Padding every class to a multiple of L needs
+  L D_arr <= delta M; at the break-even sizes this padding condition is the binding label constraint.
+- appd-memo [every distinct child contracted once]: by D.4.6 the child of group g for tuple beta is
+  built from the group-g vertices, the coefficients of the modes targeted at g and the powers
+  L_Z(X)^beta_Z of the modes with source g. So Z_(g,beta) depends only on beta restricted to
+  I_g = {Z : source(Z) = g or target(Z) = g}, and (D.16) reads
+  F(t + alpha zeta) = sum_beta prod_g V_g[beta|I_g] (mod 2^p_t). Contract each table entry
+  V_g[gamma] (gamma a tuple on I_g of weight < p_t) once. A call then costs (number of tuples) x r
+  ring operations plus sum_g |V_g| child contractions, so along the recursion the exponents combine
+  by maximum instead of by sum. The padding balances the modes of every ordered group pair exactly
+  (each unordered coordinate pair {s, t} receives 2/r^2 of the packets, with 2^i tiles in each
+  direction), so |V_g| <= exp(2 pi sqrt(K_g p_t / 6)) with K_g = (2(r - 1)/r^2) 2 (1 + delta) M / D_t.
+- appd-modedp [mode sum contracted group by group]: V_g[gamma] is divisible by
+  2^(sum over Z targeted at g of w_Z gamma_Z) (every use of Z by a row of group g carries a
+  coefficient divisible by 2^w_Z), and every mode has exactly one target, so prod_g V_g[beta|I_g] is
+  divisible by 2^w(beta). Any finite set of tuples that contains {w(beta) < p_t} therefore gives the
+  same sum mod 2^p_t. Eliminate the groups in the order 1..r: Phi_k(beta|C_k) on the cut C_k (modes
+  between {1..k} and {k+1..r}); step k+1 enumerates the tuples of weight < p_t on C_k plus N_(k+1)
+  (modes between k+1 and {k+2..r}), a set that contains I_(k+1), multiplies by V_(k+1) and projects
+  to C_(k+1). Every tuple of weight < p_t is counted exactly once along the chain; the extra tuples
+  vanish mod 2^p_t. Step k+1 enumerates the modes of 2k(r - k - 1) + 2(r - 1) ordered group pairs,
+  so its count uses K_dp = eps(r) 2 (1 + delta) M / D_t with
+  eps(r) = max_k [2(k - 1)(r - k) + 2(r - 1)] / r^2 -> 1/2 (the main-route 'edges' factor).
+- appd-chunks [only wires between chunks deformed]: build the main-route 'chunk' units (connected
+  chunks of the variable graph with Lc to 1 + 7(Lc - 1) variables; each clause designated to the unit
+  holding most of its variables) and merge every unit with its designated clauses into one vertex
+  whose tensor sums over the unit's variables (2^O(Lc) work per entry). The remaining incidences
+  (f, v) with v outside the unit of f are the wires; each has a row end (the unit of f) and a column
+  end (the unit of v).
+  1. The contraction is unchanged (sum the internal variables first).
+  2. Bipartiteness is not needed at the root: use T(Y, X) = prod_v T_v(Y|v, X|v) in (D.8) instead of
+     A(Y) B(X); F(0) is still the contraction. The locality of W(t) (D.4.5) uses only the slot
+     orientation convention of the packets; the factorisation of (D.16) over groups needs
+     T(Y, X) = prod_g T_g(Y_g, X_g), which holds because every vertex lies in one group. The children
+     are bipartite (old vertices against packet vertices) as in the paper.
+  3. M_root = number of crossing wires = M_eff <= (1 + 1/Lc) n (the main-route chunk bound).
+  4. Labels: the pair label of a crossing wire is the pair of its super-vertex labels; the main-route
+     chunk balancing (colour the unit conflict graph, fix the labels colour by colour, multi-stage
+     Bernstein) needs D_arr ln(172 Lc D_arr) <= delta^2 M / (8192 Lc^2), a few dozen bits, far below
+     the padding constraint L D_arr <= delta M at the break-even sizes.
+  Children then have at most 2 (1 + delta) M_root / r wires.
+Evidence (all four): appd_toy.py, seeds 1-4 in the cloud and seed 7 on this PC: plain and chunk
+networks contract to #F (120 random formulas); tapered Hermite recovery from Taylor data reduced
+mod 2^P_t (P_t = p + exact loss) returns F(0) mod 2^p in 60 cases with a = 2, 3 and u = 1..3, and
+fails in 53 of them with 3 bits less; (D.16) computed per tuple, with memoised children and group
+by group equals F(t + alpha z) from (D.8) mod (2^p, z^q) in 153 node checks (r = 3..5, a = 1..3,
+up to 23 modes and 873 tuples, plain and chunk networks, both weight rules); the child networks of
+D.4.6 contract to the table values; end to end with a = 1 the mode sums at the Lemma D.5 precision
+give the exact count on 17 formulas. Not covered: recursion below the first level (children are
+summed directly, the optimum in the cost model) and the label balancing (labels in the toys are
+random). Caveat: head-level sketches, not peer reviewed.
+Cost model (appd_model2.py), log2 n break-even vs 2^n / 1.637^n / 1.307^n / 1.1199^n:
+  paper's constants 1.24e10 / 2.45e10 / 8.29e10 / 4.63e11 (its invariant needs log2 n >= 3.9e25);
+  appd-tight with the paper's labels 43,460 / 93,569 / 359,349 / 2,269,327;
+  + appd-bernstein 23,673 / 50,334 / 191,516 / 1,200,418;
+  + appd-memo 11,420 / 25,203 / 97,912 / 643,153;
+  + appd-modedp 7,700 / 15,010 / 58,640 / 375,303;
+  + appd-chunks 780 / 1,527 / 5,393 / 34,371 (without appd-modedp: 972 / 2,182 / 8,561 / 60,973).
+- Gemini review (2026-10-31 23:30) of appd-memo, appd-modedp, appd-chunks, the appd_model2 arithmetic and the
+  sharper weights: all hold; it now agrees that its earlier tile halving does not hold. It proposed three more
+  steps; the head checked them:
+- appd-perclass [AUDITED as a head sketch, 23:45; the toy packing already uses it]: an unordered-pair pattern
+  with a' unequal coordinates takes 2^(a-a') slots from each of its 2^a' orientation classes per packet, so its
+  classes only need a common load that is a multiple of 2^(a-a'): at most one dummy packet (L slots) per pattern.
+  With two-sided Bernstein loads the orientation classes differ by <= 2 delta M / D_arr, so the dummies total
+  <= 2 delta M + L (r(r+1)/2)^a; the padding condition becomes (r(r+1))^a <= delta M instead of (2 r^2)^a.
+  Packets per coordinate pair are balanced only to (1 + 2 delta) (the per-pattern rounding adds
+  <= L (r(r+1)/2)^(a-1) slots per pair, a fraction < delta of 2M/r^2), and the per-symbol port bound comes
+  directly from Bernstein instead of from the padding.
+- appd-leafvars [AUDITED as a head sketch, 23:45; checked by byvars_value in appd_toy.py]: a leaf child of
+  group g in a chunk network is summed over the variables x_g of its chunks. Fixing x_g fixes every column wire
+  of the group (a column bit is the value of its variable). A designated clause then depends only on its
+  external row bits: constant if its internal literals are true, otherwise 1 - prod_j [literal j false], two
+  product terms (a clause always keeps at least one variable in its own chunk, so it has at most two external
+  wires). After expanding these terms every row bit carries a unary weight, which moves into its packet factor:
+  sum_y w(y) l_y(form) = w(0) + (w(1) - w(0)) form, so each packet tensor is still one coefficient extraction.
+  Cost <= 2^(n_g + c2_g) with c2_g the group's clauses with two external wires, so the leaf exponent is
+  <= (1 + delta)(n + c2)/r <= 1.5 (1 + delta)(1 + 1/Lc) n / r in the worst case (M_eff = n, c2 = M_eff/2),
+  instead of 2 (1 + delta) M_eff / r edge bits. Evidence: equals the table value V_g[gamma] in 298 checks
+  (seeds 11-13 in the cloud; seed 11 reproduced on this PC), including clauses with two external wires.
+- Second recursion level (Gemini item 3) [model only, twolevel.py]: a depth-1 call inherits its parent's
+  precision (a_1 >= a_0 + u_1 + log2 r_0 + O(1)) and has packet vertices of degree 2^(a_0+1), which costs
+  label space at depth 1. With free r_0, r_1 and u_1 the model gains only against 1.1199^n: 28,442 (r_0 = 16,
+  r_1 = 4, u_1 = 0.7 u_0) instead of 30,115 for one level; Gemini's estimate of 20,000 to 23,000 assumed
+  u_1 of about 90, which makes the depth-1 tuple count far too large.
+  Cost model v3 (appd_model3.py), log2 n break-even vs 2^n / 1.637^n / 1.307^n / 1.1199^n:
+    appd-chunks + appd-perclass 734 / 1,396 / 4,856 / 31,498; + appd-leafvars 689 / 1,343 / 4,601 / 30,115;
+    two levels against 1.1199^n 28,442.
+
+## External review notes (Fable, 2026-10-31 23:40) and the head's checks
+- Counting competitor [ACCEPTED]: for 3-CNF with every variable in at most three clauses the clause-variable
+  graph has maximum degree 3, so its pathwidth is at most (1/6 + eps) of its vertices of degree 3 (Fomin and
+  Hoie, IPL 97 (2006), Theorem 5 for maximum degree 3), at most n/3 + o(n) here; dynamic programming over a
+  path decomposition counts models in 2^(pw) poly. So the fair counting competitor is 2^(n/3) ~ 1.26^n, not
+  1.637^n or 2^n. Head re-runs against e = 1/3: loop counting version 43,518 (th_third.py; Fable 43,519);
+  first audit: as written 1.66e12, re-tuned 5,710,562, tighter accounting 3,389,953; Appendix D rows
+  1.11e11 / 496,177 / 264,399 / 143,651 / 78,641 / 7,705 (chunks) / 6,345 (perclass + leafvars; two levels
+  give 6,461). The page now leads with the two class-specific competitors (2^(n/3) counting, 1.1199^n yes/no).
+- Status of the paper [ACCEPTED]: not yet independently confirmed (review led by R. Williams with R. Impagliazzo
+  and R. Paturi had not reported by 31 October; OpenAI's Lean check covers an unstated version). Every number
+  is conditional on Theorem 1.1; stated on the page.
+- Memory [ACCEPTED]: T12, T14 and the Appendix D memo/modedp steps use exponential memory (about 2^(0.36n)
+  table entries at the break-even); PPSZ and the 1.1199^n algorithm use polynomial space, the 2^(n/3) DP
+  exponential space. Stated on the page.
+- '<= 1,000' cells [ACCEPTED as a caveat]: the model's regime conditions are not re-checked near log2 n = 1,000.
+- Soundness of T1-T14b: no error found. Fable's re-runs if the least certain steps failed (yes/no vs 1.307^n):
+  group sizes 2n/r 11,701; no contraction saving 11,880; no small prime 11,500; no edge bits 18,826.
+- Appendix D (Fable saw only the first-pass model): agrees every tile carries modes and that Z_(g,beta) depends
+  only on modes touching g (the appd-memo argument, found independently); sees no use of bipartiteness in
+  D.4.3-D.4.6 beyond bookkeeping; the linear taper of Lemma D.5 is within 1.5% of the LP optimum at u ~ 700.
+  Its three objections to the first-pass model (Bernstein packing, root-only chunk saving, smaller headroom)
+  are answered by appd-bernstein, appd-chunks (children of 2(1 + delta) M_root / r wires) and appd-tight item 2.
+- Dead ends Fable checked: re-tapering Lemma D.5, conjugate nodes over GF(p^2), CRT with small primes for exact
+  counting, restricted per-position label alphabets. Sections 2-4: no large lever left in its view.

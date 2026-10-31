@@ -317,10 +317,12 @@
   ],
   "steps": 40,
   "max_attempts": 2,
-  "status": "running",
-  "attempts": 0,
+  "status": "done",
+  "attempts": 1,
   "expected": "head oracle: yes/no ppsz about 10,100, #3-SAT and brute at the 1,000 floor, occ3 about 197,000; decision e at 2224173 about 0.0730",
   "spec": "Head extension (cost model v9, parameter edges; read the docstring of assembly_public.py and NOTES.md). counting.py already has Counter.taylor_edges (written and verified in the previous task; do not change counting.py). Only model.py changes:\n1. Add EDGES = True near CONTRACT. Pass edges=bool(EDGES and <the same condition under which contract=True is passed>) (keyword) to every exponents_over_R call that passes contract (including the final eadapt re-scan), and add edges=True to every params dict that gets contract=True (counting and yes/no; _mk is the place).\n2. The optimum moves to larger r with edges (about 45-50 at lam near 10,000, about 200-220 at lam = 2224173). Check with a quick scan whether the best r sits at the top of a searched r range; if so, widen that range upwards.\n3. Keep every call deterministic and under 2 s; run smoke.py once at the end.\nThe hidden referee accepts edges parameters only if its own hidden checks of Counter.taylor_edges pass (they did for the current counting.py).",
-  "stop": "smoke.py passes and the decision e smoke.py prints at lam=2224173 is at most 0.0740 (the head's estimate is about 0.0730)"
+  "stop": "smoke.py passes and the decision e smoke.py prints at lam=2224173 is at most 0.0740 (the head's estimate is about 0.0730)",
+  "result": "ppsz threshold 18,817 -> 10,086; e at 2224173 0.081517 -> 0.073123 (46.40% lower threshold)",
+  "done_iter": 21
  }
 ]
