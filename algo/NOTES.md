@@ -76,3 +76,22 @@ Qmax = floor(max_log2D(lam, regime) / (2 log2 r)).
   it (and with choose_params otherwise). Counting targets always use choose_params. The referee
   counts modular parameters only when its hidden checks of Counter(..., residue_keys=True,
   weights=w) pass.
+
+## Version 6 of the cost model (2026-10-31)
+
+- Parameter perpoint (bool): measurement matrices per evaluation point (Definition 3.1 allows
+  C_{t,g} to depend on t). At point t the swap of position t is free, so only basis vectors with an
+  antisymmetric factor at position t and m(j - 1) + m(j) != 0 are measured there,
+  m(j) = 1 - (-1)^j f_I(j): out = p * Pr[Bin(Q - 1, p) outside [A0, A0 + R - 2]], about half of
+  the fixed matrix. Pass perpoint=True to exponents_over_R / exponent_of (keyword) and return
+  perpoint=True. Aux(..., perpoint=True) provides Cmeas_t (one row matrix per point); designs carry
+  des['perpoint'] and des['Chat_t']. The referee counts perpoint parameters only when its hidden
+  checks of Aux(..., perpoint=True) (separation at every point with Cmeas_t, row counts) and of such
+  designs (exact and weighted counts) pass.
+- Parameter eadapt (bool): the interpolation window depends on the number e of equal pairs of a
+  label, I_e = [a_e, a_e + R - 1], a_e = (Q - e - R + 1) // 2 (a_e = 0 when Q - e < R); A0 is
+  ignored. exponents_over_R with eadapt=True is about ten times slower (20 to 40 ms per call), so
+  use it only in a final re-scan around the winner of the perpoint search. The referee counts
+  eadapt parameters only when its hidden checks of Aux(..., eadapt=True) pass.
+- assembly_public.tail_out(Q, r, R, A0, perpoint=False, eadapt=False) gives the measured fraction
+  (argument order Q, r, R, A0).

@@ -474,5 +474,155 @@
    "p": 7,
    "L": 3
   }
+ ],
+ "pe_lemma": [
+  {
+   "cfg": [
+    2,
+    3,
+    2,
+    1
+   ],
+   "perpoint": true
+  },
+  {
+   "cfg": [
+    2,
+    4,
+    3,
+    1
+   ],
+   "perpoint": true
+  },
+  {
+   "cfg": [
+    2,
+    4,
+    3,
+    0
+   ],
+   "eadapt": true
+  },
+  {
+   "cfg": [
+    2,
+    4,
+    2,
+    1
+   ],
+   "eadapt": true
+  },
+  {
+   "cfg": [
+    3,
+    3,
+    2,
+    1
+   ],
+   "perpoint": true,
+   "eadapt": true
+  },
+  {
+   "cfg": [
+    2,
+    5,
+    3,
+    1
+   ],
+   "perpoint": true,
+   "eadapt": true
+  }
+ ],
+ "pe_counts": [
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 6,
+   "m": 9,
+   "type": "random",
+   "seed": 6007,
+   "perpoint": true
+  },
+  {
+   "cfg": [
+    2,
+    3,
+    3,
+    0
+   ],
+   "n": 6,
+   "m": 0,
+   "type": "bounded",
+   "seed": 6011,
+   "perpoint": true,
+   "eadapt": true,
+   "designated": true
+  },
+  {
+   "cfg": [
+    2,
+    3,
+    2,
+    1
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 6029,
+   "eadapt": true,
+   "designated": true,
+   "L": 2
+  },
+  {
+   "cfg": [
+    3,
+    2,
+    2,
+    0
+   ],
+   "n": 6,
+   "m": 0,
+   "type": "bounded",
+   "seed": 6037,
+   "perpoint": true,
+   "designated": true,
+   "L": 3
+  },
+  {
+   "cfg": [
+    2,
+    3,
+    3,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 6043,
+   "perpoint": true,
+   "eadapt": true,
+   "designated": true,
+   "L": 2,
+   "p": 5
+  },
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 6053,
+   "perpoint": true,
+   "designated": true,
+   "p": 3
+  }
  ]
 }

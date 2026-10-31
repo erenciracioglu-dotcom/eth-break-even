@@ -164,6 +164,42 @@ it are reverted.
   brute force mod 3, 5 and 7; an implementation with integer keys fails the fibre check).
   Caveat: head-level sketch, not peer reviewed.
 
+- perpoint [AUDITED as a head proof sketch, 2026-10-31 16:40; Aux-level separation at every point,
+  row counts and exact counts are checked by referee v6 whenever a score uses it]: Definition 3.1(3)
+  lets C_{t,g} depend on t; the paper's Section 2.7 uses one C for every point.
+  1. Free operators at t: a matrix X_t (x) Y (any Y on the other positions) whose position-t factor
+     maps a pair (a, d) only to pairs (d, *) is supported on {(u, w): a_w(t) = d_u(t)}, i.e. it uses
+     only the clause's own group at t. The swap tau_t (on unequal pairs) and the projector A_t on
+     equal pairs are such factors.
+  2. M0 = V0 f(W0) is diagonal in the product eigenbasis, so K = I - M0 = sum over the type of the
+     position-t factor: (P^E_t + P^S_t) (x) m(W_rest) + P^N_t (x) m(W_rest + 1), m(j) = 1 - (-1)^j f(j).
+     With P^E_t = A_t, P^S_t = (C_t + tau_t)/2, P^N_t = (C_t - tau_t)/2 (C_t the projector on unequal
+     pairs), K is congruent modulo free operators to C_t (x) (m(W_rest) + m(W_rest + 1))/2 and hence to
+     L_t = P^N_t (x) (m(W_rest) + m(W_rest + 1)). P(t) - L_t is supported on the own group (the
+     paper's T-dependent part already is), so rows of L_t in rowspace(C_t) give Definition 3.1(4).
+  3. rank L_t = r(r-1)/2 * #{rest basis vectors with m(j) + m(j+1) != 0} <= D p Pr[Bin(Q-1, p) outside
+     [A0, A0 + R - 2]]. Given this P, it is optimal: on the pairs (a, d) with a > d the free part is
+     strictly block triangular, so any representative has rank >= r(r-1)/2 rank(m(W)+m(W+1)).
+  4. Rows are psi with an antisymmetric factor at t: entries {0, +-1}, exactly 2 groups at t,
+     restricted absolute sums <= 2^(Q-1); h copies and the group split are as before.
+  Evidence: exact checks (cloud, 6 cases): P(t) - L_t vanishes outside the free pattern (residual
+  1e-16), rank L_t matches the formula (e.g. (r,Q,R,A0) = (2,4,3,0): 10 vs 13, (3,3,2,1): 135 vs 243);
+  the head's reference implementation passes referee v6; a variant that drops m(j-1) fails the
+  Aux-level separation check.
+  Caveat: head-level sketch, not peer reviewed.
+
+- eadapt [AUDITED as a head proof sketch, 2026-10-31 16:40; checked by referee v6 like perpoint]:
+  M0 = V0 sum_e f_e(W0) [N_E = e], N_E = number of positions with a(s) = d(s). [N_E = e] is diagonal
+  and commutes with every swap (a swap of an equal pair is the identity), so M0 is still a sum of
+  partial swaps times diagonals: M0[u,w] != 0 needs w = swap_{S^c}(u) with |S| <= R - 1 and
+  E_uw within S (Lemma 4.2 unchanged), and the rows keep degree <= R - 1. On a basis vector with e
+  equal-pair factors and j antisymmetric factors M0 acts as (-1)^j f_e(j), so it is fixed when
+  j lies in I_e; given e, j ~ Bin(Q - e, 1/2), and a centred window of R values is optimal.
+  Evidence: exact checks (cloud, 5 cases): support violation 0, rank(I - M0) e.g. (2,4,3,0): 10 vs 13,
+  (2,4,2,1): 46 vs 67, (3,3,2,1): 135 vs 189; these equal the best global min-rank values found by
+  numerical search, which found nothing lower. Combined with perpoint: (2,4,2,1): 28, (2,5,3,1): 46.
+  Caveat: head-level sketch, not peer reviewed.
+
 ## Results that depend on a provisional regime
 - 2026-10-31 12:14:25 iter 002 (T2): ppsz threshold 1,117,111 uses regime 'freedman' -> PROVISIONAL until the head audits that regime. [head: regime audited 12:05, this result stands as audited]
 - 2026-10-31 12:28:56 iter 003 (T3): ppsz threshold 1,070,239 uses regime 'tight' -> PROVISIONAL until the head audits that regime.

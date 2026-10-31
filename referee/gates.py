@@ -1,4 +1,4 @@
-"""FROZEN referee gates, version 5. Usage: python gates.py <algo_dir> <verify|measure|score> <out_json>
+"""FROZEN referee gates, version 6. Usage: python gates.py <algo_dir> <verify|measure|score> <out_json>
 
 Runs the agent's code from <algo_dir> in this separate process; only frozen code decides.
 Version 2 adds the 'tight' regime and, when construction.build_design accepts designated=True,
@@ -13,6 +13,11 @@ Version 5 adds, when build_design accepts chunk=L, checks of chunk units (connec
 and, when Counter accepts residue_keys and weights, weighted counts mod a small prime with
 measurement fibres keyed by residues; the score gate scores yes/no targets with
 model.choose_params_decision when the model offers it.
+Version 6 adds, when construction.Aux accepts perpoint and eadapt, frozen checks of per-point
+measurement matrices (Aux.Cmeas_t, design key Chat_t) and of equal-pair windows: separation at every
+point with the measurements used there (auxiliary rows and real designs), row counts against the
+frozen formula, two groups per row, restricted sums, P(0) = delta, degree, and exact (or weighted,
+mod p, residue-keyed) counts.
 """
 import inspect
 import json
@@ -284,6 +289,244 @@ def designated_problems(aux, des, units=False, clauses=None, chunk=0):
     return probs[:5]
 
 
+# ------------------------------------------------ v6: per-point measurements, equal-pair windows
+FROZEN_P = 33554393                     # prime below 2^25; residue products fit in int64
+
+
+def _rref_mod(A, p):
+    A = np.array(A % p, dtype=np.int64)
+    nr, nc = A.shape
+    piv, r = [], 0
+    for c in range(nc):
+        if r >= nr:
+            break
+        nz = np.nonzero(A[r:, c])[0]
+        if nz.size == 0:
+            continue
+        i = r + int(nz[0])
+        if i != r:
+            A[[r, i]] = A[[i, r]]
+        A[r] = (A[r] * pow(int(A[r, c]), p - 2, p)) % p
+        col = A[:, c].copy()
+        col[r] = 0
+        nzr = np.nonzero(col)[0]
+        if nzr.size:
+            A[nzr] = (A[nzr] - (col[nzr, None] * A[r][None, :]) % p) % p
+        piv.append(c)
+        r += 1
+    return A[:r], piv
+
+
+def _in_rowspace_mod(C, B, p):
+    """Every row of B in the row space of C (mod p)?"""
+    Bm = np.array(B % p, dtype=np.int64)
+    if C.shape[0] == 0:
+        return not np.any(Bm)
+    Rr, piv = _rref_mod(C, p)
+    if not piv:
+        return not np.any(Bm)
+    acc = np.zeros(Bm.shape, np.int64)
+    for k, c in enumerate(piv):
+        acc = (acc + (Bm[:, c:c + 1] * Rr[k][None, :]) % p) % p
+    return not np.any((Bm - acc) % p)
+
+
+def meas_at(des, t):
+    """The measurement matrix (rows over the variables) that the design uses at point t."""
+    if des.get("perpoint"):
+        return np.asarray(des["Chat_t"][t - 1], np.int64)
+    return np.asarray(des["Chat"], np.int64)
+
+
+def aux_pe_problems(aux, pp, ea):
+    """Frozen checks of an auxiliary construction built with perpoint / eadapt."""
+    r, Q, R, A0, D = aux.r, aux.Q, aux.R, aux.A0, aux.D
+    a, d = np.asarray(aux.a), np.asarray(aux.d)
+    Pc = np.asarray(aux.Pc, np.int64)
+    probs = []
+    if bool(getattr(aux, "perpoint", False)) != pp or bool(getattr(aux, "eadapt", False)) != ea:
+        probs.append("Aux does not record the requested perpoint / eadapt flags")
+    if Pc.shape[0] > R and np.any(Pc[R:]):
+        probs.append("a replacement row has degree above R - 1")
+    if not np.array_equal(Pc[0], aux.Lden * np.eye(D, dtype=np.int64)):
+        probs.append("P(0) is not Lden * I")
+    bound = D * A.tail_out(Q, r, R, A0, perpoint=pp, eadapt=ea) + 1e-6
+    p = FROZEN_P
+    PcM = Pc % p
+    for t in range(1, Q + 1):
+        Cm = np.asarray(aux.Cmeas_t[t - 1] if pp else aux.Cmeas, np.int64)
+        if Cm.shape[0] > bound:
+            probs.append(f"t={t}: {Cm.shape[0]} auxiliary measurement rows, frozen bound {bound:.2f}")
+        grp = a[:, t - 1]
+        touched = np.zeros(Cm.shape[0], np.int64)
+        for g in range(r):
+            sub = Cm[:, grp == g]
+            touched += np.any(sub != 0, axis=1)
+            if sub.size and int(np.abs(sub).sum(axis=1).max()) > A.row_abs_sum_bound(Q):
+                probs.append(f"t={t}: a restricted measurement row has absolute sum above 2^(Q-1)")
+        if touched.size and int(touched.max()) > A.groups_per_row(r):
+            probs.append(f"t={t}: a measurement row touches {int(touched.max())} groups")
+        Pt = np.zeros((D, D), np.int64)
+        for k in range(Pc.shape[0]):
+            Pt = (Pt + (pow(t, k, p) * PcM[k]) % p) % p
+        for g in range(r):
+            cols = np.nonzero(grp == g)[0]
+            rows = np.nonzero(d[:, t - 1] != g)[0]
+            if cols.size and rows.size and not _in_rowspace_mod(Cm[:, cols], Pt[np.ix_(rows, cols)], p):
+                probs.append(f"t={t}, group {g}: replacement rows outside the span of the measurements")
+                break
+        if len(probs) >= 5:
+            break
+    return probs[:5]
+
+
+def pe_design_problems(aux, des, pp, ea):
+    """Frozen checks of a real design: Definition 3.1(4) at every point with the measurement matrix
+    used there, row counts (h copies of the frozen bound), two groups per row, restricted sums."""
+    probs = []
+    if bool(des.get("perpoint", False)) != pp:
+        probs.append("design does not record perpoint as requested")
+        return probs
+    Q, r = aux.Q, aux.r
+    Prow = np.asarray(des["Prow"], np.int64)
+    av, df, occ = np.asarray(des["av"]), np.asarray(des["df"]), des["occ"]
+    h = int(des["h"])
+    p = FROZEN_P
+    PrM = Prow % p
+    bound = aux.D * A.tail_out(Q, r, aux.R, aux.A0, perpoint=pp, eadapt=ea) + 1e-6
+    for t in range(1, Q + 1):
+        Cm = meas_at(des, t)
+        if Cm.shape[0] > h * bound:
+            probs.append(f"t={t}: {Cm.shape[0]} measurement rows, frozen bound h * {bound:.2f}")
+        Pt = np.zeros(PrM.shape[1:], np.int64)
+        for k in range(PrM.shape[0]):
+            Pt = (Pt + (pow(t, k, p) * PrM[k]) % p) % p
+        touched = np.zeros(Cm.shape[0], np.int64)
+        for g in range(r):
+            cols = np.nonzero(av[:, t - 1] == g)[0]
+            sub = Cm[:, cols]
+            touched += np.any(sub != 0, axis=1)
+            if sub.size and int(np.abs(sub).sum(axis=1).max()) > A.row_abs_sum_bound(Q):
+                probs.append(f"t={t}: a restricted measurement row has absolute sum above 2^(Q-1)")
+            rows = [i for i, (f, _v) in enumerate(occ) if df[f][t - 1] != g]
+            if cols.size and rows and not _in_rowspace_mod(sub, Pt[np.ix_(rows, cols)], p):
+                probs.append(f"t={t}, group {g}: kernel condition (Definition 3.1(4)) fails")
+        if touched.size and int(touched.max()) > A.groups_per_row(r):
+            probs.append(f"t={t}: a measurement row touches {int(touched.max())} groups")
+        if len(probs) >= 5:
+            break
+    return probs[:5]
+
+
+def fibres_at(aux, des, t, p=None):
+    """Distinct measurement keys per group at point t with the matrix used there."""
+    av, Cm = np.asarray(des["av"]), meas_at(des, t)
+    out = []
+    for g in range(aux.r):
+        vars_g = np.nonzero(av[:, t - 1] == g)[0]
+        k = len(vars_g)
+        if k == 0:
+            out.append(1)
+            continue
+        lm = np.arange(1 << k)
+        bits = ((lm[:, None] >> np.arange(k)[None, :]) & 1).astype(np.int64)
+        vals = bits @ Cm[:, vars_g].T
+        if p is not None:
+            vals = vals % p
+        out.append(len({tuple(int(x) for x in row) for row in vals}))
+    return out
+
+
+def pe_verify(out, Aux, build_design, Counter):
+    """v6 section of the verify gate."""
+    out["perpoint_supported"] = supports_param(Aux.__init__, "perpoint")
+    out["eadapt_supported"] = supports_param(Aux.__init__, "eadapt")
+    out["perpoint_verified"] = False
+    out["eadapt_verified"] = False
+    if not (out["perpoint_supported"] or out["eadapt_supported"]):
+        return
+    okf = {"pp": True, "ea": True}
+    ran = {"pp": 0, "ea": 0}
+
+    def note(pp, ea, ok):
+        for key, flag in (("pp", pp), ("ea", ea)):
+            if flag:
+                okf[key] &= bool(ok)
+                ran[key] += 1
+
+    for c in CASES["pe_lemma"]:
+        pp, ea = bool(c.get("perpoint")), bool(c.get("eadapt"))
+        if (pp and not out["perpoint_supported"]) or (ea and not out["eadapt_supported"]):
+            continue
+        aux = Aux(*c["cfg"], perpoint=pp, eadapt=ea)
+        rep = aux.report()
+        probs = [k for k in LEMMA_KEYS if not bool(rep.get(k))]
+        probs = ([f"report fails: {', '.join(probs)}"] if probs else []) + aux_pe_problems(aux, pp, ea)
+        ok = not probs
+        rows = [int(np.asarray(aux.Cmeas_t[t]).shape[0]) for t in range(aux.Q)] if pp else [int(np.asarray(aux.Cmeas).shape[0])]
+        out["items"].append({"kind": "pe_lemma", "cfg": c["cfg"], "perpoint": pp, "eadapt": ea, "ok": ok,
+                             "rows": rows, "bound": round(aux.D * A.tail_out(aux.Q, aux.r, aux.R, aux.A0, perpoint=pp, eadapt=ea), 2),
+                             "problems": probs})
+        note(pp, ea, ok)
+    for c in CASES["pe_counts"]:
+        pp, ea = bool(c.get("perpoint")), bool(c.get("eadapt"))
+        L, desg, p = int(c.get("L", 0)), bool(c.get("designated")), c.get("p")
+        if (pp and not out["perpoint_supported"]) or (ea and not out["eadapt_supported"]):
+            continue
+        if (desg and not out["designated_supported"]) or (L and not out["chunk_supported"]) \
+                or (p and not out["modular_supported"]):
+            continue
+        rng = np.random.default_rng(c["seed"])
+        aux = Aux(*c["cfg"], perpoint=pp, eadapt=ea)
+        cl = make_formula(c, rng)
+        kw = {"designated": True} if desg else {}
+        if L:
+            kw.update(units=True, chunk=L)
+        des = build_design(aux, c["n"], cl, rng, **kw)
+        probs = pe_design_problems(aux, des, pp, ea)
+        if p:
+            p = int(p)
+            extra = p * np.ones((1, c["n"]), np.int64)     # redundant row, 0 mod p: residue keys must merge
+            if pp:
+                des = dict(des, Chat_t=[np.vstack([np.asarray(M, np.int64), extra]) for M in des["Chat_t"]])
+            else:
+                des = dict(des, Chat=np.vstack([np.asarray(des["Chat"], np.int64), extra]))
+            wrng = np.random.default_rng(c["seed"] + 1)
+            for _ in range(16):
+                w = wrng.integers(1, p, size=c["n"])
+                if weighted_brute(c["n"], cl, w, p):
+                    break
+            C = Counter(aux, des, p=p, residue_keys=True, weights=w)
+            data = {}
+            for t in range(1, aux.Q + 1):
+                data[t] = C.taylor_aggregated(t, Zagg=lambda t_, S, U: C.Zagg_group_separated(t_, S, U))
+                got = [int(x) for x in C.fibre_counts(t)]
+                exp = fibres_at(aux, des, t, p)
+                if got != exp:
+                    probs.append(f"t={t}: fibres per group {got}, expected {exp} (keys mod {p})")
+            h0, ref = int(C.hermite_H0(data)) % p, weighted_brute(c["n"], cl, w, p)
+        else:
+            C = Counter(aux, des)
+            data = {}
+            for t in range(1, aux.Q + 1):
+                if out.get("aggregated_supported"):
+                    data[t] = C.taylor_aggregated(t, Zagg=lambda t_, S, U: C.Zagg_group_separated(t_, S, U))
+                else:
+                    data[t] = C.taylor_inclusion_exclusion(t, Zfun=lambda t_, S, U: C.Z_group_separated(t_, S, U))
+                exp = fibres_at(aux, des, t, None)
+                got = [int(x) for x in C.fibre_counts(t)] if hasattr(C, "fibre_counts") else exp
+                if got != exp:
+                    probs.append(f"t={t}: fibres per group {got}, expected {exp}")
+            h0, ref = int(C.hermite_H0(data)), brute(c["n"], cl)
+        ok = (h0 == ref) and not probs
+        out["items"].append({"kind": "pe_count", "cfg": c["cfg"], "n": c["n"], "perpoint": pp, "eadapt": ea,
+                             "L": L, "p": p, "ok": ok, "H0": h0, "reference": ref, "problems": probs[:5]})
+        note(pp, ea, ok)
+    out["perpoint_verified"] = bool(out["perpoint_supported"] and okf["pp"] and ran["pp"] > 0)
+    out["eadapt_verified"] = bool(out["eadapt_supported"] and okf["ea"] and ran["ea"] > 0)
+    out["ok"] &= okf["pp"] and okf["ea"]
+
+
 def make_formula(c, rng):
     from construction import random_formula, random_bounded_formula
     if c["type"] == "random":
@@ -482,6 +725,7 @@ def verify():
         out["modular_merged"] = bool(merged)
         out["modular_verified"] = bool(mok and ran > 0 and merged)
         out["ok"] &= mok
+    pe_verify(out, Aux, build_design, Counter)
     return out
 
 
@@ -656,3 +900,4 @@ if __name__ == "__main__":
     result["seconds"] = round(time.time() - t0, 1)
     with open(OUT, "w", encoding="utf-8") as fh:
         json.dump(result, fh, indent=1, default=str)
+# VERSION6_MARK
