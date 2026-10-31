@@ -140,10 +140,52 @@
   ],
   "steps": 40,
   "max_attempts": 2,
-  "status": "running",
-  "attempts": 0,
+  "status": "done",
+  "attempts": 1,
   "expected": "same thresholds (no regression); deterministic results; every call under 2 s",
   "spec": "choose_params currently stops its deep search on a wall-clock deadline (time.time()), so at large lam its answer depends on machine load, and some calls at lam >= 1e7 take more than 3 s. Make it deterministic and fast without losing quality where it matters:\n(a) remove every use of time.time() or any other clock from the decision logic; bound the work by fixed counts instead (for example: a fixed number of r values, Q values and R values per stage, chosen from lam alone);\n(b) every call must take at most 2 s for every lam from 1e3 to 1e13 (measure the worst case over at least 30 lam values, log-spaced, plus 2224173);\n(c) keep the results where the referee looks: e at lam = 2224173, 300000 and 5000000 must not get worse by more than 1e-5 compared with the current model (run the current model first and save its values in a scratch file), and the threshold where e drops below 0.386300 must not move up by more than 0.05%;\n(d) remove dead code (unused constants such as _block_budget if it is not used).\nKeep the returned dict format (regime, delta and the flags designated, aggregated, units exactly as the current model returns them).",
-  "stop": "choose_params contains no clock calls, the worst call over the lam grid takes at most 2 s, the e values at the three smoke lam values are within 1e-5 of the old ones, and smoke.py passes"
+  "stop": "choose_params contains no clock calls, the worst call over the lam grid takes at most 2 s, the e values at the three smoke lam values are within 1e-5 of the old ones, and smoke.py passes",
+  "result": "gates pass, no regression: ppsz threshold 193,841 -> 193,841; e at 2224173 0.178130 -> 0.178130",
+  "done_iter": 7
+ },
+ {
+  "id": "T8",
+  "kind": "score",
+  "priority": 80,
+  "after": [
+   "T7"
+  ],
+  "title": "Chunk units: connected chunks of at least L variables instead of the clause matching",
+  "files": [
+   "construction.py",
+   "model.py"
+  ],
+  "steps": 60,
+  "max_attempts": 3,
+  "status": "running",
+  "attempts": 0,
+  "expected": "head oracle: ppsz threshold about 58,000 (3.3x lower), #3-SAT about 6,100, brute about 1,100; e at 2224173 about 0.1198; referee v5 verifies counts, unit structure and the (1 + 1/L) n bound",
+  "spec": "Head extension (cost model v5, parameter chunk; read the docstring of assembly_public.py and NOTES.md). If the variables of a whole connected piece of the formula share one group schedule, every clause inside the piece is read directly. Cutting every connected component of the variable graph into connected chunks of at least L variables leaves at most (1 + 1/L) n occurrences that need replacement rows (12n/7 with the clause matching of T6).\n1. construction.py: add chunk_units(n, clauses, L) -> unit_of (numpy int64 array of length n; unit_of[v] = the smallest variable of v's unit), deterministic:\n   (a) variables u != v are adjacent when some clause contains both (signs do not matter); keep every neighbour list sorted ascending;\n   (b) for s = 0, 1, ..., n-1: skip s if it was already visited; otherwise run a BFS from s (a FIFO queue; visit unvisited neighbours in ascending order; record parent[child]); order = the BFS order of this component, s is its root;\n   (c) if the component has fewer than L variables, it is one unit;\n   (d) otherwise: pending[v] = [v] for every v of the component; for v in reversed(order): if len(pending[v]) >= L, close a unit P = pending[v] and set pending[v] = []; else, if v is not the root, append pending[v] to pending[parent[v]] and set pending[v] = []. If pending[root] is not empty at the end (the leftover, fewer than L variables), append it to the first closed unit P (in closing order) with parent[P[0]] in the leftover;\n   (e) unit_of[v] = min(P) for every unit P.\n   build_design(aux, n, clauses, rng, designated=False, units=False, chunk=0): chunk >= 2 needs units=True (raise ValueError otherwise). With units=True and chunk >= 2: unit_of = chunk_units(n, clauses, chunk) and av[v] = av[unit_of[v]] for every v, instead of the greedy matching; everything after that (designation per factor by the unit with the most occurrences, labels, copies, rows) stays exactly as it is now. Add chunk=int(chunk) to the returned dict. With chunk=0 the result must stay exactly as now.\n2. Test in scratch_chunk.py, for L in (2, 3, 4), on random_bounded_formula(7, rng) and random_formula(7, 9, rng) with Aux(2, 2, 2, 0) and Aux(2, 3, 3, 0): every unit lies in one component; a component with fewer than L variables is a single unit; otherwise every unit has at least L variables; every unit is connected through clauses that have at least 2 of its variables; the variables of a unit have identical av rows; check_design gives kernel_condition and P0_delta True; the full count (taylor_inclusion_exclusion with Z_group_separated for every t, then hermite_H0) equals brute_count. Also on random_bounded_formula(1500, rng) with Aux(2, 2, 2, 0) and L in (2, 8, 64): des['M_eff'] <= (1 + 1/L) * 1500.\n3. model.py: return chunk=L together with units=True, designated=True, aggregated=True, regime 'tight' and delta; pass chunk to max_log2D(lam, 'tight', delta, True, True, L) and as the tenth argument of exponents_over_R(lam, r, Q, Rs, 'tight', delta, True, True, True, L). A large L is best (it costs only log2(8192 L^2) bits of log2 D); use L = 256 unless your search finds a better value. Keep choose_params deterministic and under 2 s per call (the T7 rule).\nThe hidden referee accepts chunk parameters only if its own hidden checks of build_design(..., designated=True, units=True, chunk=L) pass.",
+  "stop": "scratch_chunk.py passes every check, smoke.py passes, and smoke.py's e at lam=2224173 is at most 0.1210 (the head's estimate is about 0.1198)"
+ },
+ {
+  "id": "T9",
+  "kind": "score",
+  "priority": 90,
+  "after": [
+   "T8"
+  ],
+  "title": "Yes/no answer modulo a prime: measurement values mod p (choose_params_decision)",
+  "files": [
+   "counting.py",
+   "model.py"
+  ],
+  "steps": 60,
+  "max_attempts": 3,
+  "status": "open",
+  "attempts": 0,
+  "expected": "head oracle: ppsz (yes/no) threshold about 29,000 (2x lower than T8); decision e at 2224173 about 0.0908; counting thresholds unchanged",
+  "spec": "Head extension (cost model v5, parameter modular; read the docstring of assembly_public.py and NOTES.md). The 1.307^n competitor answers yes/no only. For a yes/no answer it is enough to compute S(w) = sum over satisfying x of prod_v w_v^(x_v) modulo a prime p with Q < p <= 2Q, for random weights w. Every coefficient of the algorithm is an integer mod p, so each measurement value is needed only mod p: log2(2Q) bits instead of Q. Counting (choose_params) stays exactly as it is; only the yes/no target uses the new choose_params_decision.\n1. counting.py: Counter(aux, des, p=PRIMES[0], residue_keys=False, weights=None).\n   (a) residue_keys=True: in group_structure, key the fibres of every group by the measurement values mod p: compute vals = bits @ Cg.T, then vals % p when residue_keys, and keys = tuple(int(x) for x in row) per row. With residue_keys=False the keys stay the exact integers, as now.\n   (b) weights (int array of length n, values mod p; None means all 1): every assignment x gets the factor prod over v with x_v = 1 of w_v (mod p). Precompute self.wX (length N = 2^n) once in __init__. In Zagg_group_separated multiply the values of the kept group members, vals[:, keep], by self.wX[mk] (mod p) before the einsum (a member only has bits of its own group, so this is the weight of x_g); in Zagg_brute multiply the w_K weights by self.wX[sel] (mod p).\n   (c) new method fibre_counts(t): [len(fib) for fib in the fibre dicts of group_structure(t)], one number per group.\n2. Test in scratch_mod.py: with Aux(2, 2, 2, 0) and p = 3, and Aux(2, 3, 3, 0) and p = 5, on random_bounded_formula(7, rng) and random_formula(6, 8, rng), designs built with designated=True and with designated=True, units=True, chunk=2. Also add one redundant measurement row p * (1, ..., 1) to des['Chat'] (np.vstack) in a copy of the design: it is 0 mod p, so it must not change any fibre count with residue_keys=True. For weights w = rng.integers(1, p, size=n): C = Counter(aux, des, p=p, residue_keys=True, weights=w); data[t] = C.taylor_aggregated(t, Zagg=C.Zagg_group_separated) for t = 1..Q; C.hermite_H0(data) must equal the weighted brute force (sum over satisfying x of prod_v w_v^(x_v) mod p, written in the scratch file), with and without the extra row, and fibre_counts(t) must equal the number of distinct residue keys per group.\n3. model.py: add choose_params_decision(lam): the same search as choose_params but with modular=True (pass True as the eleventh argument: exponents_over_R(lam, r, Q, Rs, 'tight', delta, True, True, True, L, True)), returning modular=True together with the other flags. Check it with exponent_of(params, lam, decision=True). choose_params itself must stay unchanged (modular is invalid for counting targets). The optimum has a smaller R at the same Q, so widen the R range downwards. Deterministic, under 2 s per call.\nThe hidden referee accepts modular parameters only if its own hidden checks of the weighted counts with residue keys pass.",
+  "stop": "scratch_mod.py passes every check, smoke.py passes, and the decision e it prints at lam=2224173 is at most 0.0915 (the head's estimate is about 0.0908)"
  }
 ]

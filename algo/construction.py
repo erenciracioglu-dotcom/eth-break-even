@@ -9,9 +9,10 @@ PUBLIC API (the referee calls these; keep names and return fields):
   Aux(r, Q, R, A0).report() -> dict with f_interp, eigen, orthogonal, support, P0_delta,
                                degree, separation, min_kernel_dim
   random_formula(n, m, rng), random_bounded_formula(n, rng)
-  build_design(aux, n, clauses, rng, designated=False, units=False) -> dict (keys used: Prow,
+  chunk_units(n, clauses, L) -> numpy int64 array unit_of of length n (cost model v5 chunks)
+  build_design(aux, n, clauses, rng, designated=False, units=False, chunk=0) -> dict (keys used: Prow,
       Chat, av, df, occ, h, n, M, clauses; plus designated, desig, M_eff when designated=True;
-      plus units, unit_of always)
+      plus units, unit_of, chunk always)
   check_design(aux, des) -> dict (keys used: kernel_condition, P0_delta, min_kernel_dim,
                                max_groups_per_row, max_restricted_abs)
 """
@@ -270,7 +271,78 @@ def random_formula(n, m, rng, k=3):
     return clauses
 
 
-def build_design(aux, n, clauses, rng, designated=False, units=False):
+def chunk_units(n, clauses, L):
+    """Connected chunks of the variable graph, each of at least L variables (cost model v5).
+
+    Variables u != v are adjacent when some clause contains both (signs do not matter). Every
+    connected component is cut along a BFS spanning tree (deterministic: start points in
+    increasing order, FIFO queue, neighbours visited in ascending order) into units of L to
+    1 + 7(L - 1) variables; a component with fewer than L variables is one unit. Returns
+    unit_of (int64 array of length n): unit_of[v] = the smallest variable of v's unit.
+    """
+    L = int(L)
+    if L < 2:
+        raise ValueError("chunk L must be at least 2")
+    nbr_sets = [set() for _ in range(n)]
+    for cl in clauses:
+        vs = sorted({int(v) for v, _ in cl})
+        for i in range(len(vs)):
+            for j in range(i + 1, len(vs)):
+                nbr_sets[vs[i]].add(vs[j])
+                nbr_sets[vs[j]].add(vs[i])
+    nbr = [sorted(s) for s in nbr_sets]          # sorted ascending
+
+    unit_of = np.arange(n, dtype=np.int64)
+    visited = np.zeros(n, bool)
+    for s in range(n):
+        if visited[s]:
+            continue
+        # ---- (b) BFS of the component of s, s is the root
+        order = [s]
+        visited[s] = True
+        parent = {s: -1}
+        qi = 0
+        while qi < len(order):
+            u = order[qi]
+            qi += 1
+            for w in nbr[u]:
+                if not visited[w]:
+                    visited[w] = True
+                    parent[w] = u
+                    order.append(w)
+        comp = order
+        if len(comp) < L:                        # (c) small component: one unit
+            head = min(comp)
+            for v in comp:
+                unit_of[v] = head
+            continue
+        # ---- (d) cut the BFS tree
+        pending = {v: [v] for v in comp}
+        closed = []                              # closed units, in closing order
+        for v in reversed(order):
+            if len(pending[v]) >= L:
+                closed.append(pending[v])
+                pending[v] = []
+            elif v != s:
+                pending[parent[v]].extend(pending[v])
+                pending[v] = []
+        leftover = pending[s]
+        if leftover:                             # fewer than L variables left at the root
+            lset = set(leftover)
+            for P in closed:                     # first closed unit attached to the leftover
+                if parent[P[0]] in lset:
+                    P.extend(leftover)
+                    break
+            else:                                # cannot happen; keep the leftover attached
+                closed[0].extend(leftover)
+        for P in closed:                         # (e) head = smallest variable of the unit
+            head = min(P)
+            for v in P:
+                unit_of[v] = head
+    return unit_of
+
+
+def build_design(aux, n, clauses, rng, designated=False, units=False, chunk=0):
     """Sections 4.4-4.5: schedules, labels, copies, rows P_{f,v}(T), matrices C_{t,g}.
 
     designated=True (head extension, cost model v2): every factor f (each clause and each
@@ -292,16 +364,32 @@ def build_design(aux, n, clauses, rng, designated=False, units=False):
     so every matched clause is read entirely directly. With units=False the result is exactly
     as in v2 (one designated occurrence, the first, per factor). Extra keys: units, unit_of
     (int array of length n, the head variable of every variable's unit).
+
+    chunk=L (integer >= 2, head extension, cost model v5; needs units=True): the units are the
+    connected chunks of chunk_units(n, clauses, L) instead of the greedy matching, so av[v] =
+    av[unit_of[v]] for every v. Everything after that (designation per factor by the unit with
+    the most occurrences, labels, copies, rows) is unchanged. Extra key: chunk. With chunk=0 the
+    result is exactly as with the greedy matching.
     """
     if units and not designated:
         raise ValueError("units=True needs designated=True")
+    chunk = int(chunk) if chunk else 0
+    if chunk and not units:
+        raise ValueError("chunk needs units=True")
+    if chunk and chunk < 2:
+        raise ValueError("chunk must be 0 or at least 2")
     r, Q, R = aux.r, aux.Q, aux.R
     used = {v for cl in clauses for v, _ in cl}
     factors = [[v for v, _ in cl] for cl in clauses] + [[v] for v in range(n) if v not in used]
     av = rng.integers(0, r, size=(n, Q))
     df = rng.integers(0, r, size=(len(factors), Q))
     unit_of = np.arange(n, dtype=np.int64)
-    if units:
+    if units and chunk:
+        unit_of = chunk_units(n, clauses, chunk)
+        av0 = av.copy()
+        for v in range(n):
+            av[v] = av0[int(unit_of[v])]          # one shared group schedule per unit
+    elif units:
         in_unit = np.zeros(n, bool)
         for cl in clauses:
             vs = [v for v, _ in cl]
@@ -372,7 +460,7 @@ def build_design(aux, n, clauses, rng, designated=False, units=False):
         Chat[c * cB:(c + 1) * cB] = block.T
     out = dict(factors=factors, av=av, df=df, occ=occ, labels=labels, copy=copy, h=h,
                Prow=Prow, Chat=Chat, n=n, M=len(occ), clauses=clauses, unit_of=unit_of,
-               units=bool(units))
+               units=bool(units), chunk=int(chunk))
     if designated:
         out["designated"] = True
         out["desig"] = desig
