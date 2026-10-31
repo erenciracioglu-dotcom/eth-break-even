@@ -363,6 +363,130 @@ class Counter:
             total = (total + (prod * signs[None, :]).sum(axis=1)) % p
         return total % p
 
+    # ------------------------------------------------ contraction (cost model v7)
+    def contract_structure(self, t):
+        """Half-bond keys of every ordered pair (g, h) of groups of point t, and the
+        representative mask of every half-bond value (cached). keys[g][h][i] is the value of
+        the rows of the pair {g, h} restricted to group g, read on mask i of group g;
+        reps[g][h][value] is the first mask of group g with that value."""
+        cache = getattr(self, "_ctr", None)
+        if cache is None:
+            cache = self._ctr = {}
+        ck = int(t)
+        st = cache.get(ck)
+        if st is None:
+            p, aux, des = self.p, self.aux, self.des
+            av = des["av"]
+            Cm = np.asarray(des["Chat_t"][t - 1] if des.get("perpoint") else des["Chat"],
+                            np.int64)
+            groups, cl_group, grp_mask, grp_bits, grp_Cg, loc = self.group_structure(t)
+            r = aux.r
+            touch = np.zeros((r, Cm.shape[0]), bool)
+            for g in range(r):
+                if len(groups[g]):
+                    touch[g] = np.any(Cm[:, groups[g]] != 0, axis=1)
+            nt = touch.astype(np.int64).sum(axis=0)
+            keys = []
+            reps = []
+            for g in range(r):
+                kg, rg = [], []
+                for h in range(r):
+                    if h == g:
+                        kg.append(None)
+                        rg.append(None)
+                        continue
+                    if not len(groups[g]):                      # k = 0: the only mask is 0
+                        kg.append([()])
+                        rg.append({(): int(grp_mask[g][0])})
+                        continue
+                    both = (nt - touch[g].astype(np.int64) - touch[h].astype(np.int64)) == 0
+                    rows_gh = np.nonzero(touch[g] & both)[0]
+                    sub = Cm[np.ix_(rows_gh, groups[g])]
+                    if self.residue_keys:
+                        sub = sub % p
+                    vals = grp_bits[g] @ sub.T                  # (2^k, #rows_gh)
+                    kk = [tuple(int(x) for x in row) for row in vals]
+                    rr = {}
+                    for i, v in enumerate(kk):
+                        if v not in rr:
+                            rr[v] = int(grp_mask[g][i])
+                    kg.append(kk)
+                    rg.append(rr)
+                keys.append(kg)
+                reps.append(rg)
+            st = (keys, reps)
+            cache[ck] = st
+        return st
+
+    def Zagg_contracted(self, t, S, U):
+        """Same length-J vector as Zagg_group_separated, computed by summing the groups one at
+        a time (variable elimination): the table is keyed by the half-bonds between the
+        processed and the unprocessed groups."""
+        p, aux = self.p, self.aux
+        n, J, q = self.n, self.J, self.q
+        K = q - int(self.pop[U])
+        if K < 0:
+            return np.zeros(J, np.int64)
+        groups, cl_group, grp_mask, grp_bits, grp_Cg, loc = self.group_structure(t)
+        keys, reps = self.contract_structure(t)
+        r = aux.r
+        oneU = self.X[U]
+        corr = [((oneU @ S[i].T) % p) for i in range(1, J)]
+        Ky = K + 1
+        Ugrp = [int(U & int(sum(1 << int(v) for v in vars_g))) if len(vars_g) else 0
+                for vars_g in groups]
+        popg = [int(bin(u).count("1")) for u in Ugrp]
+        binom_tab = np.array([[comb(c, j) % p for j in range(Ky)] for c in range(n + 1)],
+                             np.int64)
+        cl_of_group = [{ci for ci, gg in enumerate(cl_group) if gg == g} for g in range(r)]
+        unit = np.zeros((J, Ky), np.int64)
+        unit[0, 0] = 1
+        T = {(): unit}
+        for g in range(r):
+            future = list(range(g + 1, r))
+            gm = grp_mask[g]
+            keep = [i for i in range(len(gm)) if (int(gm[i]) & Ugrp[g]) == Ugrp[g]]
+            which = cl_of_group[g]
+            newT = {}
+            for key, val in T.items():
+                kd = {(a, b): (pi_ab, pi_ba) for ((a, b), pi_ab, pi_ba) in key}
+                cons = [i for i in keep
+                        if all(keys[g][a][i] == kd[(a, g)][1] for a in range(g))]
+                if not cons:
+                    continue
+                past = 0
+                for a in range(g):
+                    past += reps[a][g][kd[(a, g)][0]]
+                rest = tuple(e for e in key if e[0][1] != g)
+                comb_list = [list(reps[h][g].items()) for h in future]
+                for combo in itertools.product(*comb_list):
+                    xs = gm[np.asarray(cons, np.int64)] + past
+                    for _vh, mh in combo:
+                        xs = xs + int(mh)
+                    Xs = ((xs[:, None] >> np.arange(n)[None, :]) & 1).astype(np.int64)
+                    inputs = np.empty((J, len(xs), S.shape[1]), np.int64)
+                    inputs[0] = (Xs @ S[0].T) % p
+                    for i in range(1, J):
+                        inputs[i] = corr[i - 1][None, :]
+                    vals = self.eval_clauses(inputs, which)
+                    for jj, i in enumerate(cons):
+                        m = int(gm[i])
+                        col = (vals[:, jj] * self.wX[m]) % p
+                        c = int(bin(m).count("1")) - popg[g]
+                        Pg = (col[:, None] * binom_tab[c][None, :]) % p
+                        newkey = tuple(sorted(rest + tuple(
+                            ((g, h), keys[g][h][i], vh)
+                            for h, (vh, _m) in zip(future, combo))))
+                        add = mul_zy(val, Pg, p)
+                        cur = newT.get(newkey)
+                        newT[newkey] = add if cur is None else (cur + add) % p
+            T = newT
+            if not T:
+                return np.zeros(J, np.int64)
+        total = T[()]
+        signs = np.array([(-1) ** j for j in range(Ky)], np.int64)
+        return (total * signs[None, :]).sum(axis=1) % p
+
     def hermite_H0(self, data):
         p, Q, J = self.p, self.Q, self.J
         L = Q * J

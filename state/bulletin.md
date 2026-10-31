@@ -1,4 +1,5 @@
 # Bulletin (latest first)
+- 2026-10-31 17:56:02 iter 015 T13 attempt 1: ACCEPTED - ppsz threshold 24,714 -> 22,118; e at 2224173 0.087362 -> 0.084847 (10.50% lower threshold)
 - 2026-10-31 17:36:43 iter 014 T11 attempt 1: ACCEPTED - ppsz threshold 25,699 -> 24,714; e at 2224173 0.087575 -> 0.087362 (3.83% lower threshold)
 - 2026-10-31 17:10:33 iter 011 T10 attempt 1: ACCEPTED - ppsz threshold 29,002 -> 25,699; e at 2224173 0.090510 -> 0.087575 (11.39% lower threshold)
 - 2026-10-31 17:08:35 iter 013 T10 attempt 3/3: REJECTED - no change to construction.py, counting.py, model.py

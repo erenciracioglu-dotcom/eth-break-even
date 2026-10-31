@@ -60,6 +60,7 @@ AGGREGATED = True                    # head extension v3: Lemma 3.3 summed per U
 UNITS = True                         # head extension v4: clause units (greedy matching), needs designated
 CHUNK = 4096                         # head extension v5: connected chunk units of >= CHUNK vars
 PERPOINT = True                      # head extension v6: measurement matrices per evaluation point
+CONTRACT = True                      # head extension v7: groups summed one at a time (needs aggregated)
 
 # delta grid for the tight regime (delta = 1.0 is exactly "freedman"), best deltas first so
 # that truncating the grid (very large lam) keeps the ones that matter
@@ -233,7 +234,7 @@ def _cfg12(lam, rs, est0_us, designated=True, units=UNITS, deltas=DELTAS, chunk=
 
 
 def _mk(r, Q, R, A0, regime, delta, designated=False, aggregated=AGGREGATED, units=UNITS,
-      chunk=CHUNK, modular=False, perpoint=PERPOINT, eadapt=False):
+      chunk=CHUNK, modular=False, perpoint=PERPOINT, eadapt=False, contract=CONTRACT):
     p = dict(r=int(r), Q=int(Q), R=int(R), A0=int(A0), regime=regime)
     if regime == "tight":
         p["delta"] = float(delta)
@@ -241,6 +242,8 @@ def _mk(r, Q, R, A0, regime, delta, designated=False, aggregated=AGGREGATED, uni
         p["designated"] = True
     if aggregated:
         p["aggregated"] = True
+    if contract and aggregated:       # head extension v7: needs aggregated = True
+        p["contract"] = True
     if units:
         p["units"] = True
     if units and chunk:
@@ -263,7 +266,8 @@ def _scan(lam, regime, delta, r, Q, Rs, best, designated=False, aggregated=AGGRE
     if Rs.size == 0:
         return best
     e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated, units,
-                              chunk, modular, perpoint=perpoint, smallprime=bool(modular))
+                              chunk, modular, perpoint=perpoint, smallprime=bool(modular),
+                              contract=bool(CONTRACT and aggregated))
     i = int(np.argmin(e))
     if best is None or e[i] < best[0]:
         return (float(e[i]), _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated,
@@ -306,7 +310,9 @@ def _cheap_r_scan(lam, regime, delta, mld, rs, cfg, designated=False, aggregated
         if Rs.size == 0:
             continue
         e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated,
-                                  units, chunk, modular, perpoint=perpoint, smallprime=bool(modular))
+                                  units, chunk, modular, perpoint=perpoint,
+                                  smallprime=bool(modular),
+                                  contract=bool(CONTRACT and aggregated))
         i = int(np.argmin(e))
         out.append((float(e[i]), int(r),
                     _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated, aggregated,
@@ -323,7 +329,9 @@ def _deep(lam, regime, delta, r, Qmax, best, cfg, designated=False,
         if Rs.size == 0:
             continue
         e, A = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated,
-                                units, chunk, modular, perpoint=perpoint, smallprime=bool(modular))
+                                units, chunk, modular, perpoint=perpoint,
+                                smallprime=bool(modular),
+                                contract=bool(CONTRACT and aggregated))
         i = int(np.argmin(e))
         if best is None or e[i] < best[0]:
             best = (float(e[i]),
@@ -378,7 +386,7 @@ def _eadapt_rescan(lam, best, regime, decision=False):
                 continue
             e, _A = exponents_over_R(lam, r, Q, Rs, regime, delta, True, AGGREGATED, UNITS,
                                      CHUNK, decision, perpoint=True, eadapt=True,
-                                     smallprime=bool(decision))
+                                     smallprime=bool(decision), contract=CONTRACT)
             i = int(np.argmin(e))
             if out is None or float(e[i]) < out[0]:
                 out = (float(e[i]), _mk(r, Q, int(Rs[i]), 0, regime, delta, True, AGGREGATED,
@@ -440,10 +448,12 @@ def _tight(lam, modular=False, r_lo=R_LO, r_hi=R_HI):
         if r0 < 2 or 2 * math.log2(r0) > mld_ref + 1e-9:
             return dict(r=2, Q=1, R=1, A0=0, regime=regime, delta=1.0, designated=True,
                         aggregated=AGGREGATED, units=units, chunk=chunk,
+                        **({"contract": True} if (CONTRACT and AGGREGATED) else {}),
                         **({"perpoint": True} if perpoint else {}),
                         **({"modular": True} if modular else {}))   # no labels
         return dict(r=int(r0), Q=1, R=1, A0=0, regime=regime, delta=delta_ref, designated=True,
                     aggregated=AGGREGATED, units=units, chunk=chunk,
+                    **({"contract": True} if (CONTRACT and AGGREGATED) else {}),
                     **({"perpoint": True} if perpoint else {}),
                     **({"modular": True} if modular else {}))
     rs = _r_window(best[1]["r"], cfg, r_lo, r_hi)
