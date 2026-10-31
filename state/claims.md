@@ -470,3 +470,12 @@ Cost model (appd_model2.py), log2 n break-even vs 2^n / 1.637^n / 1.307^n / 1.11
   2^n 16,738. The head's own implementation scores 5,404 / 23,056 / 4,032 / 1,213 / 579 with all four flags.
 - Tasks: T15 (Qwen implements the core: group_table, sum_paper, sum_memo, sum_dp, byvars_value, node_value,
   count_e2e), T16 (Qwen widens the parameter search: delta, Lc, three levels, free u_d, wider r).
+- iter_appd 001, T15 attempt 1 [ACCEPTED 01:29, head audit 01:45]: all four code flags verified on hidden cases
+  (21 node values each by the paper, memo and dp sums, 91 byvars table entries on chunk networks, 10 exact
+  end-to-end counts); 2^(n/3) 201,458 -> 5,404, 1.1199^n 23,056, 1.307^n 4,032, 1.637^n 1,213, 2^n 579 (equal to the
+  head's own implementation). Audit of commit 09d787a: the sums follow the contracts; byvars_value is Qwen's own
+  construction from the description (assignment of the group's variables, two-term split of the designated
+  clauses not satisfied internally, unary row weights folded into the packet factors, coefficient of the target
+  modes' tuple, source-mode linear forms raised to their exponents); no blocked function, no file access. The
+  agent met its stop condition at about 25 minutes, kept running its own extra tests and was stopped by the
+  55-minute wall; the referee scored the files it left.
