@@ -1,4 +1,4 @@
-"""FROZEN referee gates, version 7. Usage: python gates.py <algo_dir> <verify|measure|score> <out_json>
+"""FROZEN referee gates, version 8. Usage: python gates.py <algo_dir> <verify|measure|score> <out_json>
 
 Runs the agent's code from <algo_dir> in this separate process; only frozen code decides.
 Version 2 adds the 'tight' regime and, when construction.build_design accepts designated=True,
@@ -21,8 +21,12 @@ mod p, residue-keyed) counts.
 Version 7 adds, when counting.Counter offers Zagg_contracted, exact (and weighted) counts with the groups
 summed one at a time, and a frozen check that clauses of group g see group h only through the rows of the
 pair {g, h} (the bond condition behind assembly 'contract').
+Version 8 adds, when construction.gf_rows exists, frozen checks of replacement rows over GF(p^2) with a
+prime p < Q (assembly 'smallprime'): nodes, P(0) = delta, degree, Definition 3.1(4) at every node mod p,
+and the weighted count from Taylor data at the nodes (direct evaluation, Hermite interpolation).
 """
 import inspect
+import math as _math_unused
 import json
 import math
 import os
@@ -643,6 +647,231 @@ def contract_verify(out, Aux, build_design, Counter):
     out["ok"] &= ok_all
 
 
+# ------------------------------------------------ v8: small prime with nodes in GF(p^2)
+def gf_c(p):
+    """Least quadratic non-residue mod an odd prime p (GF(p^2) = GF(p)[s] / (s^2 - c))."""
+    return next(x for x in range(2, p) if pow(x, (p - 1) // 2, p) == p - 1)
+
+
+def gf_nodes(p, Q):
+    """The first Q nonzero elements a + b s of GF(p^2), ordered by (b, a): 1..p-1 first."""
+    out = []
+    for b in range(p):
+        for a in range(p):
+            if (a, b) != (0, 0):
+                out.append((a, b))
+            if len(out) == Q:
+                return np.array(out, np.int64)
+    raise ValueError("GF(p^2) has fewer than Q nonzero elements")
+
+
+def gmul(x, y, p, c):
+    """Elementwise product in GF(p^2); x, y int64 arrays with a last axis (a, b)."""
+    a = (x[..., 0] * y[..., 0] + c * ((x[..., 1] * y[..., 1]) % p)) % p
+    b = (x[..., 0] * y[..., 1] + x[..., 1] * y[..., 0]) % p
+    return np.stack([a, b], axis=-1)
+
+
+def ginv(x, p, c):
+    a, b = int(x[0]) % p, int(x[1]) % p
+    nrm = (a * a - c * b * b) % p
+    if nrm == 0:
+        raise ZeroDivisionError("inverse of 0 in GF(p^2)")
+    ni = pow(nrm, p - 2, p)
+    return np.array([a * ni % p, (-b) * ni % p], np.int64)
+
+
+def gpow(x, e, p, c):
+    out = np.array([1, 0], np.int64)
+    base = np.array(x, np.int64) % p
+    while e:
+        if e & 1:
+            out = gmul(out, base, p, c)
+        base = gmul(base, base, p, c)
+        e >>= 1
+    return out
+
+
+def gsmul(A, B, p, c):
+    """Truncated product of series over GF(p^2): A, B arrays (J, ..., 2), coefficient i at A[i]."""
+    J = A.shape[0]
+    out = np.zeros(np.broadcast_shapes(A.shape, B.shape), np.int64)
+    for i in range(J):
+        if not np.any(A[i]):
+            continue
+        out[i:] = (out[i:] + gmul(A[i][None, ...], B[:J - i], p, c)) % p
+    return out
+
+
+def gsolve(M, b, p, c):
+    """Solve M x = b over GF(p^2) (M: (L, L, 2), b: (L, 2)); returns x (L, 2)."""
+    L = M.shape[0]
+    A = np.concatenate([M % p, (b % p)[:, None, :]], axis=1).astype(np.int64)
+    for col in range(L):
+        piv = next((r for r in range(col, L) if np.any(A[r, col])), None)
+        if piv is None:
+            raise ValueError("singular Hermite system")
+        if piv != col:
+            A[[col, piv]] = A[[piv, col]]
+        A[col] = gmul(A[col], ginv(A[col, col], p, c)[None, :], p, c)
+        for r in range(L):
+            if r != col and np.any(A[r, col]):
+                f = A[r, col].copy()
+                A[r] = (A[r] - gmul(A[col], f[None, :], p, c)) % p
+    return A[:, L]
+
+
+def gf_direct_H0(aux, des, rows, w, p):
+    """Weighted count S(w) from Taylor data of H_w(alpha_t + z) mod z^J at the GF(p^2) nodes, each
+    computed directly over all assignments, then Hermite interpolation (frozen)."""
+    c, nodes, Pg = rows["c"], np.asarray(rows["nodes"], np.int64), np.asarray(rows["Prow_gf"], np.int64) % p
+    n, Q, R = des["n"], aux.Q, aux.R
+    clauses, occ = des["clauses"], des["occ"]
+    desig = np.asarray(des.get("desig", np.zeros(len(occ), bool)), bool)
+    d = sum(1 for i, (f, _v) in enumerate(occ) if f < len(clauses) and not desig[i])
+    J = d * (R - 1) // Q + 1
+    occ_index = {fv: i for i, fv in enumerate(occ)}
+    N = 1 << n
+    X = ((np.arange(N)[:, None] >> np.arange(n)[None, :]) & 1).astype(np.int64)
+    wX = np.ones(N, np.int64)
+    for v in range(n):
+        wX = np.where(X[:, v] == 1, wX * int(w[v]) % p, wX)
+    K = Pg.shape[0]
+    forms = np.stack([np.stack([(X @ Pg[k, :, :, comp].T) % p for comp in (0, 1)], axis=-1) for k in range(K)])
+    data = {}
+    for t in range(1, Q + 1):
+        al = nodes[t - 1]
+        S = np.zeros((J,) + forms.shape[1:], np.int64)      # (J, N, M, 2)
+        for i in range(J):
+            for k in range(i, K):
+                coef = gpow(al, k - i, p, c) * (math.comb(k, i) % p) % p
+                S[i] = (S[i] + gmul(forms[k], coef[None, None, :], p, c)) % p
+        total = np.zeros((J, N, 2), np.int64)
+        total[0, :, 0] = 1
+        for f, cl in enumerate(clauses):
+            prod = np.zeros((J, N, 2), np.int64)
+            prod[0, :, 0] = 1
+            for v, pos in cl:
+                s = S[:, :, occ_index[(f, v)], :]
+                if pos:
+                    om = (-s) % p
+                    om[0, :, 0] = (1 - s[0, :, 0]) % p
+                else:
+                    om = s
+                prod = gsmul(prod, om, p, c)
+            phi = (-prod) % p
+            phi[0, :, 0] = (1 - prod[0, :, 0]) % p
+            total = gsmul(total, phi, p, c)
+        data[t] = np.stack([(total[:, :, comp] * wX[None, :]).sum(axis=1) % p for comp in (0, 1)], axis=-1)
+    L = Q * J
+    Mx = np.zeros((L, L, 2), np.int64)
+    bx = np.zeros((L, 2), np.int64)
+    row = 0
+    for t in range(1, Q + 1):
+        al = nodes[t - 1]
+        for i in range(J):
+            for u in range(i, L):
+                Mx[row, u] = gpow(al, u - i, p, c) * (math.comb(u, i) % p) % p
+            bx[row] = data[t][i]
+            row += 1
+    sol = gsolve(Mx, bx, p, c)
+    return sol[0]
+
+
+def gf_problems(aux, des, rows, p):
+    """Frozen checks of GF(p^2) rows: field and nodes, P(0) = delta, degree, and Definition 3.1(4) at
+    every node with the integer measurement rows reduced mod p (both coordinates of a GF(p^2) row must
+    lie in the GF(p)-span, which is the GF(p^2)-span of rows over GF(p))."""
+    probs = []
+    c = int(rows.get("c", -1))
+    if c != gf_c(p):
+        probs.append(f"rows['c'] = {c} is not the least non-residue mod {p}")
+        return probs
+    nodes = np.asarray(rows.get("nodes"), np.int64)
+    if nodes.shape != (aux.Q, 2) or not np.array_equal(nodes, gf_nodes(p, aux.Q)):
+        probs.append("rows['nodes'] are not the first Q nonzero elements of GF(p^2) (frozen order)")
+        return probs
+    Pg = np.asarray(rows.get("Prow_gf"), np.int64) % p
+    occ = des["occ"]
+    if Pg.ndim != 4 or Pg.shape[1:] != (len(occ), des["n"], 2):
+        probs.append("rows['Prow_gf'] must have shape (K, M, n, 2)")
+        return probs
+    E = np.zeros((len(occ), des["n"], 2), np.int64)
+    E[np.arange(len(occ)), [v for _f, v in occ], 0] = 1
+    if not np.array_equal(Pg[0], E):
+        probs.append("P(0) is not the identity on the occurrences")
+    if Pg.shape[0] > aux.R and np.any(Pg[aux.R:]):
+        probs.append("a GF row has degree above R - 1")
+    av, df = np.asarray(des["av"]), np.asarray(des["df"])
+    for t in range(1, aux.Q + 1):
+        al = nodes[t - 1]
+        Pt = np.zeros(Pg.shape[1:], np.int64)
+        for k in range(Pg.shape[0]):
+            Pt = (Pt + gmul(Pg[k], gpow(al, k, p, c)[None, None, :], p, c)) % p
+        Cm = meas_at(des, t) % p
+        for g in range(aux.r):
+            cols = np.nonzero(av[:, t - 1] == g)[0]
+            rws = [i for i, (f, _v) in enumerate(occ) if df[f][t - 1] != g]
+            if not cols.size or not rws:
+                continue
+            for comp in (0, 1):
+                if not _in_rowspace_mod(Cm[:, cols], Pt[np.ix_(rws, cols)][..., comp], p):
+                    probs.append(f"t={t}, group {g}: GF rows outside the span of the measurements mod {p}")
+                    break
+        if len(probs) >= 5:
+            break
+    return probs[:5]
+
+
+def smallprime_verify(out, Aux, build_design):
+    """v8 section of the verify gate: construction.gf_rows(aux, des, p) with p < Q."""
+    try:
+        import construction as _cons
+        gf_rows = getattr(_cons, "gf_rows", None)
+    except Exception:
+        gf_rows = None
+    out["smallprime_supported"] = bool(gf_rows is not None and out.get("modular_supported"))
+    out["smallprime_verified"] = False
+    if not out["smallprime_supported"]:
+        return
+    ok_all, ran = True, 0
+    for c in CASES["smallprime_counts"]:
+        pp, ea = bool(c.get("perpoint")), bool(c.get("eadapt"))
+        L, p = int(c.get("L", 0)), int(c["p"])
+        if (pp and not out.get("perpoint_supported")) or (ea and not out.get("eadapt_supported")):
+            continue
+        if L and not out["chunk_supported"]:
+            continue
+        ran += 1
+        rng = np.random.default_rng(c["seed"])
+        aux = Aux(*c["cfg"], **pe_kw(pp, ea))
+        cl = make_formula(c, rng)
+        kw = {"designated": True}
+        if L:
+            kw.update(units=True, chunk=L)
+        des = build_design(aux, c["n"], cl, rng, **kw)
+        rows = gf_rows(aux, des, p)
+        probs = gf_problems(aux, des, rows, p)
+        h0 = ref = None
+        if not probs:
+            wrng = np.random.default_rng(c["seed"] + 1)
+            for _ in range(16):
+                w = wrng.integers(1, p, size=c["n"])
+                if weighted_brute(c["n"], cl, w, p):
+                    break
+            got = gf_direct_H0(aux, des, rows, w, p)
+            ref = weighted_brute(c["n"], cl, w, p)
+            h0 = [int(got[0]), int(got[1])]
+            if h0 != [ref, 0]:
+                probs.append(f"weighted count {h0} over GF({p}^2), expected [{ref}, 0]")
+        ok = not probs
+        out["items"].append({"kind": "smallprime_count", "cfg": c["cfg"], "n": c["n"], "p": p, "perpoint": pp,
+                             "eadapt": ea, "L": L, "ok": ok, "H0": h0, "reference": ref, "problems": probs[:5]})
+        ok_all &= ok
+    out["smallprime_verified"] = bool(ok_all and ran > 0)
+    out["ok"] &= ok_all
+
+
 def make_formula(c, rng):
     from construction import random_formula, random_bounded_formula
     if c["type"] == "random":
@@ -843,6 +1072,7 @@ def verify():
         out["ok"] &= mok
     pe_verify(out, Aux, build_design, Counter)
     contract_verify(out, Aux, build_design, Counter)
+    smallprime_verify(out, Aux, build_design)
     return out
 
 
@@ -1019,3 +1249,4 @@ if __name__ == "__main__":
         json.dump(result, fh, indent=1, default=str)
 # VERSION6_MARK
 # VERSION7_MARK
+# VERSION8_MARK

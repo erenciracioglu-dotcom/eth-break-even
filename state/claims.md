@@ -225,6 +225,30 @@ it are reverted.
   meet only one group, so a half-bond must use the rows that touch g and no group other than g and h.
   Caveat: head-level sketch, not peer reviewed.
 
+- smallprime [AUDITED as a head proof sketch, 2026-10-31 17:20; rows at every GF(p^2) node and the
+  weighted count from Taylor data at the nodes are checked by referee v8 whenever a score uses it]:
+  1. Where the prime enters: (R - 1)! must be invertible (the window polynomial f_I has denominator
+     (R - 1)!), 2 must be invertible (the eigenprojectors psi psi^T / |psi|^2 have |psi|^2 a power of 2),
+     and the Q interpolation nodes must be distinct and nonzero (Phi_uy(alpha_t) = prod_{s in S}
+     (1 - alpha_t / alpha_s) vanishes exactly when t is in S). Integer nodes 1..Q force p > Q; nodes in
+     GF(p^k) only need p odd and p > R - 1 (k = 2 when p^2 > Q).
+  2. Lemma 4.3 over GF(p^2): for g != d_u(t), P_u(alpha_t) restricted to S_{t,g} equals (I - M0)
+     restricted, a combination of the measured psi with p-integral coefficients (denominators are powers
+     of 2 times divisors of (R - 1)!), so it lies in the GF(p^2)-span of the integer measurement rows
+     reduced mod p; with perpoint the same holds for L_t = P^N_t (x) (m(W) + m(W + 1)).
+  3. Taylor data: H(alpha_t + z) mod z^J uses Hasse derivatives (Taylor coefficients), which exist in
+     every characteristic; the derivative terms are expanded in multilinear monomials of degree < J as
+     before. Hermite interpolation at Q distinct nodes with J Taylor coefficients each is the Chinese
+     remainder map for the pairwise coprime (T - alpha_t)^J, valid over any field.
+  4. Yes/no: S(w) = sum over satisfying x of prod w_v^(x_v) is a nonzero multilinear polynomial of degree
+     <= n when the formula is satisfiable; weights drawn from GF(p^m) with p^m >= 2n give error <= 1/2
+     (Schwartz-Zippel). Field elements have O(log n) bits; only the keys (measured values mod p) enter
+     the exponent: log2 p bits per measurement row instead of log2(2Q).
+  Evidence: the head's reference implementation passes referee v8 (8 frozen designs, p = 3 and 5, with
+  and without perpoint, eadapt and chunk units); three wrong variants (no division by (R - 1)!, factors
+  1 - T alpha_s instead of 1 - T / alpha_s, constant identity rows) fail on every frozen design.
+  Caveat: head-level sketch, not peer reviewed.
+
 ## Results that depend on a provisional regime
 - 2026-10-31 12:14:25 iter 002 (T2): ppsz threshold 1,117,111 uses regime 'freedman' -> PROVISIONAL until the head audits that regime. [head: regime audited 12:05, this result stands as audited]
 - 2026-10-31 12:28:56 iter 003 (T3): ppsz threshold 1,070,239 uses regime 'tight' -> PROVISIONAL until the head audits that regime.

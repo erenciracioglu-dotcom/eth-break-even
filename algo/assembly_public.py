@@ -1,4 +1,4 @@
-"""FROZEN cost assembly (the referee scores with this file). Version 7 (2026-10-31).
+"""FROZEN cost assembly (the referee scores with this file). Version 8 (2026-10-31).
 
 Bounded-occurrence 3-CNF (each variable in <= 3 clauses, clauses of width <= 3), counting
 algorithm of Sections 2-4 of "The Exponential Time Hypothesis is False". Exponents per
@@ -10,7 +10,7 @@ Editing that copy does not change any score.
 Parameters: r, Q, R, A0 (integers), regime (string), delta (float, regime "tight" only),
 designated (bool, default False), aggregated (bool, default False), units (bool, default False),
 chunk (int, default 0), modular (bool, default False), perpoint (bool, default False),
-eadapt (bool, default False), contract (bool, default False).
+eadapt (bool, default False), contract (bool, default False), smallprime (bool, default False).
 
 Regimes (how many labels D may be balanced and how many copies h that costs):
   paper    : Lemma 4.5 as written, 2(b+w) D^2 <= M, h <= M/D + sqrt(2(b+w) M)
@@ -90,8 +90,18 @@ the bonds to the later groups: 2(k-1)(r-k) + (r-1) half-bonds instead of all r(r
 term is multiplied by
    phi(r) = max_k [2 (k - 1)(r - k) + r - 1] / (r (r - 1))     (about 1/2; phi(24) = 287/552).
 
-A score that uses designated, aggregated, units, chunk, modular, perpoint, eadapt or contract also
-needs the verify gate to confirm exact counts with that construction or counting routine (see referee.py).
+smallprime = True (head extension v8, audited as a sketch; yes/no targets only, needs modular): the
+prime only has to exceed R - 1 instead of Q. The interpolation nodes alpha_1..alpha_Q are distinct
+nonzero elements of an extension field GF(p^k) (k with p^k > Q and p^k >= 2n), the rows use
+phi_uw(T) = prod_{s in E_uw} (1 - T / alpha_s), the window polynomial needs (R - 1)! invertible, and
+Hermite interpolation needs distinct nodes only. The measurement matrix stays integer, so a measured
+value is a residue mod p: log2 p bits with p the least odd prime above max(R - 1, 2), instead of
+log2(2Q). The referee checks GF(p^2) rows (construction.gf_rows) with p < Q: Definition 3.1(4) at
+every node, P(0) = delta, degree, and the weighted count recovered from Taylor data at the nodes.
+
+A score that uses designated, aggregated, units, chunk, modular, perpoint, eadapt, contract or
+smallprime also needs the verify gate to confirm exact counts with that construction or counting
+routine (see referee.py).
 """
 import math
 import numpy as np
@@ -151,7 +161,53 @@ def row_abs_sum_bound(Q):         # restricted row: absolute coefficient sum <= 
     return 2 ** (Q - 1) if Q < 1000 else math.inf
 
 
-def value_bits(Q, modular=False):  # values in [-2^(Q-1), 2^(Q-1)]: log2(2^Q + 1); mod p <= 2Q: log2(2Q)
+def _is_prime(m):
+    """Deterministic Miller-Rabin for m < 3.3e24."""
+    if m < 2:
+        return False
+    small = (2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37)
+    for q in small:
+        if m % q == 0:
+            return m == q
+    dd, s = m - 1, 0
+    while dd % 2 == 0:
+        dd //= 2
+        s += 1
+    for a in small:
+        x = pow(a, dd, m)
+        if x in (1, m - 1):
+            continue
+        for _ in range(s - 1):
+            x = x * x % m
+            if x == m - 1:
+                break
+        else:
+            return False
+    return True
+
+
+_NP_CACHE = {}
+
+
+def nextprime_above(k):
+    """Least odd prime p > k (p >= 3)."""
+    k = int(k)
+    if k in _NP_CACHE:
+        return _NP_CACHE[k]
+    p = max(3, k + 1)
+    if p % 2 == 0:
+        p += 1
+    while not _is_prime(p):
+        p += 2
+    _NP_CACHE[k] = p
+    return p
+
+
+def value_bits(Q, modular=False, smallprime=False, R=None):
+    """values in [-2^(Q-1), 2^(Q-1)]: log2(2^Q + 1); mod p <= 2Q: log2(2Q); smallprime: log2 p with
+    p the least odd prime above max(R - 1, 2)."""
+    if smallprime:
+        return math.log2(nextprime_above(max(int(R) - 1, 2)))
     if modular:
         return math.log2(2.0 * Q)
     return float(Q) if Q > 60 else math.log2(2.0 ** Q + 1)
@@ -310,6 +366,7 @@ def _extra(params, regime):
     chunk, modular = _chunk(params), _flag(params, "modular")
     perpoint, eadapt = _flag(params, "perpoint"), _flag(params, "eadapt")
     contract = _flag(params, "contract")
+    smallprime = _flag(params, "smallprime")
     delta = 1.0
     if regime == "tight":
         delta = float(params["delta"])
@@ -325,7 +382,9 @@ def _extra(params, regime):
         raise ValueError("modular needs designated = True and aggregated = True")
     if contract and not aggregated:
         raise ValueError("contract needs aggregated = True")
-    return delta, designated, aggregated, units, chunk, modular, perpoint, eadapt, contract
+    if smallprime and not modular:
+        raise ValueError("smallprime needs modular = True")
+    return delta, designated, aggregated, units, chunk, modular, perpoint, eadapt, contract, smallprime
 
 
 def exponent_of(params, lam, decision=False):
@@ -336,7 +395,7 @@ def exponent_of(params, lam, decision=False):
         regime = params.get("regime", "paper")
         if regime not in REGIMES:
             return dict(valid=False, reason=f"unknown regime {regime}")
-        delta, designated, aggregated, units, chunk, modular, perpoint, eadapt, contract = _extra(params, regime)
+        delta, designated, aggregated, units, chunk, modular, perpoint, eadapt, contract, smallprime = _extra(params, regime)
     except Exception as exc:                    # malformed parameters
         return dict(valid=False, reason=f"bad params: {exc}")
     if r < 2 or Q < 1 or R < 1 or A0 < 0 or A0 + R - 1 > Q:
@@ -349,15 +408,16 @@ def exponent_of(params, lam, decision=False):
     out = tail_out(Q, r, R, A0, perpoint, eadapt)
     rows_per_n = groups_per_row(r) * hD_over_n(lam, log2D, regime, delta, designated, units, chunk) * out
     terms = dict(taylor=taylor_term(occ_per_n(designated, units, chunk) * row_degree(R) / Q, aggregated),
-                 meas=rows_per_n * value_bits(Q, modular) * (contract_factor(r) if contract else 1.0),
+                 meas=rows_per_n * value_bits(Q, modular, smallprime, R) * (contract_factor(r) if contract else 1.0),
                  groups=1.0 / r)
     return dict(valid=True, e=sum(terms.values()), terms=terms, out=out, log2D=log2D, regime=regime,
                 delta=delta, designated=designated, aggregated=aggregated, units=units, chunk=chunk,
-                modular=modular, perpoint=perpoint, eadapt=eadapt, contract=contract, decision=bool(decision))
+                modular=modular, perpoint=perpoint, eadapt=eadapt, contract=contract, smallprime=smallprime,
+                decision=bool(decision))
 
 
 def exponents_over_R(lam, r, Q, Rs, regime, delta=1.0, designated=False, aggregated=False, units=False,
-                     chunk=0, modular=False, perpoint=False, eadapt=False, contract=False):
+                     chunk=0, modular=False, perpoint=False, eadapt=False, contract=False, smallprime=False):
     """Vectorised helper for searches: e for each interval length in Rs (best A0 each; A0 = 0 with
     eadapt, where the windows are fixed by the equal-pair count)."""
     Rs = np.asarray(Rs, np.int64)
@@ -384,7 +444,12 @@ def exponents_over_R(lam, r, Q, Rs, regime, delta=1.0, designated=False, aggrega
     rows = groups_per_row(r) * hD_over_n(lam, log2D, regime, delta, designated, units, chunk) * best
     m = occ_per_n(designated, units, chunk)
     tay = np.array([taylor_term(m * row_degree(int(R)) / Q, aggregated) for R in Rs])
-    e = tay + rows * value_bits(Q, modular) * (contract_factor(r) if contract else 1.0) + 1.0 / r
+    if smallprime:
+        vb = np.array([value_bits(Q, modular, True, int(R)) for R in Rs])
+    else:
+        vb = value_bits(Q, modular)
+    e = tay + rows * vb * (contract_factor(r) if contract else 1.0) + 1.0 / r
     return e, bestA
 # VERSION6_MARK
 # VERSION7_MARK
+# VERSION8_MARK

@@ -106,3 +106,15 @@ Qmax = floor(max_log2D(lam, regime) / (2 log2 r)).
   to exponents_over_R / exponent_of (keyword) and return contract=True. The referee counts contract
   parameters only when its hidden checks (the bond condition on real designs, exact counts with
   Zagg_contracted) pass.
+
+## Version 8 of the cost model (2026-10-31)
+
+- Parameter smallprime (bool, yes/no targets only, needs modular): the prime only has to exceed R - 1.
+  The interpolation nodes are the first Q nonzero elements of GF(p^2) = GF(p)[s] / (s^2 - c) (c the
+  least quadratic non-residue mod p) instead of the integers 1..Q, and the rows use the factors
+  (1 - T / alpha_s). The measurement matrices stay integer, so a measured value is a residue mod p and
+  costs log2 p bits, p the least odd prime above max(R - 1, 2) (assembly_public.value_bits), instead of
+  log2(2Q). Pass smallprime=True to exponents_over_R / exponent_of (keyword) together with modular=True
+  and return smallprime=True. The referee counts smallprime parameters only when its hidden checks of
+  construction.gf_rows(aux, des, p) pass (Definition 3.1(4) at every GF(p^2) node and the weighted count
+  from Taylor data at the nodes).

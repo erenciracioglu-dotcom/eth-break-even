@@ -713,5 +713,121 @@
    "L": 3,
    "eadapt": true
   }
+ ],
+ "smallprime_counts": [
+  {
+   "cfg": [
+    2,
+    4,
+    3,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 8101,
+   "p": 3
+  },
+  {
+   "cfg": [
+    2,
+    4,
+    3,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 8101,
+   "p": 3,
+   "L": 2
+  },
+  {
+   "cfg": [
+    3,
+    3,
+    3,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 8102,
+   "p": 3
+  },
+  {
+   "cfg": [
+    3,
+    3,
+    3,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 8101,
+   "p": 3,
+   "perpoint": true
+  },
+  {
+   "cfg": [
+    2,
+    4,
+    3,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 8100,
+   "p": 3,
+   "perpoint": true
+  },
+  {
+   "cfg": [
+    2,
+    4,
+    3,
+    0
+   ],
+   "n": 8,
+   "m": 0,
+   "type": "bounded",
+   "seed": 8100,
+   "p": 3,
+   "perpoint": true,
+   "eadapt": true,
+   "L": 3
+  },
+  {
+   "cfg": [
+    2,
+    5,
+    3,
+    0
+   ],
+   "n": 6,
+   "m": 0,
+   "type": "bounded",
+   "seed": 8100,
+   "p": 5,
+   "perpoint": true,
+   "eadapt": true
+  },
+  {
+   "cfg": [
+    2,
+    5,
+    3,
+    0
+   ],
+   "n": 6,
+   "m": 0,
+   "type": "bounded",
+   "seed": 8103,
+   "p": 3,
+   "perpoint": true,
+   "eadapt": true
+  }
  ]
 }
