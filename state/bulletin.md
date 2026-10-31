@@ -1,4 +1,5 @@
 # Bulletin (latest first)
+- 2026-10-31 13:28:39 iter 006 T6 attempt 1: ACCEPTED - ppsz threshold 273,036 -> 193,841; e at 2224173 0.199206 -> 0.178130 (29.01% lower threshold)
 - 2026-10-31 13:05:42 iter 005 T5 attempt 1: ACCEPTED - ppsz threshold 438,437 -> 273,036; e at 2224173 0.225870 -> 0.199206 (37.73% lower threshold)
 - 2026-10-31 12:42:32 iter 004 T4 attempt 1: ACCEPTED - ppsz threshold 1,070,239 -> 438,437; e at 2224173 0.304086 -> 0.225870 (59.03% lower threshold)
 - 2026-10-31 12:28:56 iter 003 T3 attempt 1: ACCEPTED - ppsz threshold 1,117,111 -> 1,070,239; e at 2224173 0.308236 -> 0.304086 (4.20% lower threshold)

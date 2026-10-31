@@ -118,3 +118,4 @@ it are reverted.
 - 2026-10-31 12:42:32 iter 004 (T4): ppsz threshold 438,437 uses regime 'tight' -> PROVISIONAL until the head audits that regime.
 - 2026-10-31 13:05:42 iter 005 (T5): ppsz threshold 273,036 uses regime 'tight' -> PROVISIONAL until the head audits that regime.
 - 2026-10-31 13:28:39 iter 006 (T6): ppsz threshold 193,841 uses regime 'tight' -> PROVISIONAL until the head audits that regime.
+- 2026-10-31 14:10:18 iter 007 (T7): ppsz threshold 193,841 uses regime 'tight' -> PROVISIONAL until the head audits that regime.

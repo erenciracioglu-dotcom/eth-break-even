@@ -5,19 +5,19 @@
  "e_at_2224173": 0.1781300406511966,
  "params_ppsz": {
   "r": 29,
-  "Q": 19945,
+  "Q": 19946,
   "R": 746,
-  "A0": 9256,
+  "A0": 9257,
   "regime": "tight",
-  "delta": 0.0001,
+  "delta": 0.001,
   "designated": true,
   "aggregated": true,
   "units": true
  },
  "regime": "tight",
- "iter": 6,
- "task": "T6",
- "updated": "2026-10-31 13:28:39",
+ "iter": 7,
+ "task": "T7",
+ "updated": "2026-10-31 14:10:18",
  "by_regime": {
   "paper": {
    "ppsz": 2140603,

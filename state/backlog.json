@@ -119,11 +119,13 @@
   ],
   "steps": 60,
   "max_attempts": 3,
-  "status": "running",
-  "attempts": 0,
+  "status": "done",
+  "attempts": 1,
   "expected": "head oracle: ppsz threshold about 194,000 (1.4x lower than T5), e at 2224173 about 0.1784; referee v4 verifies counts and the matching",
   "spec": "Head extension (cost model v4, parameter units; read the docstring of assembly_public.py). If all variables of a clause share one group schedule (a unit), the clause follows that schedule and ALL its occurrences are read directly. Units come from a greedy maximal matching of clauses: at least |F|/7 clauses get matched, so at most 12n/7 occurrences still need replacement rows (2n without units).\n1. construction.py: build_design(aux, n, clauses, rng, designated=False, units=False). units=True needs designated=True (raise ValueError otherwise). Draw av and df exactly as now. Then, only if units: go through the clauses in order; a clause with at least 2 variables is matched when none of its variables is in a unit yet; its variables then form a unit: unit_of[v] = the clause's first variable and av[v] = av[first variable] (one shared schedule) for every v of the clause. Variables outside matched clauses are their own unit (unit_of[v] = v). Then designate, for every factor f: count its occurrences per unit (unit_of of their variables); take the unit with the most occurrences (the first such unit in occ order on ties); mark ALL occurrences of f whose variable is in that unit as designated (constant row Prow[0, i, v] = aux.Lden, Prow[k, i] = 0 for k >= 1, no label, no copy, no position, exactly as in T4) and set df[f] = av[v] of one of them. With units=False the result must stay exactly as in T4 (one designated occurrence, the first, per factor). Also return units=True/False and unit_of (numpy int array of length n). M_eff stays the number of non-designated occurrences.\n2. counting.py: in Counter.__init__, when des.get('designated') is true, d must be the number of clause occurrences that are NOT designated: count the indices i of des['occ'] whose factor f < len(clauses) and des['desig'][i] is False. (For T4 designs this equals sum(len(cl) - 1).)\n3. Test in scratch_units.py with Aux(2, 2, 2, 0) and Aux(2, 3, 3, 0) on random_bounded_formula(7, rng) and random_formula(6, 8, rng), designated=True and units=True: check that every unit with more than one variable is exactly the variable set of one clause and that its variables have identical av rows; that no clause with at least 2 variables has all its variables outside multi-variable units (the matching is maximal); that check_design gives kernel_condition and P0_delta True; and that the full count (taylor_inclusion_exclusion with Z_group_separated for every t, then hermite_H0) equals brute_count. Print C.J with and without units (with units it must not be larger).\n4. model.py: return units=True together with designated=True, aggregated=True, regime 'tight' and delta: pass it to max_log2D(lam, 'tight', delta, True, True) and as the ninth argument exponents_over_R(lam, r, Q, Rs, 'tight', delta, True, True, True). The optimum moves to r about 77 at lam = 2.2e6.\nThe hidden referee accepts units parameters only if its own hidden checks of build_design(..., designated=True, units=True) pass.",
-  "stop": "scratch_units.py passes every check, smoke.py passes, and smoke.py's e at lam=2224173 is at most 0.1795 (the head's estimate is about 0.1784)"
+  "stop": "scratch_units.py passes every check, smoke.py passes, and smoke.py's e at lam=2224173 is at most 0.1795 (the head's estimate is about 0.1784)",
+  "result": "ppsz threshold 273,036 -> 193,841; e at 2224173 0.199206 -> 0.178130 (29.01% lower threshold)",
+  "done_iter": 6
  },
  {
   "id": "T7",
@@ -138,7 +140,7 @@
   ],
   "steps": 40,
   "max_attempts": 2,
-  "status": "open",
+  "status": "running",
   "attempts": 0,
   "expected": "same thresholds (no regression); deterministic results; every call under 2 s",
   "spec": "choose_params currently stops its deep search on a wall-clock deadline (time.time()), so at large lam its answer depends on machine load, and some calls at lam >= 1e7 take more than 3 s. Make it deterministic and fast without losing quality where it matters:\n(a) remove every use of time.time() or any other clock from the decision logic; bound the work by fixed counts instead (for example: a fixed number of r values, Q values and R values per stage, chosen from lam alone);\n(b) every call must take at most 2 s for every lam from 1e3 to 1e13 (measure the worst case over at least 30 lam values, log-spaced, plus 2224173);\n(c) keep the results where the referee looks: e at lam = 2224173, 300000 and 5000000 must not get worse by more than 1e-5 compared with the current model (run the current model first and save its values in a scratch file), and the threshold where e drops below 0.386300 must not move up by more than 0.05%;\n(d) remove dead code (unused constants such as _block_budget if it is not used).\nKeep the returned dict format (regime, delta and the flags designated, aggregated, units exactly as the current model returns them).",
