@@ -37,9 +37,10 @@ import numpy as np
 from assembly_public import exponents_over_R, exponent_of, max_log2D
 
 # stage-0 r values: dense in 12..80 where the optimum sits, sparse beyond
-RSET = [2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 64, 72,
-        80, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096]
+RSET = [2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64,
+        68, 72, 80, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096]
 REGIME = "tight"
+AGGREGATED = True                    # head extension v3: Lemma 3.3 summed per U
 
 # delta grid for the tight regime (delta = 1.0 is exactly "freedman")
 DELTAS = (1.0, 0.3, 0.1, 0.03, 0.01, 0.003, 0.001, 0.0001)
@@ -54,13 +55,24 @@ N_R_COARSE = 90
 R_LO, R_HI = 0.65, 1.50            # integer r window around the coarse r_best
 MAX_R_WINDOW = 140                 # cap on the number of integer r values scanned
 N_R_SCAN = 300                     # R grid for the r scan
-N_DEEP_R = 12                      # r values refined per deep delta
+N_DEEP_R = 12                      # r values refined per deep delta (legacy path)
+N_DEEP_R_AGG = 10                  # ... and for the aggregated tight path
+# The tight path gets a deterministic (Q, R) block budget instead of a wall-clock one, so the
+# answer never depends on machine speed; the cost of a block grows with lam, hence the 1/lam.
+BLOCKS_PER_LAM = 6.0e8             # ~ (2 s of work) at lam = 2.2e6 -> ~275 blocks
+BLOCKS_MAX = 400
+BLOCKS_MIN = 16
+
+
+def _block_budget(lam):
+    return int(min(BLOCKS_MAX, max(BLOCKS_MIN, BLOCKS_PER_LAM / max(1, int(lam)))))
 
 # stage-2 settings (deep refinement)
 Q_FRACS = (1.0, 0.999, 0.998, 0.995, 0.99, 0.98, 0.97, 0.95, 0.90)   # fractions of Qmax tried
 N_R_FINE = 480                     # dense R grid per (r, Q)
 MAX_INT_R = 300                    # cap on the integer-R refinement per (r, Q)
-DEADLINE = 1.6                     # seconds; later stages stop early past this (limit is 3 s)
+DEADLINE = 1.6                     # seconds; legacy path budget (limit is 3 s)
+DEADLINE_TIGHT = 2.4                 # seconds; aggregated tight path budget (limit is 3 s)
 
 
 def _Qladder(Qmax):
@@ -75,29 +87,32 @@ def _Qmax(mld, r):
     return int(math.floor(mld / (2 * math.log2(r))))
 
 
-def _mk(r, Q, R, A0, regime, delta, designated=False):
+def _mk(r, Q, R, A0, regime, delta, designated=False, aggregated=AGGREGATED):
     p = dict(r=int(r), Q=int(Q), R=int(R), A0=int(A0), regime=regime)
     if regime == "tight":
         p["delta"] = float(delta)
     if designated:
         p["designated"] = True
+    if aggregated:
+        p["aggregated"] = True
     return p
 
 
-def _scan(lam, regime, delta, r, Q, Rs, best, designated=False):
+def _scan(lam, regime, delta, r, Q, Rs, best, designated=False, aggregated=AGGREGATED):
     """Score the interval lengths Rs for (r, Q); keep the best candidate in `best`."""
     Rs = np.unique(Rs.astype(np.int64))
     Rs = Rs[(Rs >= 1) & (Rs <= Q + 1)]
     if Rs.size == 0:
         return best
-    e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated)
+    e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated)
     i = int(np.argmin(e))
     if best is None or e[i] < best[0]:
-        return (float(e[i]), _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated))
+        return (float(e[i]), _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated,
+                                 aggregated))
     return best
 
 
-def _coarse(lam, regime, delta, mld, designated=False):
+def _coarse(lam, regime, delta, mld, designated=False, aggregated=AGGREGATED):
     """Stage 0: coarse scan over RSET x geometric Q x geometric R (guarantees a valid answer)."""
     best = None
     for r in RSET:
@@ -112,11 +127,11 @@ def _coarse(lam, regime, delta, mld, designated=False):
         for Q in Qs:
             Q = int(Q)
             Rs = np.unique(np.round(np.geomspace(1, Q + 1, N_R_COARSE)).astype(np.int64))
-            best = _scan(lam, regime, delta, r, Q, Rs, best, designated)
+            best = _scan(lam, regime, delta, r, Q, Rs, best, designated, aggregated)
     return best
 
 
-def _cheap_r_scan(lam, regime, delta, mld, rs, designated=False):
+def _cheap_r_scan(lam, regime, delta, mld, rs, designated=False, aggregated=AGGREGATED):
     """Stage 1: Q = Qmax, moderate R grid, for every r in rs. Returns [(e, r, params)]."""
     out = []
     for r in rs:
@@ -128,25 +143,28 @@ def _cheap_r_scan(lam, regime, delta, mld, rs, designated=False):
         Rs = Rs[(Rs >= 1) & (Rs <= Q + 1)]
         if Rs.size == 0:
             continue
-        e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated)
+        e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated)
         i = int(np.argmin(e))
-        out.append((float(e[i]), int(r), _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated)))
+        out.append((float(e[i]), int(r),
+                    _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated, aggregated)))
     return out
 
 
-def _deep(lam, regime, delta, r, Qmax, best, t_start, designated=False):
+def _deep(lam, regime, delta, r, Qmax, best, t_start, designated=False,
+          aggregated=AGGREGATED, deadline=DEADLINE):
     """Stage 2: full Q ladder, dense R grid and an integer-R sweep for one r."""
     for Q in _Qladder(Qmax):
-        if time.time() - t_start > DEADLINE:
+        if time.time() - t_start > deadline:
             return best
         Rs = np.unique(np.round(np.geomspace(1, Q + 1, N_R_FINE)).astype(np.int64))
         Rs = Rs[(Rs >= 1) & (Rs <= Q + 1)]
         if Rs.size == 0:
             continue
-        e, A = exponents_over_R(lam, r, Q, Rs, regime, delta, designated)
+        e, A = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated)
         i = int(np.argmin(e))
         if best is None or e[i] < best[0]:
-            best = (float(e[i]), _mk(r, Q, int(Rs[i]), int(A[i]), regime, delta, designated))
+            best = (float(e[i]),
+                    _mk(r, Q, int(Rs[i]), int(A[i]), regime, delta, designated, aggregated))
         # every integer R between the grid neighbours of the best R
         lo = int(Rs[i - 1]) if i > 0 else 1
         hi = int(Rs[i + 1]) if i + 1 < Rs.size else int(Q + 1)
@@ -184,14 +202,14 @@ def _r_window(r_best):
 def _single_regime(lam, regime, t_start):
     """Legacy path: explicit regime ("paper" / "freedman"), three-stage search."""
     mld = max_log2D(lam, regime)
-    best = _coarse(lam, regime, 1.0, mld)
+    best = _coarse(lam, regime, 1.0, mld, False, False)
     if best is None:
         r0 = int(2.0 ** (mld / 2.0))
         if r0 < 2 or 2 * math.log2(r0) > mld + 1e-9:
             return dict(r=2, Q=1, R=1, A0=0, regime=regime)   # regime allows no labels at all
         return dict(r=int(r0), Q=1, R=1, A0=0, regime=regime)
     rs = _r_window(best[1]["r"])
-    per_r = [(e, r, p) for (e, r, p) in _cheap_r_scan(lam, regime, 1.0, mld, rs)
+    per_r = [(e, r, p) for (e, r, p) in _cheap_r_scan(lam, regime, 1.0, mld, rs, False, False)
              if time.time() - t_start <= DEADLINE]
     for _e, _r, p in per_r:
         if best is None or _e < best[0]:
@@ -202,7 +220,7 @@ def _single_regime(lam, regime, t_start):
     for r in deep_rs:
         if time.time() - t_start > DEADLINE:
             break
-        best = _deep(lam, regime, 1.0, r, _Qmax(mld, r), best, t_start)
+        best = _deep(lam, regime, 1.0, r, _Qmax(mld, r), best, t_start, False, False)
     return _polish(lam, best, regime, 1.0)[1]
 
 
@@ -216,12 +234,14 @@ def choose_params(lam, regime=None):
     mld_ref = max_log2D(lam, regime, delta_ref, designated)
 
     # ---------- stage 0: coarse scan at the reference delta (valid answer + r window) -------
-    best = _coarse(lam, regime, delta_ref, mld_ref, designated)
+    best = _coarse(lam, regime, delta_ref, mld_ref, designated, AGGREGATED)
     if best is None:
         r0 = int(2.0 ** (mld_ref / 2.0))
         if r0 < 2 or 2 * math.log2(r0) > mld_ref + 1e-9:
-            return dict(r=2, Q=1, R=1, A0=0, regime=regime, delta=1.0, designated=True)  # no labels
-        return dict(r=int(r0), Q=1, R=1, A0=0, regime=regime, delta=delta_ref, designated=True)
+            return dict(r=2, Q=1, R=1, A0=0, regime=regime, delta=1.0, designated=True,
+                        aggregated=AGGREGATED)                        # regime allows no labels
+        return dict(r=int(r0), Q=1, R=1, A0=0, regime=regime, delta=delta_ref, designated=True,
+                    aggregated=AGGREGATED)
     rs = _r_window(best[1]["r"])
 
     # ---------- stage 1: cheap Q = Qmax r scan for every delta in the grid ----------
@@ -230,7 +250,7 @@ def choose_params(lam, regime=None):
         if time.time() - t_start > DEADLINE:
             break
         mld = max_log2D(lam, regime, d, designated)
-        per_r = _cheap_r_scan(lam, regime, d, mld, rs, designated)
+        per_r = _cheap_r_scan(lam, regime, d, mld, rs, designated, AGGREGATED)
         if not per_r:
             continue
         per_delta.append((min(e for e, _r, _p in per_r), d, per_r))
@@ -244,12 +264,13 @@ def choose_params(lam, regime=None):
     per_delta.sort(key=lambda t: t[0])
     for _e0, d, per_r in per_delta[:N_DEEP_DELTAS]:
         mld = max_log2D(lam, regime, d, designated)
-        deep_rs = [r for _e, r, _p in sorted(per_r, key=lambda t: t[0])[:N_DEEP_R]]
+        deep_rs = [r for _e, r, _p in sorted(per_r, key=lambda t: t[0])[:N_DEEP_R_AGG]]
         if best[1].get("delta") == d and best[1]["r"] not in deep_rs:
             deep_rs.append(best[1]["r"])
         for r in deep_rs:
-            if time.time() - t_start > DEADLINE:
+            if time.time() - t_start > DEADLINE_TIGHT:
                 break
-            best = _deep(lam, regime, d, r, _Qmax(mld, r), best, t_start, designated)
+            best = _deep(lam, regime, d, r, _Qmax(mld, r), best, t_start, designated,
+                                AGGREGATED, DEADLINE_TIGHT)
 
     return _polish(lam, best, regime, best[1].get("delta", delta_ref))[1]
