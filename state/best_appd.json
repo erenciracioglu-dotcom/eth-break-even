@@ -1,9 +1,9 @@
 {
- "third": 5404,
- "occ3sat": 23056,
- "ppsz": 4032,
- "sharp3sat": 1213,
- "brute": 579,
+ "third": 5300,
+ "occ3sat": 21942,
+ "ppsz": 3958,
+ "sharp3sat": 1212,
+ "brute": 572,
  "verified_flags": {
   "memo": true,
   "modedp": true,
@@ -14,18 +14,18 @@
   "levels": 2,
   "r": [
    7,
-   12
+   10
   ],
   "u": [
-   926,
-   555
+   907,
+   642
   ],
   "a": [
-   945,
-   1501
+   926,
+   1569
   ],
-  "delta": 0.01,
-  "Lc": 4096,
+  "delta": 0.0001,
+  "Lc": 1048576,
   "perclass": true,
   "labelfree": true,
   "memo": true,
@@ -33,7 +33,7 @@
   "chunks": true,
   "leafvars": false
  },
- "iter": 1,
- "task": "T15",
- "updated": "2026-11-01 01:29:13"
+ "iter": 3,
+ "task": "T16",
+ "updated": "2026-11-01 02:47:45"
 }

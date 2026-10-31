@@ -1,4 +1,6 @@
 # Bulletin (latest first)
+- 2026-11-01 02:24:13 iter_appd 002 T16 attempt 1/3: REJECTED - no change to appd_params.py
+- 2026-11-01 01:29:13 iter_appd 001 T15 attempt 1: ACCEPTED - third threshold 201,458 -> 5,404 (97.32% lower threshold)
 - 2026-10-31 20:13:04 iter 021 T14b attempt 1: ACCEPTED - ppsz threshold 18,817 -> 10,086; e at 2224173 0.081517 -> 0.073123 (46.40% lower threshold)
 - 2026-10-31 19:50:11 iter 020 T14 attempt 3/3: REJECTED - no change to counting.py, model.py
 - 2026-10-31 19:49:41 iter 019 T14 attempt 2/3: REJECTED - no gain: ppsz threshold 18,817 -> 18,817; e at 2224173 0.081517 -> 0.081517
