@@ -487,6 +487,187 @@ class Counter:
         signs = np.array([(-1) ** j for j in range(Ky)], np.int64)
         return (total * signs[None, :]).sum(axis=1) % p
 
+    # ------------------------------------------------ edge bits (cost model v9)
+    def taylor_edges(self, t):
+        """Same length-J vector as taylor_aggregated(t), computed inside the group-by-group
+        contraction of 'contract': one bit per edge instead of one restricted sum per set U.
+
+        At point t a replaced occurrence oi (des['desig'][oi] False, or no 'desig') whose variable
+        v = des['occ'][oi][1] lies in group a = des['av'][v][t - 1] different from the clause group
+        d = des['df'][f][t - 1] is an edge: the series rows S[k][oi] are zero outside the variables
+        of the groups d and a. A-part: SA[0][oi] = S[0][oi], SA[k][oi] = S[k][oi] restricted to the
+        variables of group d for k >= 1; B-part: SB[0][oi] = 0, SB[k][oi] = S[k][oi] restricted to
+        the variables of group a for k >= 1. Every clause is multilinear in its occurrences, so
+        H(t + z) mod z^J is the sum over the sets E of edges with |E| < J of sum_x w(x) prod_f D_f
+        prod_{oi in E} B_oi, with D_f = 1 - prod_l u_l(A_l) if f has no edge in E and
+        D_f = -(prod_{oi in E cap f} u'_oi) prod_{l in f, l not in E} u_l(A_l) otherwise, where
+        u(y) = 1 - y for a positive literal and y for a negative one, u' = -1 (positive) / +1
+        (negative). Every summand factorises over the groups, so the contraction carries one bit
+        per open edge: a state is (key, O, c) with key the half-bond key of Zagg_contracted, O the
+        edges with bit 1 that have exactly one processed end, c the number of bit-1 edges decided.
+        """
+        p, aux, des = self.p, self.aux, self.des
+        n, J = self.n, self.J
+        groups, cl_group, grp_mask, grp_bits, grp_Cg, loc = self.group_structure(t)
+        keys, reps = self.contract_structure(t)
+        r = aux.r
+        S = self.series_vectors(t)
+        # ---------------- edges, SA, SB (masked rows of length n) ----------------
+        desig = des.get("desig")
+        edges = []                       # e -> (oi, d, a), a != d
+        e_of_occ = {}
+        for oi, (f, v) in enumerate(des["occ"]):
+            if f >= len(self.clauses):
+                continue                 # singleton factors carry no clause factor
+            if desig is not None and desig[oi]:
+                continue                 # designated: constant row, no replacement
+            d = int(des["df"][f][t - 1])
+            a = int(des["av"][v][t - 1])
+            if a == d:
+                continue
+            e_of_occ[oi] = len(edges)
+            edges.append((oi, d, a))
+        gvars = [np.zeros(n, bool) for _ in range(r)]
+        for g in range(r):
+            if len(groups[g]):
+                gvars[g][groups[g]] = True
+        SA, SB = [], []
+        for (oi, d, a) in edges:
+            A = np.zeros((J, n), np.int64)
+            B = np.zeros((J, n), np.int64)
+            A[0] = S[0][oi]
+            for k in range(1, J):
+                A[k] = S[k][oi] * gvars[d]
+                B[k] = S[k][oi] * gvars[a]
+            SA.append(A)
+            SB.append(B)
+        cl_edges = [[] for _ in self.clauses]
+        for e, (oi, _d, _a) in enumerate(edges):
+            cl_edges[int(des["occ"][oi][0])].append(e)
+        new_e, close_e, b_side = [], [], []
+        for g in range(r):
+            fut, past = set(range(g + 1, r)), set(range(g))
+            ng, cg, bg = [], [], []
+            for e, (oi, d, a) in enumerate(edges):
+                if (d == g and a in fut) or (a == g and d in fut):
+                    ng.append(e)
+                if (d == g and a in past) or (a == g and d in past):
+                    cg.append(e)
+                if a == g:
+                    bg.append(e)
+            new_e.append(ng)
+            close_e.append(cg)
+            b_side.append(bg)
+        cl_of_group = [{ci for ci, gg in enumerate(cl_group) if gg == g} for g in range(r)]
+        # rows of S / SA / SB against the own masks are recomputed per (key, cons, combo)
+        unit = np.zeros(J, np.int64)
+        unit[0] = 1
+        T = {((), frozenset(), 0): unit.copy()}
+        for g in range(r):
+            future = list(range(g + 1, r))
+            gm = grp_mask[g]
+            cl_g = sorted(cl_of_group[g])
+            ng, cg, bg = new_e[g], close_e[g], b_side[g]
+            csets = [[]]
+            for k in range(1, len(ng) + 1):
+                csets += [list(cn) for cn in itertools.combinations(ng, k)]
+            cgset = set(cg)
+            newT = {}
+            ctxcache = {}
+            for (key, O, c), val in T.items():
+                kd = {(hh, bb): (pi_ab, pi_ba) for ((hh, bb), pi_ab, pi_ba) in key}
+                cons = [i for i in range(len(gm))
+                        if all(keys[g][a][i] == kd[(a, g)][1] for a in range(g))]
+                if not cons:
+                    continue
+                past = 0
+                for a in range(g):
+                    past += reps[a][g][kd[(a, g)][0]]
+                rest = tuple(e2 for e2 in key if e2[0][1] != g)
+                ck = (key, tuple(cons), past)
+                ctx = ctxcache.get(ck)
+                if ctx is None:
+                    ctx = []
+                    for cmb in itertools.product(
+                            *[list(reps[h][g].items()) for h in future]):
+                        xs = gm[np.asarray(cons, np.int64)] + past
+                        for _vh, mh in cmb:
+                            xs = xs + int(mh)
+                        Xs = ((xs[:, None] >> np.arange(n)[None, :]) & 1).astype(np.int64)
+                        ctx.append([cmb, Xs, self.wX[gm[cons]].copy(), {}, {}, {}, {}])
+                    ctxcache[ck] = ctx
+                lim = J - 1 - c
+                if lim < 0:
+                    continue
+                for cmb, Xs, wsel, serA, serB, Dc, Tc in ctx:
+                    N = Xs.shape[0]
+                    nk = [tuple(sorted(rest + tuple(
+                        ((g, h), keys[g][h][cons[jj]], vh)
+                        for h, (vh, _m) in zip(future, cmb)))) for jj in range(len(cons))]
+                    for N1 in [s for s in csets if len(s) <= lim]:
+                        n1 = set(N1)
+                        pats = tuple(tuple(1 if ((e in O) or (e in n1)) else 0
+                                          for e in cl_edges[ci]) for ci in cl_g)
+                        bset = frozenset(e for e in bg if ((e in O) or (e in n1)))
+                        total = Tc.get((pats, bset))
+                        if total is None:
+                            total = np.zeros((J, N), np.int64)
+                            total[0] = 1
+                            for k, ci in enumerate(cl_g):
+                                pat = pats[k]
+                                D = Dc.get((ci, pat))
+                                if D is None:
+                                    prod = np.zeros((J, N), np.int64)
+                                    prod[0] = 1
+                                    for oi, pos in self.cl_occ[ci]:
+                                        e = e_of_occ.get(oi)
+                                        on = (e is not None) and ((e in O) or (e in n1))
+                                        if on:
+                                            s = np.zeros((J, N), np.int64)
+                                            s[0] = p - 1 if pos else 1  # u' = -1 / +1
+                                        else:
+                                            y = serA.get(oi)
+                                            if y is None:
+                                                if e is None:
+                                                    y = (S[:, oi] @ Xs.T) % p  # full rows
+                                                else:
+                                                    y = (SA[e] @ Xs.T) % p     # A-part rows
+                                                serA[oi] = y
+                                            if pos:
+                                                s = (-y) % p
+                                                s[0] = (1 - y[0]) % p
+                                            else:
+                                                s = y
+                                        prod = smul(prod, s, p)
+                                    D = (-prod) % p
+                                    if not any(pat):
+                                        D[0] = (1 - prod[0]) % p
+                                    Dc[(ci, pat)] = D
+                                total = smul(total, D, p)
+                            for e in bset:
+                                B = serB.get(e)
+                                if B is None:
+                                    B = (SB[e] @ Xs.T) % p
+                                    serB[e] = B
+                                total = smul(total, B, p)
+                            total = (total * wsel[None, :]) % p
+                            Tc[(pats, bset)] = total
+                        O2 = (O - cgset) | frozenset(N1)
+                        c2 = c + len(N1)
+                        for jj in range(len(cons)):
+                            add = np.convolve(val, total[:, jj])[:J] % p
+                            st = (nk[jj], O2, c2)
+                            cur = newT.get(st)
+                            newT[st] = add if cur is None else (cur + add) % p
+            T = newT
+            if not T:
+                return np.zeros(J, np.int64)
+        acc = np.zeros(J, np.int64)
+        for (key, O, c), val in T.items():
+            if not O:
+                acc = (acc + val.reshape(J)) % p
+        return acc % p
+
     def hermite_H0(self, data):
         p, Q, J = self.p, self.Q, self.J
         L = Q * J
