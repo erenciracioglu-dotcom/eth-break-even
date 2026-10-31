@@ -233,7 +233,7 @@ def _cfg12(lam, rs, est0_us, designated=True, units=UNITS, deltas=DELTAS, chunk=
 
 
 def _mk(r, Q, R, A0, regime, delta, designated=False, aggregated=AGGREGATED, units=UNITS,
-      chunk=CHUNK, modular=False, perpoint=PERPOINT):
+      chunk=CHUNK, modular=False, perpoint=PERPOINT, eadapt=False):
     p = dict(r=int(r), Q=int(Q), R=int(R), A0=int(A0), regime=regime)
     if regime == "tight":
         p["delta"] = float(delta)
@@ -249,6 +249,8 @@ def _mk(r, Q, R, A0, regime, delta, designated=False, aggregated=AGGREGATED, uni
         p["modular"] = True
     if perpoint:
         p["perpoint"] = True
+    if eadapt:
+        p["eadapt"] = True
     return p
 
 
@@ -352,6 +354,38 @@ def _polish(lam, best, regime, delta, decision=False):
     return best
 
 
+def _eadapt_rescan(lam, best, regime, decision=False):
+    """Head extension v6 (eadapt): final re-scan of (r, Q, R) with eadapt=True around the winner
+    of the perpoint search. exponents_over_R with eadapt is ~10x slower, so it runs only here:
+    5 r values near r_best x 2 Q values x 200 R values, one call per (r, Q)."""
+    p = best[1]
+    delta = float(p.get("delta", REF_DELTA))
+    r_best, R_best = int(p["r"]), int(p["R"])
+    out = None
+    for r in sorted({max(2, int(round(f * r_best)))
+                     for f in (0.80, 0.85, 0.90, 0.95, 1.00, 1.05)}):
+        mld = max_log2D(lam, regime, delta, True, UNITS, CHUNK)
+        Qmax = _Qmax(mld, r)
+        if Qmax < 1:
+            continue
+        for Q in (Qmax, Qmax - 1):
+            if Q < 1:
+                continue
+            Rs = np.unique(np.round(np.linspace(0.6 * R_best, 1.2 * R_best, 200)).astype(np.int64))
+            Rs = Rs[(Rs >= 1) & (Rs <= Q)]
+            if Rs.size == 0:
+                continue
+            e, _A = exponents_over_R(lam, r, Q, Rs, regime, delta, True, AGGREGATED, UNITS,
+                                     CHUNK, decision, perpoint=True, eadapt=True)
+            i = int(np.argmin(e))
+            if out is None or float(e[i]) < out[0]:
+                out = (float(e[i]), _mk(r, Q, int(Rs[i]), 0, regime, delta, True, AGGREGATED,
+                                        UNITS, CHUNK, decision, True, True))
+    if out is not None and out[0] < best[0]:
+        return out
+    return best
+
+
 def _r_window(r_best, cfg, r_lo=R_LO, r_hi=R_HI):
     rs = list(range(max(2, int(math.floor(r_lo * r_best))),
                     max(2, int(math.ceil(r_hi * r_best))) + 1))
@@ -427,7 +461,8 @@ def _tight(lam, modular=False, r_lo=R_LO, r_hi=R_HI):
             if e < best[0]:
                 best = (e, p)
     if not per_delta:
-        return _polish(lam, best, regime, delta_ref, modular)[1]
+        return _eadapt_rescan(lam, _polish(lam, best, regime, delta_ref, modular), regime,
+                              modular)
 
     # ---------- stage 2: deep refinement of the best r for the best few deltas ----------
     per_delta.sort(key=lambda t: t[0])
@@ -440,7 +475,8 @@ def _tight(lam, modular=False, r_lo=R_LO, r_hi=R_HI):
             best = _deep(lam, regime, d, r, _Qmax(mld, r), best, cfg, designated, AGGREGATED,
                          units, chunk, modular, perpoint)
 
-    return _polish(lam, best, regime, best[1].get("delta", delta_ref), modular)[1]
+    return _eadapt_rescan(lam, _polish(lam, best, regime, best[1].get("delta", delta_ref),
+                                       modular), regime, modular)[1]
 
 
 def choose_params(lam, regime=None):

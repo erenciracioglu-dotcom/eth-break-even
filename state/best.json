@@ -1,13 +1,13 @@
 {
- "ppsz": 25699,
- "sharp3sat": 5621,
+ "ppsz": 24714,
+ "sharp3sat": 5190,
  "brute": 1046,
- "e_at_2224173": 0.08757500378530157,
+ "e_at_2224173": 0.08736196936835396,
  "params_ppsz": {
-  "r": 28,
-  "Q": 2665,
-  "R": 161,
-  "A0": 1205,
+  "r": 24,
+  "Q": 2687,
+  "R": 159,
+  "A0": 0,
   "regime": "tight",
   "delta": 0.001,
   "designated": true,
@@ -15,12 +15,13 @@
   "units": true,
   "chunk": 4096,
   "modular": true,
-  "perpoint": true
+  "perpoint": true,
+  "eadapt": true
  },
  "regime": "tight",
- "iter": 11,
- "task": "T10",
- "updated": "2026-10-31 17:10:32",
+ "iter": 14,
+ "task": "T11",
+ "updated": "2026-10-31 17:36:43",
  "by_regime": {
   "paper": {
    "ppsz": 2140603,
@@ -45,13 +46,13 @@
    }
   },
   "tight": {
-   "ppsz": 25699,
-   "iter": 11,
+   "ppsz": 24714,
+   "iter": 14,
    "params": {
-    "r": 28,
-    "Q": 2665,
-    "R": 161,
-    "A0": 1205,
+    "r": 24,
+    "Q": 2687,
+    "R": 159,
+    "A0": 0,
     "regime": "tight",
     "delta": 0.001,
     "designated": true,
@@ -59,7 +60,8 @@
     "units": true,
     "chunk": 4096,
     "modular": true,
-    "perpoint": true
+    "perpoint": true,
+    "eadapt": true
    }
   }
  }

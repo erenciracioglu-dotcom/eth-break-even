@@ -119,9 +119,10 @@ def local_basis(r):
 class Aux:
     """B = ([r]x[r])^Q, M0 = V0 f_I(W0), C^B and rows P_u(T) (Sections 4.1-4.3)."""
 
-    def __init__(self, r, Q, R, A0, perpoint=False):
+    def __init__(self, r, Q, R, A0, perpoint=False, eadapt=False):
         self.r, self.Q, self.R, self.A0 = r, Q, R, A0
         self.perpoint = bool(perpoint)
+        self.eadapt = bool(eadapt)
         D = r ** (2 * Q)
         self.D = D
         idx = np.arange(D, dtype=np.int64)
@@ -143,17 +144,19 @@ class Aux:
         self.perms = perms
         self.full = self.index_of(d, a)                 # V0: swap every position
 
-        # (R-1)! * f_I(W0) = sum_j (-1)^(A0+j) ((R-1)!/j!) prod_{a<j} (2W0 - 2(A0+a) I)
         fac = factorial(R - 1)
         self.fac = fac
-        Pj = np.eye(D, dtype=np.int64)
-        F = np.zeros((D, D), np.int64)
-        for j in range(R):
-            F += ((-1) ** (A0 + j)) * (fac // factorial(j)) * Pj
-            if j < R - 1:
-                twoW = Q * Pj - sum(Pj[pm, :] for pm in perms)   # (2 W0) Pj
-                Pj = twoW - 2 * (A0 + j) * Pj
-        self.M0s = F[self.full, :]                      # (R-1)! * M0
+        self.ne = (a == d).sum(axis=1)                  # equal pairs of every label
+        self.win = {e: (0 if Q - e < R else (Q - e - R + 1) // 2) for e in range(Q + 1)} \
+            if self.eadapt else {e: A0 for e in range(Q + 1)}
+        if self.eadapt:
+            M0s = np.zeros((D, D), np.int64)
+            for e in np.unique(self.ne):
+                cols = self.ne == e
+                M0s[:, cols] = self._Fmat(self.win[int(e)])[self.full, :][:, cols]
+            self.M0s = M0s                              # (R-1)! * M0
+        else:
+            self.M0s = self._Fmat(A0)[self.full, :]     # (R-1)! * M0
         assert np.abs(self.M0s).max() < 2 ** 40
 
         # product eigenbasis psi and the measurement matrix C^B
@@ -173,15 +176,20 @@ class Aux:
             Psi[k] = v
             js[k] = j
         self.Psi, self.js, self.typ = Psi, js, typ
-        self.inI = (js >= A0) & (js <= A0 + R - 1)
+        self.es = (typ == 0).sum(axis=1)                # equal-pair positions of every basis vector
+        self.starts = np.array([self.win[int(e)] for e in self.es], np.int64)
+        self.inI = (js >= self.starts) & (js <= self.starts + R - 1)
         self.Cmeas = Psi[~self.inI]
         if self.perpoint:
-            # m(j) = 1 - (-1)^j f_I(j, R, A0), exact Python integers (object dtype)
+            # m(j, st) = 1 - (-1)^j f_I(j, R, st), exact Python integers (object dtype)
             mmax = int(js.max())
-            mv = {j: 1 - (-1) ** j * f_I(j, R, A0) for j in range(-1, mmax + 1)}
+            mvs = {}
+            for st in set(int(v) for v in self.win.values()):
+                mvs[st] = {j: 1 - (-1) ** j * f_I(j, R, st) for j in range(-1, mmax + 1)}
             F = np.empty(D, dtype=object)
             for k in range(D):
                 jk = int(js[k])
+                mv = mvs[int(self.starts[k])]
                 F[k] = mv[jk - 1] + mv[jk]
             self.Cmeas_t = [Psi[(typ[:, s] == 2) & (F != 0)] for s in range(Q)]
 
@@ -212,17 +220,35 @@ class Aux:
                     np.add.at(Pc[k], (uu, yy), vals * (c * scale))
         self.Pc = Pc
 
+    def _Fmat(self, start):
+        """(R-1)! * f_I(W0) with the window [start, start + R - 1]:
+        sum_j (-1)^(start+j) ((R-1)!/j!) prod_{a<j} (2W0 - 2(start+a) I)."""
+        D, R, fac = self.D, self.R, self.fac
+        Pj = np.eye(D, dtype=np.int64)
+        F = np.zeros((D, D), np.int64)
+        for j in range(R):
+            F += ((-1) ** (start + j)) * (fac // factorial(j)) * Pj
+            if j < R - 1:
+                twoW = self.Q * Pj - sum(Pj[pm, :] for pm in self.perms)   # (2 W0) Pj
+                Pj = twoW - 2 * (start + j) * Pj
+        return F
+
     def index_of(self, A, Dd):
         return ((A * self.r + Dd) * self.base).sum(axis=-1)
 
     # ------------------------------------------------------------ checks
     def check_f(self):
-        return all(f_I(j, self.R, self.A0) == (-1) ** j for j in range(self.A0, self.A0 + self.R))
+        for st in set(int(v) for v in self.win.values()):
+            for j in range(st, st + self.R):
+                if f_I(j, self.R, st) != (-1) ** j:
+                    return False
+        return True
 
     def check_eigen(self):
         """M0 psi = (-1)^j f_I(j) psi for every basis vector; basis orthogonal."""
         lhs = self.M0s @ self.Psi.T
-        fv = np.array([(-1) ** int(j) * f_I(int(j), self.R, self.A0) for j in self.js], dtype=np.int64)
+        fv = np.array([(-1) ** int(j) * f_I(int(j), self.R, int(st))
+                       for j, st in zip(self.js, self.starts)], dtype=np.int64)
         rhs = self.Psi.T * (self.fac * fv)[None, :]
         G = self.Psi @ self.Psi.T
         return bool(np.array_equal(lhs, rhs)), bool(np.count_nonzero(G - np.diag(np.diag(G))) == 0)
