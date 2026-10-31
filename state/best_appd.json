@@ -1,39 +1,39 @@
 {
- "third": 201458,
- "occ3sat": 1475104,
- "ppsz": 140745,
- "sharp3sat": 34975,
- "brute": 16738,
+ "third": 5404,
+ "occ3sat": 23056,
+ "ppsz": 4032,
+ "sharp3sat": 1213,
+ "brute": 579,
  "verified_flags": {
-  "memo": false,
-  "modedp": false,
-  "chunks": false,
-  "leafvars": false
+  "memo": true,
+  "modedp": true,
+  "chunks": true,
+  "leafvars": true
  },
  "params_third": {
   "levels": 2,
   "r": [
-   12,
-   16
+   7,
+   12
   ],
   "u": [
-   26964,
-   21571
+   926,
+   555
   ],
   "a": [
-   26993,
-   48566
+   945,
+   1501
   ],
   "delta": 0.01,
-  "Lc": 1,
+  "Lc": 4096,
   "perclass": true,
   "labelfree": true,
-  "memo": false,
-  "modedp": false,
-  "chunks": false,
+  "memo": true,
+  "modedp": true,
+  "chunks": true,
   "leafvars": false
  },
- "iter": 0,
- "task": "baseline (skeleton, no code flags)",
- "updated": "2026-11-01 00:30:56"
+ "iter": 1,
+ "task": "T15",
+ "updated": "2026-11-01 01:29:13"
 }

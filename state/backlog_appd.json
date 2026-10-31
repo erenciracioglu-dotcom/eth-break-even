@@ -15,7 +15,7 @@
    "chunks",
    "leafvars"
   ],
-  "status": "open",
+  "status": "running",
   "priority": 10,
   "max_attempts": 3,
   "steps": 70

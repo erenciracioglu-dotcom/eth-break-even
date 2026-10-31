@@ -542,7 +542,10 @@ class NodeExpansion:
         the child network of group g (D.4.6) for that gamma, computed once per distinct gamma. Return a dict
         {self.key(gamma): series} (series = list of self.q residues mod 2^self.p). self.child_network_value(g, gamma)
         is a slow reference for one gamma. Add the number of entries to self.child_calls."""
-        raise NotImplementedError("T15: implement group_table")
+        gammas = self.tuples(self.inc[g], self.p)
+        tbl = {self.key(gm): self.child_network_value(g, gm) for gm in gammas}
+        self.child_calls += len(gammas)
+        return tbl
 
     @staticmethod
     def key(beta):
@@ -551,12 +554,33 @@ class NodeExpansion:
     def sum_paper(self):
         """(D.16) as in the paper: F(t + alpha z) = sum over all tuples beta (weight < p) of prod_g Z_{g,beta}
         mod (2^p, z^q). Return (series, number of tuples, number of tuples * number of groups)."""
-        raise NotImplementedError("T15: implement sum_paper")
+        tables = {g: self.group_table(g) for g in self.r_groups}
+        total = [0] * self.q
+        nb = 0
+        for beta in self.tuples(list(range(len(self.modes))), self.p):
+            nb += 1
+            val = [1] + [0] * (self.q - 1)
+            for g in self.r_groups:
+                sub = {k: e for k, e in beta.items() if k in self.inc[g]}
+                val = ps_mul_mod(val, tables[g][self.key(sub)], self.q, self.m)
+            total = ps_add_mod(total, val, self.m)
+        return total, nb, nb * len(self.r_groups)
 
     def sum_memo(self):
         """Same sum, with the child tables of group_table computed once per group (appd-memo).
         Return (series, number of tuples, self.child_calls) with self.child_calls reset to 0 first."""
-        raise NotImplementedError("T15: implement sum_memo")
+        self.child_calls = 0
+        tables = {g: self.group_table(g) for g in self.r_groups}
+        total = [0] * self.q
+        nb = 0
+        for beta in self.tuples(list(range(len(self.modes))), self.p):
+            nb += 1
+            val = [1] + [0] * (self.q - 1)
+            for g in self.r_groups:
+                sub = {k: e for k, e in beta.items() if k in self.inc[g]}
+                val = ps_mul_mod(val, tables[g][self.key(sub)], self.q, self.m)
+            total = ps_add_mod(total, val, self.m)
+        return total, nb, self.child_calls
 
     def sum_dp(self):
         """Same sum, eliminated group by group in the order self.r_groups (appd-modedp): states are tuples on the
@@ -565,7 +589,37 @@ class NodeExpansion:
         multiplies by the table entry of g and projects out the modes whose both ends are processed.
         Return (series, max_enum, self.child_calls) with self.child_calls reset to 0 first; max_enum is the largest
         number, over the steps, of (state, new tuple) combinations of total weight < p that the step multiplies."""
-        raise NotImplementedError("T15: implement sum_dp")
+        self.child_calls = 0
+        tables = {g: self.group_table(g) for g in self.r_groups}
+        pos = {g: j for j, g in enumerate(self.r_groups)}
+        endpos = {}
+        for k, md in enumerate(self.modes):
+            endpos[k] = (min(pos[md["src"]], pos[md["tgt"]]), max(pos[md["src"]], pos[md["tgt"]]))
+        Phi = {(): [1] + [0] * (self.q - 1)}
+        max_enum = 0
+        for j, g in enumerate(self.r_groups):
+            new = sorted(k for k in self.inc[g] if endpos[k][0] == j and endpos[k][1] > j)
+            newset = set(new)
+            keep = sorted(k for k, (lo, hi) in endpos.items() if hi > j)
+            keepset = set(keep)
+            newPhi = {}
+            enum = 0
+            for s, ser in Phi.items():
+                sd = dict(s)
+                for nt in self.tuples(new, self.p - self.weight(sd)):
+                    ntd = dict(nt)
+                    full = dict(sd)
+                    full.update(ntd)
+                    if self.weight(full) >= self.p:
+                        continue
+                    enum += 1
+                    gamma = {k: e for k, e in full.items() if k in self.inc[g]}
+                    val = ps_mul_mod(ser, tables[g][self.key(gamma)], self.q, self.m)
+                    proj = tuple(sorted((k, e) for k, e in full.items() if k in keepset))
+                    newPhi[proj] = ps_add_mod(newPhi[proj], val, self.m) if proj in newPhi else val
+            max_enum = max(max_enum, enum)
+            Phi = newPhi
+        return Phi.get((), [0] * self.q), max_enum, self.child_calls
 
     def child_network_value(self, g, gamma):
         """Build the child network of D.4.6 explicitly and contract it by brute force."""
@@ -711,17 +765,103 @@ def byvars_value(ne, g, gamma):
     two product terms. After expanding these terms every row bit y carries a unary weight (w0, w1), and
     sum_y w(y) l_y(form) = w0 + (w1 - w0) form enters that row's packet factor. Must equal ne.group_table(g)[key].
     Return (series, number of variables summed, max number of clauses split into two terms)."""
-    raise NotImplementedError("T15: implement byvars_value")
+    net, pk, m, q = ne.net, ne.pk, ne.m, ne.q
+    kg = [k for k in range(len(net.verts)) if ne.grp[k] == g]
+    kset = set(kg)
+    varset = set()
+    for k in kg:
+        varset |= set(net.units[k])
+    vars_ = sorted(varset)
+    cls = [ci for ci in range(len(net.clauses)) if net.desig[ci] in kset]
+    lit = {}
+    for ci in cls:
+        for l in net.clauses[ci]:
+            lit[(ci, abs(l))] = 1 if l > 0 else -1
+    # column wires of the group: their bit is the value of the variable they carry
+    colvar = {w: _WIREMAP[(id(net), w)][1] for w in range(len(net.wires)) if ne.colg[w] == g}
+    # row wires of the group: one per external literal of a clause designated to a chunk of g
+    rowinfo, extof = {}, {ci: [] for ci in cls}
+    for w in range(len(net.wires)):
+        if ne.rowg[w] == g:
+            ci, v = _WIREMAP[(id(net), w)]
+            rowinfo[w] = (ci, v, lit[(ci, v)])
+            extof[ci].append(w)
+    rows = sorted(rowinfo)
+    tmodes = [k for k in ne.tg[g]]
+    smodes = [k for k in ne.sg[g]]
+    want = tuple(sorted((k, gamma[k]) for k in tmodes if k in gamma))
+    rowmodes = {w: [k for k in tmodes if (w, k) in ne.coef] for w in rows}
+    total = [0] * q
+    nsplit_max = 0
+    for xb in itertools.product((0, 1), repeat=len(vars_)):
+        val = dict(zip(vars_, xb))
+        split = [ci for ci in cls
+                 if not any(val[abs(l)] == (1 if l > 0 else 0)
+                            for l in net.clauses[ci] if abs(l) in net.units[net.desig[ci]])]
+        nsplit_max = max(nsplit_max, len(split))
+        for choice in itertools.product((0, 1), repeat=len(split)):
+            w01 = {w: (1, 1) for w in rows}
+            sign = 1
+            for ci, ch in zip(split, choice):
+                if not ch:
+                    continue
+                sign = -sign
+                for w in extof[ci]:
+                    w01[w] = (1, 0) if rowinfo[w][2] > 0 else (0, 1)
+            polyd = {(): [1] + [0] * (q - 1)}
+            for w in rows:
+                loc = [0] * q
+                for w2, ser in ne.local[w]:
+                    if val[colvar[w2]]:
+                        loc = ps_add_mod(loc, ser, m)
+                a0 = (w01[w][1] - w01[w][0]) % m
+                base = [(a0 * c) % m for c in loc]
+                base[0] = (base[0] + w01[w][0]) % m
+                terms = [((), base)] + [(k, [(a0 * c) % m for c in ne.coef[(w, k)]]) for k in rowmodes[w]]
+                new = {}
+                for key, v in polyd.items():
+                    for k, c in terms:
+                        if k == ():
+                            nk = key
+                        else:
+                            dd = dict(key)
+                            dd[k] = dd.get(k, 0) + 1
+                            if dd[k] > gamma.get(k, 0):
+                                continue
+                            nk = tuple(sorted(dd.items()))
+                        prod = ps_mul_mod(v, c, q, m)
+                        new[nk] = ps_add_mod(new[nk], prod, m) if nk in new else prod
+                polyd = new
+            ser = polyd.get(want, [0] * q)
+            f = 1
+            for k in smodes:
+                e = gamma.get(k, 0)
+                if e:
+                    f *= sum(c * val[colvar[w2]] for c, w2 in ne.modes[k]["lin"]) ** e
+            total = ps_add_mod(total, [(sign * f * c) % m for c in ser], m)
+    return total, len(vars_), nsplit_max
 
 
-IMPLEMENTED = False      # set to True once every function below works
+IMPLEMENTED = True      # set to True once every function below works
 
 
 def node_value(net, pk, labels, t, p, q, weights="paper", method="dp"):
     """F(t + alpha z) mod (2^p, z^q) from the mode expansion at node t (v2(t) < pk.a): method "paper", "memo"
     or "dp" selects NodeExpansion.sum_paper / sum_memo / sum_dp. Return (series, stats) where stats is
     {"tuples" or "max_enum": int, "child_calls": int, "modes": len(ne.modes)}."""
-    raise NotImplementedError("T15: implement node_value")
+    ne = NodeExpansion(net, pk, labels, t, p, q, weights=weights)
+    if method == "paper":
+        ser, tup_n, calls = ne.sum_paper()
+        stats = {"tuples": tup_n, "child_calls": calls, "modes": len(ne.modes)}
+    elif method == "memo":
+        ser, tup_n, calls = ne.sum_memo()
+        stats = {"tuples": tup_n, "child_calls": calls, "modes": len(ne.modes)}
+    elif method == "dp":
+        ser, max_enum, calls = ne.sum_dp()
+        stats = {"max_enum": max_enum, "child_calls": calls, "modes": len(ne.modes)}
+    else:
+        raise ValueError("unknown method " + str(method))
+    return ser, stats
 
 
 def count_e2e(n, clauses, chunks=True, Lc=2, r=3, seed=0):
@@ -730,4 +870,25 @@ def count_e2e(n, clauses, chunks=True, Lc=2, r=3, seed=0):
     from the same rng, packing, h = M(2L - 1) // L + 1, multiplicities(1, 1, h); at every node t with q_t > 0 use
     precision P_t = p + loss_bits(...) with p = n + 1 and the 'sharp' weights, F(t + alpha z) mod (2^P_t, z^q_t)
     from sum_dp, then recover(...) and reduce mod 2^p; multiply by 2^(unused variables). Must equal count_sat."""
-    raise NotImplementedError("T15: implement count_e2e")
+    rng = random.Random(seed)
+    if chunks:
+        net = chunk_net_mapped(n, clauses, make_units(n, clauses, Lc, rng))
+    else:
+        net = formula_net(n, clauses)
+    a = 1
+    labels = [tuple(rng.randrange(r) for _ in range(a)) for _ in net.verts]
+    pk = Packing(net, labels, a)
+    M = len(net.wires)
+    h = M * (2 * pk.L - 1) // pk.L + 1
+    qm = multiplicities(a, 1, h)
+    p = n + 1
+    data = {}
+    for t, qt in sorted(qm.items()):
+        if qt == 0:
+            continue
+        Pt = p + loss_bits(qm, a, t)
+        ne = NodeExpansion(net, pk, labels, t, Pt, qt, weights="sharp")
+        ser, _me, _cc = ne.sum_dp()
+        data[t] = ser
+    got = red(recover(data, qm, a), p)
+    return (got * pow(2, net.unused, 1 << p)) % (1 << p)

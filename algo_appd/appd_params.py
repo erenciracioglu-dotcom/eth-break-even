@@ -5,7 +5,7 @@ passes the verify gate. Keep one call well under 3 s."""
 import math
 import appd_assembly_public as A
 
-USE_CODE_FLAGS = False
+USE_CODE_FLAGS = True
 R0 = (3, 4, 5, 6, 7, 8, 10, 12, 16, 24, 32, 48, 64)
 R1 = (4, 6, 8, 12, 16)
 RHO = (0.4, 0.6, 0.8)
