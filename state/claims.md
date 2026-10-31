@@ -8,8 +8,10 @@ it are reverted.
 
 - paper [BASE]: Lemma 4.5 of the paper as written: 2(b+w) D^2 <= M, h <= M/D + sqrt(2(b+w) M).
   Accounting refinements used by the frozen assembly (rows touch <= 2 groups, restricted row
-  abs sum <= 2^(Q-1), replacement-row degree <= R-1, n/r groups) are checked on real designs by
-  the measure gate on every referee run.
+  abs sum <= 2^(Q-1), replacement-row degree <= R-1) are checked on real designs by the
+  measure gate on every referee run. The group term 1/r (the paper's (2.11) charges 2n/r per
+  group) uses group sizes (1 + o(1)) n/r: the derandomised bound n/r + sqrt(2Qn) from the proof
+  of Lemma 4.5 is (1 + o(1)) n/r at these sizes. Not checked by a gate (head argument).
 - freedman [AUDITED as a head proof sketch, 2026-10-31 12:05; was PROVISIONAL]:
   D ln D <= M / (4(b+w)) with h <= 2M/D and |S_t,g| <= 2n/r replaces the paper's condition
   2(b+w) D^2 <= M in Lemma 4.5 (same conclusions, same polynomial construction time).
