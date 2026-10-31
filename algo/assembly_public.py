@@ -1,4 +1,4 @@
-"""FROZEN cost assembly (the referee scores with this file). Version 2 (2026-10-31).
+"""FROZEN cost assembly (the referee scores with this file). Version 3 (2026-10-31).
 
 Bounded-occurrence 3-CNF (each variable in <= 3 clauses, clauses of width <= 3), counting
 algorithm of Sections 2-4 of "The Exponential Time Hypothesis is False". Exponents per
@@ -8,7 +8,7 @@ algo/assembly_public.py is an identical copy for the agent's own parameter searc
 Editing that copy does not change any score.
 
 Parameters: r, Q, R, A0 (integers), regime (string), delta (float, regime "tight" only),
-designated (bool, optional, default False).
+designated (bool, default False), aggregated (bool, default False).
 
 Regimes (how many labels D may be balanced and how many copies h that costs):
   paper    : Lemma 4.5 as written, 2(b+w) D^2 <= M, h <= M/D + sqrt(2(b+w) M)
@@ -17,15 +17,24 @@ Regimes (how many labels D may be balanced and how many copies h that costs):
   tight    : same argument with a tolerance 0 < delta <= 1: D ln D <= delta^2 M / (4(b+w)),
              h <= (1 + delta) M/D. delta = 1 is the freedman regime.
 
-designated = True (head extension v2, PROVISIONAL until audited): every clause reads one of its
-own variables v(f) directly and is assigned to that variable's group at every point
+designated = True (head extension v2, audited as a sketch): every clause reads one of its own
+variables v(f) directly and is assigned to that variable's group at every point
 (sigma_f = a_v(f)). That occurrence needs no replacement row (degree 0) and no auxiliary
 position, so only M_eff = sum_f (|I_f| - 1) <= 2n occurrences carry replacements: the
 T-degree of H drops to M_eff (R-1) and hD <= (1 + delta) M_eff. Balancing uses one stage per
 colour of a proper colouring of the variable conflict graph (<= 7 colours), which costs the
 constant in D ln(28 D) <= delta^2 M_eff / 128. Allowed with regimes freedman and tight only.
-A score that uses designated = True also needs the verify gate to confirm exact counts with
-the designated construction (see referee.py).
+
+aggregated = True (head extension v3, audited as a sketch): Lemma 3.3 summed per U,
+  sum_x p_x(x) = sum_{|U| <= q} sum_{x >= U} w_K(|x minus U|) p_x(1_U),  K = q - |U|,
+  w_K(m) = sum_{j <= K} (-1)^j C(m, j).
+The weight depends on x only through an additive count, so each U needs one group-separated
+sum (with a polynomial in y for the count). Restricted sums per point: sum_{s <= q} C(n, s)
+instead of sum_s C(n, s) 2^s, so the Taylor exponent is H2(x) (1 for x >= 1/2) instead of
+x + H2(x) (log2 3 for x >= 2/3).
+
+A score that uses designated = True or aggregated = True also needs the verify gate to confirm
+exact counts with that construction or counting routine (see referee.py).
 """
 import math
 import numpy as np
@@ -33,9 +42,9 @@ from scipy.stats import binom
 
 LOG2_3 = math.log2(3)
 TARGETS = {"brute": 1.0, "sharp3sat": math.log2(1.637), "ppsz": math.log2(1.307031578)}
-M_PER_N = 3       # occurrences per variable, worst case of the class
-M_EFF_DESIG = 2   # occurrences per variable that still need replacement rows when designated
-BW = 6            # b + w (b <= 3 factors per variable, w <= 3 variables per factor)
+M_PER_N = 3        # occurrences per variable, worst case of the class
+M_EFF_DESIG = 2    # occurrences per variable that still need replacement rows when designated
+BW = 6             # b + w (b <= 3 factors per variable, w <= 3 variables per factor)
 DESIG_CONST = 128  # D ln(28 D) <= delta^2 M_eff / 128 for the designated construction
 REGIMES = ("paper", "freedman", "tight")
 DELTA_MIN = 1e-6
@@ -48,12 +57,25 @@ def H2(x):
 
 
 def taylor(x):
-    """(1/n) log2 sum_{j <= x n} 2^j C(n, j) for large n."""
+    """(1/n) log2 sum_{j <= x n} 2^j C(n, j) for large n (pairs U <= E, |E| <= q)."""
     if x <= 0:
         return 0.0
     if x >= 2.0 / 3.0:
         return LOG2_3
     return x + H2(x)
+
+
+def taylor_aggregated(x):
+    """(1/n) log2 sum_{j <= x n} C(n, j) for large n (one restricted sum per U, |U| <= q)."""
+    if x <= 0:
+        return 0.0
+    if x >= 0.5:
+        return 1.0
+    return H2(x)
+
+
+def taylor_term(x, aggregated=False):
+    return taylor_aggregated(x) if aggregated else taylor(x)
 
 
 # ---- accounting facts (each one is also checked on real designs by the measure gate)
@@ -122,11 +144,16 @@ def tail_out(Q, r, R, A0):
     return float(binom.cdf(A0 - 1, Q, p) + binom.sf(A0 + R - 1, Q, p))
 
 
+def _flag(params, name):
+    v = params.get(name, False)
+    if v not in (True, False):
+        raise ValueError(f"{name} must be true or false")
+    return bool(v)
+
+
 def _extra(params, regime):
-    """delta and designated from params; raises ValueError when they are not allowed."""
-    designated = params.get("designated", False)
-    if designated not in (True, False):
-        raise ValueError("designated must be true or false")
+    """delta, designated and aggregated from params; raises ValueError when not allowed."""
+    designated, aggregated = _flag(params, "designated"), _flag(params, "aggregated")
     delta = 1.0
     if regime == "tight":
         delta = float(params["delta"])
@@ -134,7 +161,7 @@ def _extra(params, regime):
             raise ValueError(f"delta must lie in [{DELTA_MIN}, 1]")
     if designated and regime == "paper":
         raise ValueError("designated needs regime freedman or tight")
-    return delta, bool(designated)
+    return delta, designated, aggregated
 
 
 def exponent_of(params, lam):
@@ -144,7 +171,7 @@ def exponent_of(params, lam):
         regime = params.get("regime", "paper")
         if regime not in REGIMES:
             return dict(valid=False, reason=f"unknown regime {regime}")
-        delta, designated = _extra(params, regime)
+        delta, designated, aggregated = _extra(params, regime)
     except Exception as exc:                    # malformed parameters
         return dict(valid=False, reason=f"bad params: {exc}")
     if r < 2 or Q < 1 or R < 1 or A0 < 0 or A0 + R - 1 > Q:
@@ -154,14 +181,14 @@ def exponent_of(params, lam):
         return dict(valid=False, reason="label space D too large for the balancing regime")
     out = tail_out(Q, r, R, A0)
     rows_per_n = groups_per_row(r) * hD_over_n(lam, log2D, regime, delta, designated) * out
-    terms = dict(taylor=taylor(occ_per_n(designated) * row_degree(R) / Q),
+    terms = dict(taylor=taylor_term(occ_per_n(designated) * row_degree(R) / Q, aggregated),
                  meas=rows_per_n * value_bits(Q),
                  groups=1.0 / r)
     return dict(valid=True, e=sum(terms.values()), terms=terms, out=out, log2D=log2D, regime=regime,
-                delta=delta, designated=designated)
+                delta=delta, designated=designated, aggregated=aggregated)
 
 
-def exponents_over_R(lam, r, Q, Rs, regime, delta=1.0, designated=False):
+def exponents_over_R(lam, r, Q, Rs, regime, delta=1.0, designated=False, aggregated=False):
     """Vectorised helper for searches: e for each interval length in Rs (best A0 each)."""
     p = (r - 1) / (2 * r)
     mu = Q * p
@@ -177,6 +204,6 @@ def exponents_over_R(lam, r, Q, Rs, regime, delta=1.0, designated=False):
     log2D = 2 * Q * math.log2(r)
     rows = groups_per_row(r) * hD_over_n(lam, log2D, regime, delta, designated) * best
     m = occ_per_n(designated)
-    tay = np.array([taylor(m * row_degree(int(R)) / Q) for R in Rs])
+    tay = np.array([taylor_term(m * row_degree(int(R)) / Q, aggregated) for R in Rs])
     e = tay + rows * value_bits(Q) + 1.0 / r
     return e, bestA

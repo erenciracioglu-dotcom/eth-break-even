@@ -1,9 +1,11 @@
-"""FROZEN referee gates, version 2. Usage: python gates.py <algo_dir> <verify|measure|score> <out_json>
+"""FROZEN referee gates, version 3. Usage: python gates.py <algo_dir> <verify|measure|score> <out_json>
 
 Runs the agent's code from <algo_dir> in this separate process; only frozen code decides.
 Version 2 adds the 'tight' regime and, when construction.build_design accepts designated=True,
 frozen checks of the designated-variable construction (exact counts with the reduced Taylor
 order, constant designated rows, group schedules, copies).
+Version 3 adds, when counting.Counter offers taylor_aggregated and Zagg_group_separated,
+exact counts with Lemma 3.3 aggregated per U and the number of restricted sums per point.
 """
 import inspect
 import json
@@ -139,6 +141,36 @@ def verify():
             dok &= ok
         out["designated_verified"] = bool(dok)
         out["ok"] &= dok
+    from counting import Counter
+    out["aggregated_supported"] = all(hasattr(Counter, a) for a in ("taylor_aggregated", "Zagg_group_separated"))
+    out["aggregated_verified"] = False
+    if out["aggregated_supported"]:
+        aok, ran = True, 0
+        for c in CASES["aggregated_counts"]:
+            if c.get("designated") and not out["designated_supported"]:
+                continue
+            ran += 1
+            rng = np.random.default_rng(c["seed"])
+            aux = Aux(*c["cfg"])
+            cl = make_formula(c, rng)
+            kw = {"designated": True} if c.get("designated") else {}
+            des = build_design(aux, c["n"], cl, rng, **kw)
+            C = Counter(aux, des)
+            data, probs = {}, []
+            for t in range(1, aux.Q + 1):
+                data[t] = C.taylor_aggregated(t, Zagg=lambda t_, S, U: C.Zagg_group_separated(t_, S, U))
+                exp_rs = sum(math.comb(c["n"], s) for s in range(min(int(C.q), c["n"]) + 1))
+                got = getattr(C, "restricted_sums", None)
+                if got != exp_rs:
+                    probs.append(f"t={t}: restricted_sums = {got}, expected {exp_rs}")
+            h0, b = int(C.hermite_H0(data)), brute(c["n"], cl)
+            ok = (h0 == b) and not probs
+            out["items"].append({"kind": "aggregated_count", "cfg": c["cfg"], "n": c["n"],
+                                 "designated": bool(c.get("designated")), "ok": ok, "H0": h0, "brute": b,
+                                 "problems": probs[:3]})
+            aok &= ok
+        out["aggregated_verified"] = bool(aok and ran > 0)
+        out["ok"] &= aok
     return out
 
 

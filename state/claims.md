@@ -75,6 +75,20 @@ it are reverted.
   the reduced Taylor order (for example J = 10 instead of 14 for n = 6, m = 9, Q = 2, R = 2).
   Caveat: head-level sketch, not peer reviewed.
 
+- aggregated [AUDITED as a head proof sketch, 2026-10-31 12:45; exact counts and the number of
+  restricted sums are checked by referee v3 whenever a score uses it]: Lemma 3.3 summed per U.
+  For x >= U: sum over U <= E <= x with |E| <= q of (-1)^(|E|-|U|) equals
+  w_K(|x minus U|) = sum_{k <= K} (-1)^k C(|x minus U|, k) with K = q - |U|, so
+  sum_x p_x(x) = sum_{|U| <= q} sum_{x >= U} w_K(|x minus U|) p_x(1_U).
+  The weight depends on x only through |x minus U| = sum_g |x_g minus U_g|. With the measurements
+  fixed, the restricted sum factorises over groups (Lemma 3.2), so sum_x (1+y)^(|x minus U|) G_x(1_U, z)
+  is a product of per-group polynomials in y (truncated at y^K): polynomial overhead only.
+  Hence one group-separated sum per U with |U| <= q, i.e. sum_{s <= q} C(n, s) <= 2^(n H2(q/n))
+  restricted sums per point (q <= n/2) instead of sum_s C(n, s) 2^s: taylor term H2(x).
+  Evidence: in the cloud, 13 cases (truncated Taylor orders, plain and designated designs) give
+  identical Taylor data and exact counts; the head's reference implementation passes referee v3.
+  Caveat: head-level sketch, not peer reviewed.
+
 ## Results that depend on a provisional regime
 - 2026-10-31 12:14:25 iter 002 (T2): ppsz threshold 1,117,111 uses regime 'freedman' -> PROVISIONAL until the head audits that regime. [head: regime audited 12:05, this result stands as audited]
 - 2026-10-31 12:28:56 iter 003 (T3): ppsz threshold 1,070,239 uses regime 'tight' -> PROVISIONAL until the head audits that regime.

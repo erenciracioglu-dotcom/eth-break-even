@@ -42,3 +42,12 @@ Qmax = floor(max_log2D(lam, regime) / (2 log2 r)).
   True) and exponents_over_R(lam, r, Q, Rs, regime, delta, True) and return designated=True.
   Allowed with regimes "freedman" and "tight" only. The hidden referee counts designated
   parameters only when its own hidden checks of build_design(..., designated=True) pass.
+
+## Version 3 of the cost model (2026-10-31)
+
+- Parameter aggregated (bool, default False): Lemma 3.3 summed per U, so each point needs one
+  restricted sum per U with |U| <= q instead of one per pair U <= E. The taylor term becomes
+  H2(x) (1 for x >= 1/2) instead of x + H2(x). Call exponents_over_R(lam, r, Q, Rs, regime,
+  delta, designated, True) and return aggregated=True. The hidden referee counts aggregated
+  parameters only when its own hidden checks of Counter.taylor_aggregated with
+  Counter.Zagg_group_separated pass (exact counts and the number of restricted sums).

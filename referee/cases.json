@@ -1,27 +1,238 @@
 {
- "lemma_cfgs": [[2, 2, 2, 0], [2, 3, 3, 0], [2, 4, 3, 0], [3, 2, 2, 0]],
+ "lemma_cfgs": [
+  [
+   2,
+   2,
+   2,
+   0
+  ],
+  [
+   2,
+   3,
+   3,
+   0
+  ],
+  [
+   2,
+   4,
+   3,
+   0
+  ],
+  [
+   3,
+   2,
+   2,
+   0
+  ]
+ ],
  "designs": [
-  {"cfg": [2, 3, 3, 0], "n": 600, "seed": 90210},
-  {"cfg": [2, 4, 3, 0], "n": 1500, "seed": 4242}
+  {
+   "cfg": [
+    2,
+    3,
+    3,
+    0
+   ],
+   "n": 600,
+   "seed": 90210
+  },
+  {
+   "cfg": [
+    2,
+    4,
+    3,
+    0
+   ],
+   "n": 1500,
+   "seed": 4242
+  }
  ],
  "counts": [
-  {"cfg": [2, 2, 2, 0], "n": 6, "m": 9, "type": "random", "seed": 31337},
-  {"cfg": [2, 3, 3, 0], "n": 6, "m": 9, "type": "random", "seed": 2718},
-  {"cfg": [3, 2, 2, 0], "n": 6, "m": 0, "type": "bounded", "seed": 1618},
-  {"cfg": [2, 2, 2, 0], "n": 7, "m": 11, "type": "random", "seed": 5772}
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 6,
+   "m": 9,
+   "type": "random",
+   "seed": 31337
+  },
+  {
+   "cfg": [
+    2,
+    3,
+    3,
+    0
+   ],
+   "n": 6,
+   "m": 9,
+   "type": "random",
+   "seed": 2718
+  },
+  {
+   "cfg": [
+    3,
+    2,
+    2,
+    0
+   ],
+   "n": 6,
+   "m": 0,
+   "type": "bounded",
+   "seed": 1618
+  },
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 7,
+   "m": 11,
+   "type": "random",
+   "seed": 5772
+  }
  ],
  "measure_designs": [
-  {"cfg": [2, 2, 2, 0], "n": 1100, "seed": 777, "regime": "paper"},
-  {"cfg": [2, 3, 3, 0], "n": 2400, "seed": 888, "regime": "freedman"},
-  {"cfg": [2, 2, 2, 0], "n": 1500, "seed": 999, "regime": "tight", "delta": 0.5}
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 1100,
+   "seed": 777,
+   "regime": "paper"
+  },
+  {
+   "cfg": [
+    2,
+    3,
+    3,
+    0
+   ],
+   "n": 2400,
+   "seed": 888,
+   "regime": "freedman"
+  },
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 1500,
+   "seed": 999,
+   "regime": "tight",
+   "delta": 0.5
+  }
  ],
  "designated_counts": [
-  {"cfg": [2, 2, 2, 0], "n": 6, "m": 9, "type": "random", "seed": 8128},
-  {"cfg": [2, 3, 3, 0], "n": 7, "m": 10, "type": "random", "seed": 4096},
-  {"cfg": [3, 2, 2, 0], "n": 6, "m": 0, "type": "bounded", "seed": 2187},
-  {"cfg": [2, 2, 2, 0], "n": 7, "m": 11, "type": "random", "seed": 6174}
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 6,
+   "m": 9,
+   "type": "random",
+   "seed": 8128
+  },
+  {
+   "cfg": [
+    2,
+    3,
+    3,
+    0
+   ],
+   "n": 7,
+   "m": 10,
+   "type": "random",
+   "seed": 4096
+  },
+  {
+   "cfg": [
+    3,
+    2,
+    2,
+    0
+   ],
+   "n": 6,
+   "m": 0,
+   "type": "bounded",
+   "seed": 2187
+  },
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 7,
+   "m": 11,
+   "type": "random",
+   "seed": 6174
+  }
  ],
  "designated_measure": [
-  {"cfg": [2, 2, 2, 0], "n": 1200, "seed": 1234}
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 1200,
+   "seed": 1234
+  }
+ ],
+ "aggregated_counts": [
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 6,
+   "m": 9,
+   "type": "random",
+   "seed": 1729
+  },
+  {
+   "cfg": [
+    3,
+    2,
+    2,
+    0
+   ],
+   "n": 6,
+   "m": 0,
+   "type": "bounded",
+   "seed": 4181,
+   "designated": true
+  },
+  {
+   "cfg": [
+    2,
+    3,
+    3,
+    0
+   ],
+   "n": 6,
+   "m": 9,
+   "type": "random",
+   "seed": 6765,
+   "designated": true
+  }
  ]
 }
