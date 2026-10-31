@@ -1,4 +1,9 @@
 # Bulletin (latest first)
+- 2026-10-31 19:50:11 iter 020 T14 attempt 3/3: REJECTED - no change to counting.py, model.py
+- 2026-10-31 19:49:41 iter 019 T14 attempt 2/3: REJECTED - no gain: ppsz threshold 18,817 -> 18,817; e at 2224173 0.081517 -> 0.081517
+- 2026-10-31 19:05:54 iter 018 T14 attempt 2/3: REJECTED - no change to counting.py, model.py
+- 2026-10-31 19:04:54 iter 017 T14 attempt 1/3: REJECTED - verify gate failed on {"kind": "edges_count", "cfg": [2, 2, 2, 0], "n": 6, "perpoint": false, "eadapt": false, "L": 0, "p": null, "H0": 18079624, "reference": 16, "problems": ["t=1: taylor_edges differs from the direct Taylor data", "t=2: taylor_edges differs from the direct Taylor data"]}; {"kind": "edges_count", "cfg": [3, 2, 2, 0], "n": 7, "perpoint": false, "eadapt": false, "L": 2, "p": null, "H0": 33552101, "reference": 34, "problems": ["t=1: taylor_edges differs from the direct Taylor data", "t=2: taylor_edges differs from the direct Taylor data"]}; {"kind": "edges_count", "cfg": [3, 3, 3, 0], "n": 6, "perpoint": true, "eadapt": false, "L": 0, "p": null, "H0": 8595626, "reference": 24, "problems": ["t=1: taylor_edges differs from the direct Taylor data", "t=2: taylor_edges differs from the direct Taylor data", "t=3: taylor_edges differs from th
+- 2026-10-31 18:07:59 iter 016 T12 attempt 1: ACCEPTED - ppsz threshold 22,118 -> 18,817; e at 2224173 0.084847 -> 0.081517 (14.92% lower threshold)
 - 2026-10-31 17:56:02 iter 015 T13 attempt 1: ACCEPTED - ppsz threshold 24,714 -> 22,118; e at 2224173 0.087362 -> 0.084847 (10.50% lower threshold)
 - 2026-10-31 17:36:43 iter 014 T11 attempt 1: ACCEPTED - ppsz threshold 25,699 -> 24,714; e at 2224173 0.087575 -> 0.087362 (3.83% lower threshold)
 - 2026-10-31 17:10:33 iter 011 T10 attempt 1: ACCEPTED - ppsz threshold 29,002 -> 25,699; e at 2224173 0.090510 -> 0.087575 (11.39% lower threshold)

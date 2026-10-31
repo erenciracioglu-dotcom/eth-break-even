@@ -52,15 +52,23 @@ import math
 import numpy as np
 from assembly_public import exponents_over_R, exponent_of, max_log2D
 
-# stage-0 r values: dense in 12..80 where the optimum sits, sparse beyond
+# stage-0 r values: dense in 12..80 where the optimum sits without edges, and dense again in
+# 88..256 where the optimum sits with edges (v9); sparse beyond
 RSET = [2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64,
-        68, 72, 80, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096]
+        68, 72, 80, 88, 96, 104, 112, 120, 128, 144, 160, 176, 192, 224, 256, 320, 384, 512,
+        768, 1024, 1536, 2048, 3072, 4096]
 REGIME = "tight"
 AGGREGATED = True                    # head extension v3: Lemma 3.3 summed per U
 UNITS = True                         # head extension v4: clause units (greedy matching), needs designated
 CHUNK = 4096                         # head extension v5: connected chunk units of >= CHUNK vars
 PERPOINT = True                      # head extension v6: measurement matrices per evaluation point
 CONTRACT = True                      # head extension v7: groups summed one at a time (needs aggregated)
+EDGES = True                         # head extension v9: edge bits in the Taylor term (needs contract)
+
+
+def _edges_of(aggregated):
+    """edges is passed exactly when contract is passed (contract needs aggregated, edges needs contract)"""
+    return bool(EDGES and CONTRACT and aggregated)
 
 # delta grid for the tight regime (delta = 1.0 is exactly "freedman"), best deltas first so
 # that truncating the grid (very large lam) keeps the ones that matter
@@ -100,12 +108,15 @@ LEGACY_N_DEEP_R = 12               # legacy ("paper"/"freedman") path: fixed cou
 # ---- static cost model of assembly_public.exponents_over_R (microseconds) -------------
 # measured offline on this machine: cost per call = A(lam) + B(lam) * (#R entries). B is the
 # larger of the small-grid and in-search measurements (per-entry cost grows with the grid).
+# With edges = True the Taylor term is evaluated per R entry through edges_factor(r), which
+# costs an extra EDGES_B_PER_R microseconds per (R entry, unit of r) (measured offline).
 _COST_LAMS = (1e3, 1e4, 1e5, 3e5, 1e6, 2.2e6, 5e6, 1e7, 4.6e7, 1e8, 2.2e8, 1e9, 1e10, 1e11,
               1e12, 1e13)
 _COST_A_US = (170.0, 170.0, 190.0, 190.0, 210.0, 210.0, 220.0, 230.0, 290.0, 300.0, 420.0,
               420.0, 550.0, 1250.0, 2150.0, 3850.0)
 _COST_B_US = (1.0, 1.25, 1.7, 2.05, 2.7, 3.7, 5.9, 6.4, 11.8, 15.0, 17.8, 25.5, 58.0, 110.0,
               200.0, 435.0)
+EDGES_B_PER_R = 0.06               # extra us per R entry per unit of r when edges = True
 COST_MARGIN = 1.45                 # safety factor on the counted cost (slower machines etc.)
 BUDGET_US = 1.95e6                 # counted work cap per call (~1.4 s of model work at most)
 STAGE0_FRAC = 0.55                 # share of BUDGET_US that stage 0 may use
@@ -153,33 +164,39 @@ def _Qladder(Qmax):
     return sorted(q for q in Qs if 1 <= q <= Qmax)
 
 
+def _edges_b(r, b):
+    """extra per-R-entry cost (us) of edges = True at this r: edges_factor(r) is an O(r) Python
+    loop evaluated once per R entry (measured offline: ~0.06 us per R entry per unit of r)."""
+    return b + EDGES_B_PER_R * max(2, int(r))
+
+
 def _est0(lam, cfg):
     """counted work (us) of stage 0 with these grid sizes; no search is run"""
     a, b = _unit_cost(lam)
     mld = max_log2D(lam, REGIME, REF_DELTA, True, UNITS, CHUNK)
-    calls = entries = 0
+    wcalls = entries = 0
     for r in RSET[::cfg["RSET_STRIDE"]]:
         Qmax = _Qmax(mld, r)
         if Qmax < 1:
             continue
         nq = 1 if Qmax == 1 else min(cfg["N_Q_COARSE"] + 1, Qmax)
-        calls += nq
-        entries += nq * _nR(cfg["N_R_COARSE"], Qmax)
-    return calls * a + entries * b
+        wcalls += nq * a
+        entries += nq * _nR(cfg["N_R_COARSE"], Qmax) * _edges_b(r, b)
+    return wcalls + entries
 
 
 def _est12(lam, cfg, rs, designated=True, units=UNITS, chunk=CHUNK):
     """counted work (us) of stages 1-2 for the r window rs with these grid sizes"""
     a, b = _unit_cost(lam)
-    calls = entries = 0
-    for d in cfg["DELTAS"]:
+    wcalls = entries = 0
+    for d in cfg["DELTAS"][:cfg["N_DELTAS"]]:
         mld = max_log2D(lam, REGIME, d, designated, units, chunk)
         for r in rs:
             Qmax = _Qmax(mld, r)
             if Qmax < 1:
                 continue
-            calls += 1
-            entries += _nR(cfg["N_R_SCAN"], Qmax)
+            wcalls += a
+            entries += _nR(cfg["N_R_SCAN"], Qmax) * _edges_b(r, b)
     deep = rs[:cfg["N_DEEP_R"]] if cfg["N_DEEP_R"] < len(rs) else rs
     for d in cfg["DELTAS"][:cfg["N_DEEP_DELTAS"]]:
         mld = max_log2D(lam, REGIME, d, designated, units, chunk)
@@ -188,9 +205,9 @@ def _est12(lam, cfg, rs, designated=True, units=UNITS, chunk=CHUNK):
             if Qmax < 1:
                 continue
             for Q in _Qladder(Qmax):
-                calls += 2
-                entries += _nR(cfg["N_R_FINE"], Q) + min(cfg["MAX_INT_R"], Q + 1) + 1
-    return calls * a + entries * b
+                wcalls += 2 * a
+                entries += (_nR(cfg["N_R_FINE"], Q) + min(cfg["MAX_INT_R"], Q + 1) + 1) * _edges_b(r, b)
+    return wcalls + entries
 
 
 def _shrink(lam, cfg, fit, budget=None, order=SHRINK_ORDER):
@@ -244,6 +261,8 @@ def _mk(r, Q, R, A0, regime, delta, designated=False, aggregated=AGGREGATED, uni
         p["aggregated"] = True
     if contract and aggregated:       # head extension v7: needs aggregated = True
         p["contract"] = True
+        if EDGES:                     # head extension v9: needs contract = True
+            p["edges"] = True
     if units:
         p["units"] = True
     if units and chunk:
@@ -267,7 +286,8 @@ def _scan(lam, regime, delta, r, Q, Rs, best, designated=False, aggregated=AGGRE
         return best
     e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated, units,
                               chunk, modular, perpoint=perpoint, smallprime=bool(modular),
-                              contract=bool(CONTRACT and aggregated))
+                              contract=bool(CONTRACT and aggregated),
+                              edges=_edges_of(aggregated))
     i = int(np.argmin(e))
     if best is None or e[i] < best[0]:
         return (float(e[i]), _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated,
@@ -312,7 +332,8 @@ def _cheap_r_scan(lam, regime, delta, mld, rs, cfg, designated=False, aggregated
         e, A0 = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated,
                                   units, chunk, modular, perpoint=perpoint,
                                   smallprime=bool(modular),
-                                  contract=bool(CONTRACT and aggregated))
+                                  contract=bool(CONTRACT and aggregated),
+                                  edges=_edges_of(aggregated))
         i = int(np.argmin(e))
         out.append((float(e[i]), int(r),
                     _mk(r, Q, int(Rs[i]), int(A0[i]), regime, delta, designated, aggregated,
@@ -331,7 +352,8 @@ def _deep(lam, regime, delta, r, Qmax, best, cfg, designated=False,
         e, A = exponents_over_R(lam, r, Q, Rs, regime, delta, designated, aggregated,
                                 units, chunk, modular, perpoint=perpoint,
                                 smallprime=bool(modular),
-                                contract=bool(CONTRACT and aggregated))
+                                contract=bool(CONTRACT and aggregated),
+                                edges=_edges_of(aggregated))
         i = int(np.argmin(e))
         if best is None or e[i] < best[0]:
             best = (float(e[i]),
@@ -386,7 +408,8 @@ def _eadapt_rescan(lam, best, regime, decision=False):
                 continue
             e, _A = exponents_over_R(lam, r, Q, Rs, regime, delta, True, AGGREGATED, UNITS,
                                      CHUNK, decision, perpoint=True, eadapt=True,
-                                     smallprime=bool(decision), contract=CONTRACT)
+                                     smallprime=bool(decision), contract=CONTRACT,
+                                     edges=_edges_of(AGGREGATED))
             i = int(np.argmin(e))
             if out is None or float(e[i]) < out[0]:
                 out = (float(e[i]), _mk(r, Q, int(Rs[i]), 0, regime, delta, True, AGGREGATED,
