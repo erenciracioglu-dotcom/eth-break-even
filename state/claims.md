@@ -439,3 +439,34 @@ Cost model (appd_model2.py), log2 n break-even vs 2^n / 1.637^n / 1.307^n / 1.11
   are answered by appd-bernstein, appd-chunks (children of 2(1 + delta) M_root / r wires) and appd-tight item 2.
 - Dead ends Fable checked: re-tapering Lemma D.5, conjugate nodes over GF(p^2), CRT with small primes for exact
   counting, restricted per-position label alphabets. Sections 2-4: no large lever left in its view.
+
+## Appendix D route: label-free headroom and recursion levels (head, 2026-11-01)
+- appd-labelfree [AUDITED as a head sketch, 00:45; checked end to end on toys]: a call with u retained valuation
+  levels evaluates only nodes t with v2(t) < u (q_t = h max(0, u - i) vanishes above), and the grouping at such a
+  node reads only label coordinate i = v2(t) (D.4.5). The slot bits u .. a-1 serve only the precision headroom of
+  Lemma D.5, so every vertex can take the same symbol there: those coordinates are equal at both ends of every
+  wire and become copy bits of the packing (Lemma D.3 holds with them as equal coordinates). F(T), Lemma D.4 and
+  the Hermite recovery do not depend on the labels. Labels then live in [r]^u: the Bernstein balance needs
+  2 u log2 r <= log2 M - slack - log2(max degree) instead of 2 a log2 r, and the per-pattern padding is
+  L (r(r+1)/2)^u <= delta M (with appd-perclass) instead of L (r(r+1)/2)^a. Evidence (work/head/appD,
+  labelfree_check.py and labelfree_packets.py): exact counts end to end at a = 2, u = 1 with constant headroom
+  labels in 7 formulas (up to 63 modes and 1.24 million enumerated mode combinations at one node); at a = 3,
+  u = 1 the packing needs 579 packets instead of 1,141 with random headroom labels (197 formulas).
+- appd-levels [model only, appd_model4.py and three_level.py]: with label-free headroom a deeper recursion pays.
+  Break-even log2 n vs 2^n / 1.637^n / 1.307^n / 1.1199^n / 2^(n/3): 598 / 1,226 / 4,033 / 23,062 / 5,405
+  (one level, r = 5 and 7, for the first two; two levels r = (7, 12), u_1 = 0.6 u_0 for 1.307^n and 2^(n/3);
+  r = (8, 16), u_1 = 0.5 u_0 for 1.1199^n). A third level only changes the 1.1199^n column (22,884).
+
+## Round 5: the Appendix D route in the loop (2026-11-01)
+- Frozen referee referee_appd v1: appd_assembly.py (the cost model with levels 1-3 and the steps above, as a
+  function of explicit parameters), appd_gates.py, appd_ref.py (the head's toy implementation, = appd_toy.py)
+  and cases_appd.json. Score: the smallest log2 n at which the exponent drops below 1/3 (2^(n/3) counting),
+  plus the four other targets.
+- Code flags memo, modedp, chunks and leafvars enter the score only when the candidate's code reproduces the
+  reference on hidden formulas (node values by the paper/memo/dp sums, child-call and enumeration counts,
+  byvars on chunk cases, exact end-to-end counts). perclass and labelfree are head-audited model steps and are
+  on from the start.
+- Baseline (skeleton, no code flags): 2^(n/3) 201,458; 1.1199^n 1,475,104; 1.307^n 140,745; 1.637^n 34,975;
+  2^n 16,738. The head's own implementation scores 5,404 / 23,056 / 4,032 / 1,213 / 579 with all four flags.
+- Tasks: T15 (Qwen implements the core: group_table, sum_paper, sum_memo, sum_dp, byvars_value, node_value,
+  count_e2e), T16 (Qwen widens the parameter search: delta, Lc, three levels, free u_d, wider r).
