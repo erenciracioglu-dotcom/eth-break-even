@@ -89,6 +89,29 @@ it are reverted.
   identical Taylor data and exact counts; the head's reference implementation passes referee v3.
   Caveat: head-level sketch, not peer reviewed.
 
+- units [AUDITED as a head proof sketch, 2026-10-31 13:00; unit structure, maximality and
+  exact counts are checked by referee v4 whenever a score uses it]: a greedy maximal matching of
+  clauses (each clause matched only if none of its variables is in a unit yet). The variables of
+  a matched clause share one schedule, so the clause is assigned to that schedule's group at every
+  point and all its inputs are read directly (constant rows, as in 'designated'); any other clause
+  is assigned to the unit holding most of its variables and reads all of those directly.
+  1. Worst case (any mix of widths <= 3): matched clauses contribute 0 to M_eff, an unmatched
+     clause at most |I_f| - 1 <= 2 and <= (2/3)|I_f|. By maximality every unmatched clause of
+     width >= 2 shares a variable with a matched clause, and each such variable lies in <= 2
+     other clauses, so there are <= 2 S_m of them (S_m = occurrences in matched clauses). Hence
+     M_eff <= min(4 S_m, (2/3)(M - S_m)) <= min(4 S_m, (2/3)(3n - S_m)), maximised at
+     S_m = 3n/7: M_eff <= 12n/7.
+  2. Group sizes: units of <= 3 variables move together; Chernoff with weights <= 3 still gives
+     |S_t,g| = (1 + o(1)) n/r.
+  3. Balancing: the labels of non-free occurrences are (a_unit(v), a_unit(f)), pairs of unit
+     schedules from different units. Colour the unit conflict graph (units sharing a clause;
+     degree <= 18, so <= 19 colours) and fix the unit schedules colour by colour; each unit
+     touches <= 18 edges. The 'designated' multi-stage Bernstein argument with b' = 18 and
+     s = 19 stages gives D ln(76 D) <= delta^2 M_eff / 1024 (a few more bits of log2 D).
+  Evidence: in the cloud, 10 cases (bounded and random formulas, plain and aggregated Taylor data)
+  give exact counts with units; the head's reference implementation passes referee v4.
+  Caveat: head-level sketch, not peer reviewed.
+
 ## Results that depend on a provisional regime
 - 2026-10-31 12:14:25 iter 002 (T2): ppsz threshold 1,117,111 uses regime 'freedman' -> PROVISIONAL until the head audits that regime. [head: regime audited 12:05, this result stands as audited]
 - 2026-10-31 12:28:56 iter 003 (T3): ppsz threshold 1,070,239 uses regime 'tight' -> PROVISIONAL until the head audits that regime.

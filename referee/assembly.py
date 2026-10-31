@@ -1,4 +1,4 @@
-"""FROZEN cost assembly (the referee scores with this file). Version 3 (2026-10-31).
+"""FROZEN cost assembly (the referee scores with this file). Version 4 (2026-10-31).
 
 Bounded-occurrence 3-CNF (each variable in <= 3 clauses, clauses of width <= 3), counting
 algorithm of Sections 2-4 of "The Exponential Time Hypothesis is False". Exponents per
@@ -8,7 +8,7 @@ algo/assembly_public.py is an identical copy for the agent's own parameter searc
 Editing that copy does not change any score.
 
 Parameters: r, Q, R, A0 (integers), regime (string), delta (float, regime "tight" only),
-designated (bool, default False), aggregated (bool, default False).
+designated (bool, default False), aggregated (bool, default False), units (bool, default False).
 
 Regimes (how many labels D may be balanced and how many copies h that costs):
   paper    : Lemma 4.5 as written, 2(b+w) D^2 <= M, h <= M/D + sqrt(2(b+w) M)
@@ -33,7 +33,14 @@ sum (with a polynomial in y for the count). Restricted sums per point: sum_{s <=
 instead of sum_s C(n, s) 2^s, so the Taylor exponent is H2(x) (1 for x >= 1/2) instead of
 x + H2(x) (log2 3 for x >= 2/3).
 
-A score that uses designated = True or aggregated = True also needs the verify gate to confirm
+units = True (head extension v4, needs designated = True; audited as a sketch): a greedy maximal
+matching of clauses; the variables of every matched clause share one schedule (a unit), so all
+occurrences of a matched clause are read directly, and so are the occurrences of other clauses
+whose variables lie in the clause's designated unit. Each matched width-3 clause blocks at most
+6 others, so at least |F|/7 clauses are matched and M_eff <= 2n - 2n/7 = 12n/7. Balancing by
+colour classes of units (<= 19 colours, <= 18 edges per unit): D ln(76 D) <= delta^2 M_eff / 1024.
+
+A score that uses designated, aggregated or units = True also needs the verify gate to confirm
 exact counts with that construction or counting routine (see referee.py).
 """
 import math
@@ -44,8 +51,10 @@ LOG2_3 = math.log2(3)
 TARGETS = {"brute": 1.0, "sharp3sat": math.log2(1.637), "ppsz": math.log2(1.307031578)}
 M_PER_N = 3        # occurrences per variable, worst case of the class
 M_EFF_DESIG = 2    # occurrences per variable that still need replacement rows when designated
+M_EFF_UNITS = 12 / 7  # ... with units (greedy matching of clauses), worst case of the class
 BW = 6             # b + w (b <= 3 factors per variable, w <= 3 variables per factor)
 DESIG_CONST = 128  # D ln(28 D) <= delta^2 M_eff / 128 for the designated construction
+UNITS_CONST = 1024  # D ln(76 D) <= delta^2 M_eff / 1024 with units
 REGIMES = ("paper", "freedman", "tight")
 DELTA_MIN = 1e-6
 
@@ -95,8 +104,10 @@ def row_degree(R):                # replacement rows have degree <= R - 1
     return R - 1
 
 
-def occ_per_n(designated=False):
+def occ_per_n(designated=False, units=False):
     """Occurrences per variable that carry replacement rows."""
+    if units:
+        return M_EFF_UNITS
     return M_EFF_DESIG if designated else M_PER_N
 
 
@@ -108,11 +119,16 @@ def _solve(target, offset):
     return x
 
 
-def max_log2D(lam, regime, delta=1.0, designated=False):
+def max_log2D(lam, regime, delta=1.0, designated=False, units=False):
     """Largest allowed log2 D for n = 2^lam."""
     if regime not in REGIMES:
         raise ValueError(regime)
     d = delta if regime == "tight" else 1.0
+    if units:
+        if not designated or regime == "paper":
+            raise ValueError("units needs designated = True and regime freedman or tight")
+        target = lam + math.log2(M_EFF_UNITS) + 2 * math.log2(d) - math.log2(UNITS_CONST)
+        return _solve(target, math.log(76))     # D ln(76 D) <= d^2 M_eff / 1024
     if designated:
         if regime == "paper":
             raise ValueError("designated needs regime freedman or tight")
@@ -125,9 +141,9 @@ def max_log2D(lam, regime, delta=1.0, designated=False):
     return _solve(target, 0.0)                  # D ln D <= d^2 M / (4(b+w))
 
 
-def hD_over_n(lam, log2D, regime, delta=1.0, designated=False):
+def hD_over_n(lam, log2D, regime, delta=1.0, designated=False, units=False):
     """h * D / n with the regime's bound on the number of copies h."""
-    m = occ_per_n(designated)
+    m = occ_per_n(designated, units)
     if regime == "paper":                       # (M/D + sqrt(2(b+w)M)) D / n = 3 + 6 D / sqrt(n)
         ex = log2D - lam / 2.0
         return M_PER_N + math.sqrt(2 * BW * M_PER_N) * (2.0 ** ex if ex > -300 else 0.0)
@@ -152,8 +168,8 @@ def _flag(params, name):
 
 
 def _extra(params, regime):
-    """delta, designated and aggregated from params; raises ValueError when not allowed."""
-    designated, aggregated = _flag(params, "designated"), _flag(params, "aggregated")
+    """delta, designated, aggregated and units from params; raises ValueError when not allowed."""
+    designated, aggregated, units = _flag(params, "designated"), _flag(params, "aggregated"), _flag(params, "units")
     delta = 1.0
     if regime == "tight":
         delta = float(params["delta"])
@@ -161,7 +177,9 @@ def _extra(params, regime):
             raise ValueError(f"delta must lie in [{DELTA_MIN}, 1]")
     if designated and regime == "paper":
         raise ValueError("designated needs regime freedman or tight")
-    return delta, designated, aggregated
+    if units and not designated:
+        raise ValueError("units needs designated = True")
+    return delta, designated, aggregated, units
 
 
 def exponent_of(params, lam):
@@ -171,24 +189,24 @@ def exponent_of(params, lam):
         regime = params.get("regime", "paper")
         if regime not in REGIMES:
             return dict(valid=False, reason=f"unknown regime {regime}")
-        delta, designated, aggregated = _extra(params, regime)
+        delta, designated, aggregated, units = _extra(params, regime)
     except Exception as exc:                    # malformed parameters
         return dict(valid=False, reason=f"bad params: {exc}")
     if r < 2 or Q < 1 or R < 1 or A0 < 0 or A0 + R - 1 > Q:
         return dict(valid=False, reason="r>=2, Q>=1, R>=1 and 0 <= A0 <= A0+R-1 <= Q required")
     log2D = 2 * Q * math.log2(r)
-    if log2D > max_log2D(lam, regime, delta, designated) + 1e-9:
+    if log2D > max_log2D(lam, regime, delta, designated, units) + 1e-9:
         return dict(valid=False, reason="label space D too large for the balancing regime")
     out = tail_out(Q, r, R, A0)
-    rows_per_n = groups_per_row(r) * hD_over_n(lam, log2D, regime, delta, designated) * out
-    terms = dict(taylor=taylor_term(occ_per_n(designated) * row_degree(R) / Q, aggregated),
+    rows_per_n = groups_per_row(r) * hD_over_n(lam, log2D, regime, delta, designated, units) * out
+    terms = dict(taylor=taylor_term(occ_per_n(designated, units) * row_degree(R) / Q, aggregated),
                  meas=rows_per_n * value_bits(Q),
                  groups=1.0 / r)
     return dict(valid=True, e=sum(terms.values()), terms=terms, out=out, log2D=log2D, regime=regime,
-                delta=delta, designated=designated, aggregated=aggregated)
+                delta=delta, designated=designated, aggregated=aggregated, units=units)
 
 
-def exponents_over_R(lam, r, Q, Rs, regime, delta=1.0, designated=False, aggregated=False):
+def exponents_over_R(lam, r, Q, Rs, regime, delta=1.0, designated=False, aggregated=False, units=False):
     """Vectorised helper for searches: e for each interval length in Rs (best A0 each)."""
     p = (r - 1) / (2 * r)
     mu = Q * p
@@ -202,8 +220,8 @@ def exponents_over_R(lam, r, Q, Rs, regime, delta=1.0, designated=False, aggrega
         best = np.where(better, out, best)
         bestA = np.where(better, A0, bestA)
     log2D = 2 * Q * math.log2(r)
-    rows = groups_per_row(r) * hD_over_n(lam, log2D, regime, delta, designated) * best
-    m = occ_per_n(designated)
+    rows = groups_per_row(r) * hD_over_n(lam, log2D, regime, delta, designated, units) * best
+    m = occ_per_n(designated, units)
     tay = np.array([taylor_term(m * row_degree(int(R)) / Q, aggregated) for R in Rs])
     e = tay + rows * value_bits(Q) + 1.0 / r
     return e, bestA

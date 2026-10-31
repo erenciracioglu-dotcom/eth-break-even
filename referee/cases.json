@@ -234,5 +234,55 @@
    "seed": 6765,
    "designated": true
   }
+ ],
+ "units_counts": [
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 7,
+   "m": 0,
+   "type": "bounded",
+   "seed": 3571
+  },
+  {
+   "cfg": [
+    2,
+    3,
+    3,
+    0
+   ],
+   "n": 6,
+   "m": 0,
+   "type": "bounded",
+   "seed": 5381
+  },
+  {
+   "cfg": [
+    3,
+    2,
+    2,
+    0
+   ],
+   "n": 6,
+   "m": 8,
+   "type": "random",
+   "seed": 7919
+  }
+ ],
+ "units_measure": [
+  {
+   "cfg": [
+    2,
+    2,
+    2,
+    0
+   ],
+   "n": 1200,
+   "seed": 2357
+  }
  ]
 }

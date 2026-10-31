@@ -51,3 +51,12 @@ Qmax = floor(max_log2D(lam, regime) / (2 log2 r)).
   delta, designated, True) and return aggregated=True. The hidden referee counts aggregated
   parameters only when its own hidden checks of Counter.taylor_aggregated with
   Counter.Zagg_group_separated pass (exact counts and the number of restricted sums).
+
+## Version 4 of the cost model (2026-10-31)
+
+- Parameter units (bool, default False, needs designated=True): a greedy maximal matching of
+  clauses; the variables of every matched clause share one schedule (a unit), so all of that
+  clause's occurrences are read directly. Worst case M_eff <= 12n/7 instead of 2n. Call
+  max_log2D(lam, regime, delta, True, True) and exponents_over_R(lam, r, Q, Rs, regime, delta,
+  True, aggregated, True), and return units=True. The hidden referee counts units parameters only
+  when its own hidden checks of build_design(..., designated=True, units=True) pass.

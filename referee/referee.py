@@ -1,4 +1,4 @@
-"""FROZEN referee, version 3. Usage: python referee.py <algo_dir> <out_json>
+"""FROZEN referee, version 4. Usage: python referee.py <algo_dir> <out_json>
 
 Runs three gates on the agent's copy of algo/ in separate processes:
   verify  - exact counts on hidden formulas vs a frozen brute force, construction checks
@@ -6,7 +6,7 @@ Runs three gates on the agent's copy of algo/ in separate processes:
   measure - the accounting facts of the frozen assembly hold on real designs
   score   - break-even sizes; every query is re-scored here with the clean assembly,
             so a patched assembly inside the agent's process cannot fake a score.
-Parameters with designated = True (aggregated = True) only count when the verify gate
+Parameters with designated, aggregated or units = True only count when the verify gate
 confirmed the designated construction (the aggregated counting routine); otherwise those
 queries are scored as invalid.
 """
@@ -43,7 +43,7 @@ def run_gate(algo, gate, outdir):
     return res
 
 
-def rescore(score_res, designated_ok, aggregated_ok):
+def rescore(score_res, designated_ok, aggregated_ok, units_ok):
     """Clean re-scoring of every query; certified thresholds come only from these."""
     queries = score_res.get("queries") or []
     tamper, certs, blocked = [], {}, 0
@@ -53,7 +53,8 @@ def rescore(score_res, designated_ok, aggregated_ok):
         if abs(e - float(q["e"])) > 1e-9:
             tamper.append({"lam": q["lam"], "claimed": q["e"], "clean": e})
         if s.get("valid") and ((s.get("designated") and not designated_ok)
-                               or (s.get("aggregated") and not aggregated_ok)):
+                               or (s.get("aggregated") and not aggregated_ok)
+                               or (s.get("units") and not units_ok)):
             e = 9.0
             blocked += 1
         q["e_clean"] = e
@@ -79,20 +80,23 @@ def main():
     score = run_gate(algo, "score", outdir) if measure.get("ok") else {"ok": False, "skipped": True}
     designated_ok = bool(verify.get("designated_verified"))
     aggregated_ok = bool(verify.get("aggregated_verified"))
-    certs, tamper, e_ref, blocked = (rescore(score, designated_ok, aggregated_ok) if score.get("queries")
+    units_ok = bool(verify.get("units_verified"))
+    certs, tamper, e_ref, blocked = (rescore(score, designated_ok, aggregated_ok, units_ok) if score.get("queries")
                                      else ({}, [], None, 0))
     summary = {k: v for k, v in score.items() if k != "queries"}
     if blocked and not certs.get("ppsz") and not summary.get("error"):
-        summary["error"] = ("parameters with designated=True or aggregated=True were used, but the verify "
+        summary["error"] = ("parameters with designated, aggregated or units = True were used, but the verify "
                             "gate did not confirm that construction or counting routine "
-                            f"(designated_verified={designated_ok}, aggregated_verified={aggregated_ok})")
+                            f"(designated_verified={designated_ok}, aggregated_verified={aggregated_ok}, "
+                            f"units_verified={units_ok})")
     result = {
-        "version": 3,
+        "version": 4,
         "verify_ok": bool(verify.get("ok")),
         "measure_ok": bool(measure.get("ok")),
         "score_ok": bool(score.get("ok")) and not tamper and bool(certs.get("ppsz")),
         "designated_verified": designated_ok,
         "aggregated_verified": aggregated_ok,
+        "units_verified": units_ok,
         "designated_blocked": blocked,
         "tamper": tamper[:5],
         "thresholds": {k: (v["lam"] if v else None) for k, v in certs.items()},
@@ -105,7 +109,7 @@ def main():
     }
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(result, fh, indent=1, default=str)
-    print(json.dumps({k: result[k] for k in ("verify_ok", "measure_ok", "score_ok", "designated_verified", "aggregated_verified",
+    print(json.dumps({k: result[k] for k in ("verify_ok", "measure_ok", "score_ok", "designated_verified", "aggregated_verified", "units_verified",
                                              "thresholds", "e_at_2224173", "seconds")}))
 
 

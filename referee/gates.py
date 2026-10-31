@@ -1,4 +1,4 @@
-"""FROZEN referee gates, version 3. Usage: python gates.py <algo_dir> <verify|measure|score> <out_json>
+"""FROZEN referee gates, version 4. Usage: python gates.py <algo_dir> <verify|measure|score> <out_json>
 
 Runs the agent's code from <algo_dir> in this separate process; only frozen code decides.
 Version 2 adds the 'tight' regime and, when construction.build_design accepts designated=True,
@@ -6,6 +6,8 @@ frozen checks of the designated-variable construction (exact counts with the red
 order, constant designated rows, group schedules, copies).
 Version 3 adds, when counting.Counter offers taylor_aggregated and Zagg_group_separated,
 exact counts with Lemma 3.3 aggregated per U and the number of restricted sums per point.
+Version 4 adds, when build_design accepts units=True, checks of clause units: units are the
+variable sets of clauses (a maximal matching), share one schedule, and give exact counts.
 """
 import inspect
 import json
@@ -40,14 +42,46 @@ def brute(n, clauses):
     return int(sat.sum())
 
 
-def supports_designated(fn):
+def supports_param(fn, name):
     try:
-        return "designated" in inspect.signature(fn).parameters
+        return name in inspect.signature(fn).parameters
     except (TypeError, ValueError):
         return False
 
 
-def designated_problems(aux, des):
+def supports_designated(fn):
+    return supports_param(fn, "designated")
+
+
+def unit_problems(des, clauses):
+    """Units must be variable sets of clauses (a maximal matching) sharing one schedule."""
+    if des.get("units") is not True:
+        return ["design is not marked units=True"]
+    av = np.asarray(des["av"])
+    n = av.shape[0]
+    unit_of = np.asarray(des.get("unit_of", []))
+    if unit_of.shape != (n,):
+        return ["des['unit_of'] must hold one unit id per variable"]
+    members = {}
+    for v in range(n):
+        members.setdefault(int(unit_of[v]), []).append(v)
+    clause_sets = [frozenset(v for v, _ in cl) for cl in clauses]
+    known = set(clause_sets)
+    probs = []
+    for u, vs in members.items():
+        if len(vs) > 1:
+            if len(vs) > 3 or frozenset(vs) not in known:
+                probs.append(f"unit {u} = {vs} is not the variable set of one clause")
+            if any(not np.array_equal(av[vs[0]], av[v]) for v in vs):
+                probs.append(f"unit {u}: its variables do not share one schedule")
+    single = {vs[0] for vs in members.values() if len(vs) == 1}
+    free = [i for i, s in enumerate(clause_sets) if len(s) >= 2 and all(v in single for v in s)]
+    if free:
+        probs.append(f"the matching of clauses is not maximal: clause {free[0]} could still be matched")
+    return probs
+
+
+def designated_problems(aux, des, units=False, clauses=None):
     """Frozen checks of one designated design; returns a list of problems (empty = fine)."""
     if des.get("designated") is not True:
         return ["design is not marked designated=True"]
@@ -68,9 +102,15 @@ def designated_problems(aux, des):
         if not np.array_equal(Prow[0, i], row0) or np.any(Prow[1:, i]):
             probs.append(f"occurrence {i}: the designated row is not the constant Lden * e_v")
     factors = {f for f, _ in occ}
-    bad = [f for f in factors if per_factor.get(f, 0) != 1]
-    if bad:
-        probs.append(f"{len(bad)} factors do not have exactly one designated occurrence")
+    if units:
+        bad = [f for f in factors if per_factor.get(f, 0) < 1]
+        if bad:
+            probs.append(f"{len(bad)} factors have no designated occurrence")
+        probs += unit_problems(des, clauses)
+    else:
+        bad = [f for f in factors if per_factor.get(f, 0) != 1]
+        if bad:
+            probs.append(f"{len(bad)} factors do not have exactly one designated occurrence")
     if int(des.get("M_eff", -1)) != int((~desig).sum()):
         probs.append("des['M_eff'] is not the number of non-designated occurrences")
     return probs[:5]
@@ -171,6 +211,32 @@ def verify():
             aok &= ok
         out["aggregated_verified"] = bool(aok and ran > 0)
         out["ok"] &= aok
+    out["units_supported"] = supports_param(build_design, "units") and out["designated_supported"]
+    out["units_verified"] = False
+    if out["units_supported"]:
+        uok, ran = True, 0
+        for c in CASES["units_counts"]:
+            ran += 1
+            rng = np.random.default_rng(c["seed"])
+            aux = Aux(*c["cfg"])
+            cl = make_formula(c, rng)
+            des = build_design(aux, c["n"], cl, rng, designated=True, units=True)
+            probs = designated_problems(aux, des, units=True, clauses=cl)
+            rep = check_design(aux, des)
+            if not (rep["kernel_condition"] and rep["P0_delta"]):
+                probs.append("kernel condition or P(0) = delta failed")
+            h0, b, J = run_count(aux, des, cl, c["n"])
+            desig = np.asarray(des.get("desig", []), dtype=bool)
+            nd = sum(1 for i, (f, _v) in enumerate(des["occ"]) if f < len(cl) and i < desig.size and not desig[i])
+            j_exp = nd * (aux.R - 1) // aux.Q + 1
+            if J != j_exp:
+                probs.append(f"Taylor order J = {J}, expected {j_exp} from the non-designated clause occurrences")
+            ok = (h0 == b) and not probs
+            out["items"].append({"kind": "units_count", "cfg": c["cfg"], "n": c["n"], "ok": ok, "H0": h0,
+                                 "brute": b, "J": J, "J_expected": j_exp, "problems": probs[:5]})
+            uok &= ok
+        out["units_verified"] = bool(uok and ran > 0)
+        out["ok"] &= uok
     return out
 
 
@@ -229,6 +295,25 @@ def measure():
             out["items"].append({"cfg": d["cfg"], "n": d["n"], "regime": "designated", "ok": ok,
                                  "checks": checks, "M_eff": m_eff, "D": D, "h": h, "h_bound": round(hb, 1),
                                  "problems": probs, "degree": deg})
+            out["ok"] &= ok
+    if supports_designated(build_design) and supports_param(build_design, "units"):
+        for d in CASES["units_measure"]:
+            r, Q, R, A0 = d["cfg"]
+            rng = np.random.default_rng(d["seed"])
+            aux = Aux(r, Q, R, A0)
+            cl = random_bounded_formula(d["n"], rng)
+            des = build_design(aux, d["n"], cl, rng, designated=True, units=True)
+            probs = designated_problems(aux, des, units=True, clauses=cl)
+            rep = check_design(aux, des)
+            m_eff, D, h = int(des.get("M_eff", 0)), int(aux.D), int(des["h"])
+            hb = 2 * m_eff / D
+            deg, checks = common_checks(rep, des["Prow"], r, Q, R)
+            checks.update(designated_rows=not probs, copies_h=h <= hb,
+                          m_eff_bound=m_eff <= A.M_EFF_UNITS * d["n"] + 1e-9)
+            ok = all(checks.values())
+            out["items"].append({"cfg": d["cfg"], "n": d["n"], "regime": "units", "ok": ok,
+                                 "checks": checks, "M_eff": m_eff, "D": D, "h": h, "h_bound": round(hb, 1),
+                                 "problems": probs[:5], "degree": deg})
             out["ok"] &= ok
     return out
 
