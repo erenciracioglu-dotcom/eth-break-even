@@ -29,9 +29,10 @@ it are reverted.
     N_v(beta) = #{f containing v : d_f = beta} in [0, b]; independent terms, mean m_beta/K <=
     (1+eps) M/D, variance <= b(1+eps) M/D. Bernstein with t = 2M/D - mean >= (1-eps) M/D:
     Pr[c_u > 2M/D] <= exp(-3(1-eps)^2 (M/D) / (4b(2+eps))) = exp(-0.110 M/D) at eps = 0.05, b = 3.
-    Group sizes: Pr[n_t,g >= 2n/r] <= exp(-0.386 n/r) (Chernoff).
-    Union bound: D exp(-0.110 M/D) + Qr exp(-0.386 n/r) <= D^(-1.64) + tiny < 1 when
-    M/D >= 24 ln D (the regime) and n/r >> ln(Qr). Fix a_v one variable at a time with the
+    Group sizes: Pr[n_t,g >= (1+d') n/r] <= exp(-d'^2 n/(3r)) (Chernoff); with d' = (n/r)^(-1/3)
+    this is negligible, so |S_t,g| = (1 + o(1)) n/r, as the cost model's 1/r term assumes.
+    Union bound: D exp(-0.110 M/D) + Qr exp(-(n/r)^(1/3)/3) <= D^(-1.64) + tiny < 1 when
+    M/D >= 24 ln D (the regime) and n/r is large. Fix a_v one variable at a time with the
     product estimator (D + Qr terms, each a product over n variables): poly(n, D) time.
   Consequence: valid; it would even allow M/D >= 8.4 ln D, which moves log2 D by about 1.5 bits
   (no measurable gain). D cannot usefully exceed about M anyway, so this regime is close to the
@@ -40,3 +41,4 @@ it are reverted.
   real freedman-regime design on every referee run.
 
 ## Results that depend on a provisional regime
+- 2026-10-31 12:14:25 iter 002 (T2): ppsz threshold 1,117,111 uses regime 'freedman' -> PROVISIONAL until the head audits that regime.

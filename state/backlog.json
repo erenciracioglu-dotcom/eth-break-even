@@ -9,11 +9,13 @@
   ],
   "steps": 40,
   "max_attempts": 3,
-  "status": "running",
-  "attempts": 0,
+  "status": "done",
+  "attempts": 1,
   "expected": "head oracle: ppsz threshold about 2,141,000 (3.7% lower), e at 2224173 about 0.3815",
   "spec": "choose_params scans r over the fixed list RSET (2, 3, 4, 6, 8, 12, 16, 24, 32, ...), Q over 36 geometric points up to Qmax and R over 120 geometric points, and keeps the (r, Q, R, A0) with the lowest e. The optimum usually sits between these grid points (for example r = 26 is not in RSET). Make the search finer, keep REGIME = \"paper\", and stay well under 3 s per call:\n(a) keep the current coarse scan as stage 1, so every lam still gets a valid answer;\n(b) stage 2: try every integer r from about 0.75 * r_best to 1.35 * r_best;\n(c) for each such r, Qmax = floor(max_log2D(lam, regime) / (2 * log2(r))) is the largest allowed Q; try Qmax and a few values just below it (for example 0.97 * Qmax and 0.99 * Qmax);\n(d) for each (r, Q), evaluate a dense grid of R with exponents_over_R, then every integer R between the grid neighbours of the best R.\nScore every candidate with exponents_over_R or exponent_of from assembly_public; never estimate e yourself. Return the best candidate found.",
-  "stop": "smoke.py passes and the e it prints at lam=2224173 is at most 0.3820 (a fine search reaches about 0.3815 there), or after three different ideas gave no further improvement"
+  "stop": "smoke.py passes and the e it prints at lam=2224173 is at most 0.3820 (a fine search reaches about 0.3815 there), or after three different ideas gave no further improvement",
+  "result": "ppsz threshold 2,224,173 -> 2,140,603; e at 2224173 0.386272 -> 0.381519 (3.76% lower threshold)",
+  "done_iter": 1
  },
  {
   "id": "T2",
@@ -28,7 +30,7 @@
   ],
   "steps": 30,
   "max_attempts": 3,
-  "status": "open",
+  "status": "running",
   "attempts": 0,
   "expected": "head oracle: ppsz threshold about 1,117,000 (2x lower), e at 2224173 about 0.308; PROVISIONAL",
   "spec": "assembly_public.py offers two regimes for the label-balancing step: 'paper' (Lemma 4.5 as written: 2(b+w) D^2 <= M) and 'freedman' (a provisional extension proposed by the head: D ln D <= M / (4(b+w)), with h <= 2M/D copies). 'freedman' allows a much larger label space D, so Qmax roughly doubles. Make choose_params use regime 'freedman' for every lam: set REGIME = \"freedman\" and check that the search ranges (the r values, the Q values up to Qmax, the R grid) still cover the optimum, which now has larger Q and a somewhat larger r than in the paper regime. Every returned dict must have regime 'freedman' and be valid (exponent_of(params, lam)['valid'] is True).",
