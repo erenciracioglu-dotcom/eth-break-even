@@ -53,7 +53,11 @@ class Counter:
         self.K = K
         invL = pow(aux.Lden % p, p - 2, p)
         self.P = (des["Prow"] % p) * invL % p                    # (K, M, n), unscaled mod p
-        d = sum(len(cl) for cl in clauses)
+        if des.get("designated"):
+            # designated occurrences carry no replacement row: only |I_f| - 1 per clause count
+            d = sum(len(cl) - 1 for cl in clauses)
+        else:
+            d = sum(len(cl) for cl in clauses)
         self.dH = d * (aux.R - 1)                                # deg_T H <= d (R-1)
         self.J = self.dH // self.Q + 1
         self.q = self.J - 1

@@ -9,7 +9,8 @@ PUBLIC API (the referee calls these; keep names and return fields):
   Aux(r, Q, R, A0).report() -> dict with f_interp, eigen, orthogonal, support, P0_delta,
                                degree, separation, min_kernel_dim
   random_formula(n, m, rng), random_bounded_formula(n, rng)
-  build_design(aux, n, clauses, rng) -> dict (keys used: Prow, Chat, av, df, occ, h, n, M, clauses)
+  build_design(aux, n, clauses, rng, designated=False) -> dict (keys used: Prow, Chat, av, df,
+      occ, h, n, M, clauses; plus designated, desig, M_eff when designated=True)
   check_design(aux, des) -> dict (keys used: kernel_condition, P0_delta, min_kernel_dim,
                                max_groups_per_row, max_restricted_abs)
 """
@@ -268,43 +269,74 @@ def random_formula(n, m, rng, k=3):
     return clauses
 
 
-def build_design(aux, n, clauses, rng):
-    """Sections 4.4-4.5: schedules, labels, copies, rows P_{f,v}(T), matrices C_{t,g}."""
+def build_design(aux, n, clauses, rng, designated=False):
+    """Sections 4.4-4.5: schedules, labels, copies, rows P_{f,v}(T), matrices C_{t,g}.
+
+    designated=True (head extension, cost model v2): every factor f (each clause and each
+    extra singleton factor) reads the variable v(f) of its FIRST occurrence in occ order
+    directly; that occurrence is "designated", gets the constant row P_{f,v(f)}(T) = Lden *
+    delta_{v(f)} (degree 0, no replacement), and the factor follows that variable's group at
+    every point: df[f] = av[v(f)]. Designated occurrences carry no label, no copy and no
+    position, so labels, copies, h, pos_y, pos_v and Chat come from the non-designated
+    occurrences only (h = 0 when there are none). Extra keys: designated, desig (bool flag per
+    occurrence, in occ order), M_eff = number of non-designated occurrences.
+    """
     r, Q, R = aux.r, aux.Q, aux.R
     used = {v for cl in clauses for v, _ in cl}
     factors = [[v for v, _ in cl] for cl in clauses] + [[v] for v in range(n) if v not in used]
     av = rng.integers(0, r, size=(n, Q))
     df = rng.integers(0, r, size=(len(factors), Q))
     occ = [(f, v) for f, sc in enumerate(factors) for v in sc]
-    labels = np.array([int(aux.index_of(av[v], df[f])) for f, v in occ], dtype=np.int64)
-    copy = np.zeros(len(occ), np.int64)
+    desig = np.zeros(len(occ), bool)
+    if designated:
+        seen = set()
+        for i, (f, v) in enumerate(occ):
+            if f not in seen:
+                seen.add(f)
+                desig[i] = True
+                df[f] = av[v]                     # the factor follows that variable's group
+    nd_idx = np.nonzero(~desig)[0]
+    labels = np.zeros(len(occ), np.int64)
+    for i in nd_idx:
+        f, v = occ[i]
+        labels[i] = int(aux.index_of(av[v], df[f]))
+    copy = np.full(len(occ), -1, np.int64)
     cnt = {}
-    for i, u in enumerate(labels):
-        c = cnt.get(int(u), 0)
+    for i in nd_idx:
+        u = int(labels[i])
+        c = cnt.get(u, 0)
         copy[i] = c
-        cnt[int(u)] = c + 1
-    h = max(cnt.values())
+        cnt[u] = c + 1
+    h = max(cnt.values()) if cnt else 0
     pos_y = [[] for _ in range(h)]
     pos_v = [[] for _ in range(h)]
-    for i, (f, v) in enumerate(occ):
+    for i in nd_idx:
+        f, v = occ[i]
         pos_y[copy[i]].append(labels[i])
         pos_v[copy[i]].append(v)
     pos_y = [np.array(x, np.int64) for x in pos_y]
     pos_v = [np.array(x, np.int64) for x in pos_v]
     K = aux.Pc.shape[0]
     Prow = np.zeros((K, len(occ), n), np.int64)
-    for i in range(len(occ)):
+    for i in nd_idx:
         c = copy[i]
         for k in range(K):
             np.add.at(Prow[k, i], pos_v[c], aux.Pc[k][labels[i], pos_y[c]])
+    for i in np.nonzero(desig)[0]:                # constant rows, degree 0
+        Prow[0, i, occ[i][1]] = aux.Lden
     cB = aux.Cmeas.shape[0]
     Chat = np.zeros((h * cB, n), np.int64)
     for c in range(h):
         block = np.zeros((n, cB), np.int64)
         np.add.at(block, pos_v[c], aux.Cmeas[:, pos_y[c]].T)
         Chat[c * cB:(c + 1) * cB] = block.T
-    return dict(factors=factors, av=av, df=df, occ=occ, labels=labels, copy=copy, h=h,
-                Prow=Prow, Chat=Chat, n=n, M=len(occ), clauses=clauses)
+    out = dict(factors=factors, av=av, df=df, occ=occ, labels=labels, copy=copy, h=h,
+               Prow=Prow, Chat=Chat, n=n, M=len(occ), clauses=clauses)
+    if designated:
+        out["designated"] = True
+        out["desig"] = desig
+        out["M_eff"] = int(nd_idx.size)
+    return out
 
 
 def check_design(aux, des):
@@ -338,7 +370,8 @@ def check_design(aux, des):
             nonzero_rows += int(nzr.sum())
             if sub.size:
                 max_restr = max(max_restr, int(np.abs(sub).sum(axis=1).max()))
-        max_groups = max(max_groups, int(touched.max()))
+        if touched.size:
+            max_groups = max(max_groups, int(touched.max()))
     sizes = [int((av[:, t] == g).sum()) for t in range(Q) for g in range(r)]
     return dict(n=n, M=des["M"], D=aux.D, h=des["h"], cB=int(aux.Cmeas.shape[0]),
                 kernel_condition=bool(ok), P0_delta=p0, min_kernel_dim=int(min(kdims)),
@@ -347,4 +380,4 @@ def check_design(aux, des):
                 rows_nonzero_avg=nonzero_rows / Q,                               # actual, per point
                 max_groups_per_row=max_groups, max_restricted_abs=max_restr,
                 bound_restricted=2 ** (Q - 1), paper_bound_abs=aux.D,
-                max_full_abs=int(np.abs(Chat).sum(axis=1).max()))
+                max_full_abs=int(np.abs(Chat).sum(axis=1).max()) if Chat.shape[0] else 0)

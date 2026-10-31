@@ -92,3 +92,4 @@ it are reverted.
 ## Results that depend on a provisional regime
 - 2026-10-31 12:14:25 iter 002 (T2): ppsz threshold 1,117,111 uses regime 'freedman' -> PROVISIONAL until the head audits that regime. [head: regime audited 12:05, this result stands as audited]
 - 2026-10-31 12:28:56 iter 003 (T3): ppsz threshold 1,070,239 uses regime 'tight' -> PROVISIONAL until the head audits that regime.
+- 2026-10-31 12:42:32 iter 004 (T4): ppsz threshold 438,437 uses regime 'tight' -> PROVISIONAL until the head audits that regime.
