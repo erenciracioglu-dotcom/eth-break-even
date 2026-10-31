@@ -1,0 +1,45 @@
+[
+ {
+  "id": "T15",
+  "title": "Appendix D core: memoised child tables, group-by-group mode sum, leaves over chunk variables, end-to-end count",
+  "kind": "score",
+  "files": [
+   "appd_core.py",
+   "appd_params.py"
+  ],
+  "spec": "Implement the Appendix D core in appd_core.py. Write the bodies of NodeExpansion.group_table, NodeExpansion.sum_paper, NodeExpansion.sum_memo, NodeExpansion.sum_dp and of the module functions byvars_value, node_value and count_e2e; their docstrings are the contracts and NOTES.md gives the background. Then set IMPLEMENTED = True in appd_core.py and USE_CODE_FLAGS = True in appd_params.py (change nothing else in appd_params.py).\n\nHints:\n1. group_table(g): gammas = self.tuples(self.inc[g], self.p); return {self.key(gm): self.child_network_value(g, gm) for gm in gammas} and add len(gammas) to self.child_calls.\n2. sum_paper: tables = {g: self.group_table(g) for g in self.r_groups}; total = [0] * self.q; for beta in self.tuples(list(range(len(self.modes))), self.p): val = [1] + [0] * (self.q - 1); for g in self.r_groups: sub = {k: e for k, e in beta.items() if k in self.inc[g]}; val = ps_mul_mod(val, tables[g][self.key(sub)], self.q, self.m); then total = ps_add_mod(total, val, self.m). Return (total, number of beta, number of beta * len(self.r_groups)).\n3. sum_memo: set self.child_calls = 0, then the same sum; return (total, number of beta, self.child_calls).\n4. sum_dp: set self.child_calls = 0; tables as above; pos = {g: i for i, g in enumerate(self.r_groups)}; for mode k the ends are self.modes[k][\"src\"] and self.modes[k][\"tgt\"]. Phi = {(): [1] + [0] * (self.q - 1)}. At step i with group g: new = the modes k in self.inc[g] whose smaller end position is i and whose larger end position is > i; for every key s in Phi and every nt in self.tuples(new, self.p) with self.weight(dict(s)) + self.weight(nt) < self.p: count it, full = dict(s) with nt added, gamma = full restricted to self.inc[g], val = ps_mul_mod(Phi[s], tables[g][self.key(gamma)], self.q, self.m), proj = full restricted to the modes whose larger end position is > i, and add val into newPhi[self.key(proj)]. max_enum = the largest count of one step. The result is Phi.get((), [0] * self.q) after the last group.\n5. byvars_value: follow its docstring. Vertices k with ne.grp[k] == g are the chunks of the group; their variables are the union of net.units[k]; their clauses are the ci with net.desig[ci] among those k; the column bit of a wire w with ne.colg[w] == g is the value of variable _WIREMAP[(id(net), w)][1]; the wire between clause ci and an outside variable v is _WIREMAP[(id(net), \"cv\", ci, v)]. For each assignment of the variables and each choice of clause terms, compute every packet like packet_tensor does, but with the row factor w0 + (w1 - w0) * form instead of l_Y(form): the local part becomes w0 + (w1 - w0) * loc and each mode coefficient c becomes (w1 - w0) * c. Multiply the packets and the coefficient (+1 or -1) of the chosen terms and add everything up (mod 2^p).\n6. node_value: ne = NodeExpansion(net, pk, labels, t, p, q, weights=weights); call the chosen sum; stats as in the docstring.\n7. count_e2e: follow its docstring; smoke_appd.py compares it with count_sat.\nPitfalls: series are lists of q ints mod 2^p (self.m); copy dicts before changing them; tuples are dicts {mode: exponent > 0} and self.key(...) is their sorted item tuple; do not call direct_taylor_mod or F_poly inside your functions (the referee blocks them).",
+  "stop": "smoke_appd.py prints SMOKE OK with IMPLEMENTED = True and USE_CODE_FLAGS = True and every core check line says ok",
+  "needs_flags": [
+   "memo",
+   "modedp",
+   "chunks",
+   "leafvars"
+  ],
+  "status": "open",
+  "priority": 10,
+  "max_attempts": 3,
+  "steps": 70
+ },
+ {
+  "id": "T16",
+  "title": "Appendix D parameter search: delta, chunk size, three levels, free u per level",
+  "kind": "score",
+  "files": [
+   "appd_params.py"
+  ],
+  "spec": "Improve the parameter search in appd_params.py (only that file) so that the break-even against 2^(n/3) moves lower. The frozen cost model appd_assembly_public.py (read it, do not edit it) accepts levels 1 to 3, integers r_d in [2, 4096], integers u_d >= 2 and a_d > u_d, delta in [1e-4, 0.25] and Lc in [1, 2^20]; it returns valid = False with a reason when a constraint fails. Ideas: tune delta (for example 0.002 to 0.03) and Lc (256 to 65536); allow three levels; choose u_1 and u_2 freely instead of only rho * u_0; widen the grids of r. Keep the bisection on u_0 for each shape and keep min_a for a_d. choose_params must stay deterministic and under 1 s per call (smoke_appd.py prints the time). Keep USE_CODE_FLAGS = True. Do not touch appd_core.py.",
+  "stop": "smoke_appd.py prints SMOKE OK and the e it prints at lam = 5404 is lower than before your change (run smoke_appd.py first and note that value)",
+  "needs_flags": [
+   "memo",
+   "modedp",
+   "chunks"
+  ],
+  "after": [
+   "T15"
+  ],
+  "status": "open",
+  "priority": 20,
+  "max_attempts": 3,
+  "steps": 40
+ }
+]

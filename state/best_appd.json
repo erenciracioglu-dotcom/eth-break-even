@@ -1,0 +1,39 @@
+{
+ "third": 201458,
+ "occ3sat": 1475104,
+ "ppsz": 140745,
+ "sharp3sat": 34975,
+ "brute": 16738,
+ "verified_flags": {
+  "memo": false,
+  "modedp": false,
+  "chunks": false,
+  "leafvars": false
+ },
+ "params_third": {
+  "levels": 2,
+  "r": [
+   12,
+   16
+  ],
+  "u": [
+   26964,
+   21571
+  ],
+  "a": [
+   26993,
+   48566
+  ],
+  "delta": 0.01,
+  "Lc": 1,
+  "perclass": true,
+  "labelfree": true,
+  "memo": false,
+  "modedp": false,
+  "chunks": false,
+  "leafvars": false
+ },
+ "iter": 0,
+ "task": "baseline (skeleton, no code flags)",
+ "updated": "2026-11-01 00:30:56"
+}

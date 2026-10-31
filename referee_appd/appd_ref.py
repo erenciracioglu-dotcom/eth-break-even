@@ -1,0 +1,1076 @@
+#!/usr/bin/env python3
+"""Toy implementation of the Appendix D contraction (Theorem D.1) and the head's extensions.
+
+Everything is exact (Python integers and Fractions). Checks:
+  1. networks: the clause-variable network and the chunk super-vertex network contract to #F
+  2. packing (Lemma D.3 (1)-(2)); W(0) = I and W(t) is local for coordinate v2(t) (D.4.5)
+  3. F(T) (D.8) has degree <= M(2L-1), F(0) = contraction, F(t + alpha z) in Z_(2)[z] (Lemma D.4)
+  4. tapered Hermite recovery (Lemma D.5): Taylor data reduced mod 2^P_t give F(0) mod 2^p
+  5. modes (D.12)-(D.16): F(t + alpha z) = sum_beta prod_g Z_{g,beta} mod (2^p, z^q), computed
+     (a) per tuple as in the paper, (b) with each distinct child once ('memo'), (c) group by group
+     ('modedp'); child networks built as in D.4.6 contract to the same values
+  6. end to end (a = 1): #F from the mode sums at the precision of Lemma D.5
+Weights: 'paper' w = b + 1, or 'sharp' w = a + 1 - i + b (every crossing entry of W(t + alpha z)
+is divisible by 2^(a+1-i): C(t + alpha z)/C'(0) is divisible by alpha = 2^(a+1)).
+"""
+import itertools
+import math
+import random
+import sys
+from fractions import Fraction as Fr
+
+
+# ----------------------------------------------------------------------------- helpers
+def v2(x):
+    x = Fr(x)
+    if x == 0:
+        return math.inf
+    n, d, c = x.numerator, x.denominator, 0
+    while n % 2 == 0:
+        n //= 2
+        c += 1
+    while d % 2 == 0:
+        d //= 2
+        c -= 1
+    return c
+
+
+def red(x, P):
+    """2-adic integer Fraction -> residue mod 2^P."""
+    x = Fr(x)
+    n, d = x.numerator, x.denominator
+    assert d % 2 == 1, "not 2-adically integral"
+    m = 1 << P
+    return (n * pow(d, -1, m)) % m
+
+
+def poly_mul(a, b):
+    c = [0] * (len(a) + len(b) - 1)
+    for i, ai in enumerate(a):
+        if ai:
+            for j, bj in enumerate(b):
+                c[i + j] += ai * bj
+    return c
+
+
+def ser_mul(a, b, q):
+    c = [Fr(0)] * q
+    for i in range(q):
+        if a[i]:
+            for j in range(q - i):
+                c[i + j] += a[i] * b[j]
+    return c
+
+
+def ser_inv(a, q):
+    """1/a as a power series (a[0] != 0)."""
+    inv = [Fr(0)] * q
+    inv[0] = Fr(1) / a[0]
+    for k in range(1, q):
+        s = sum(a[j] * inv[k - j] for j in range(1, min(k, len(a) - 1) + 1))
+        inv[k] = -s / a[0]
+    return inv
+
+
+def ps_mul_mod(a, b, q, m):
+    c = [0] * q
+    for i in range(q):
+        ai = a[i]
+        if ai:
+            for j in range(q - i):
+                if b[j]:
+                    c[i + j] = (c[i + j] + ai * b[j]) % m
+    return c
+
+
+def ps_add_mod(a, b, m):
+    return [(x + y) % m for x, y in zip(a, b)]
+
+
+# ----------------------------------------------------------------------------- formulas, networks
+def count_sat(n, clauses):
+    c = 0
+    for x in range(1 << n):
+        if all(any(((x >> (abs(l) - 1)) & 1) == (l > 0) for l in cl) for cl in clauses):
+            c += 1
+    return c
+
+
+def clause_sat(cl, val):
+    return any(val[abs(l)] == (1 if l > 0 else 0) for l in cl)
+
+
+class Net:
+    """wires: list of (row_vertex, col_vertex); vertex: dict(ports=[(wire, 'r'|'c')], table={bits: int})."""
+
+    def __init__(self):
+        self.wires, self.verts, self.unused = [], [], 0
+
+    def contract(self):
+        return self.contract_core() << self.unused
+
+    def contract_core(self):
+        M = len(self.wires)
+        tot = 0
+        for x in range(1 << M):
+            bit = [(x >> w) & 1 for w in range(M)]
+            p = 1
+            for v in self.verts:
+                p *= v["table"].get(tuple(bit[w] for w, _ in v["ports"]), 0)
+                if p == 0:
+                    break
+            tot += p
+        return tot
+
+
+def formula_net(n, clauses):
+    net = Net()
+    occ = {v: [] for v in range(1, n + 1)}
+    for ci, cl in enumerate(clauses):
+        vs = sorted(set(abs(l) for l in cl))
+        net.verts.append(dict(ports=[], table={}, kind=("clause", ci)))
+        for v in vs:
+            w = len(net.wires)
+            net.wires.append([ci, None])
+            net.verts[ci]["ports"].append((w, "r"))
+            occ[v].append(w)
+        tab = {}
+        for bits in itertools.product((0, 1), repeat=len(vs)):
+            if clause_sat(cl, dict(zip(vs, bits))):
+                tab[bits] = 1
+        net.verts[ci]["table"] = tab
+    for v in range(1, n + 1):
+        if not occ[v]:
+            net.unused += 1
+            continue
+        k = len(net.verts)
+        d = len(occ[v])
+        net.verts.append(dict(ports=[(w, "c") for w in occ[v]],
+                              table={(b,) * d: 1 for b in (0, 1)}, kind=("var", v)))
+        for w in occ[v]:
+            net.wires[w][1] = k
+    net.wires = [tuple(w) for w in net.wires]
+    return net
+
+
+def make_units(n, clauses, Lc, rng):
+    """Connected chunks of the variable graph with about Lc variables (greedy BFS)."""
+    adj = {v: set() for v in range(1, n + 1)}
+    for cl in clauses:
+        vs = [abs(l) for l in cl]
+        for a in vs:
+            for b in vs:
+                if a != b:
+                    adj[a].add(b)
+    used = sorted(set(abs(l) for cl in clauses for l in cl))
+    left = set(used)
+    units = []
+    order = used[:]
+    rng.shuffle(order)
+    for s in order:
+        if s not in left:
+            continue
+        U, frontier = [s], [s]
+        left.discard(s)
+        while frontier and len(U) < Lc:
+            nxt = []
+            for a in frontier:
+                for b in sorted(adj[a]):
+                    if b in left and len(U) < Lc:
+                        U.append(b)
+                        left.discard(b)
+                        nxt.append(b)
+            frontier = nxt
+        units.append(set(U))
+    return units
+
+
+_WIREMAP = {}
+
+
+def chunk_net_mapped(n, clauses, units):
+    """chunk_net with the wire -> (clause, variable) map registered before the tables are built."""
+    unit_of = {v: k for k, U in enumerate(units) for v in U}
+    desig = []
+    for cl in clauses:
+        vs = sorted(set(abs(l) for l in cl))
+        cnt = {}
+        for v in vs:
+            cnt[unit_of[v]] = cnt.get(unit_of[v], 0) + 1
+        desig.append(min(cnt, key=lambda k: (-cnt[k], k)))
+    net = Net()
+    w = 0
+    for ci, cl in enumerate(clauses):
+        for v in sorted(set(abs(l) for l in cl)):
+            if unit_of[v] != desig[ci]:
+                _WIREMAP[(id(net), w)] = (ci, v)
+                _WIREMAP[(id(net), "cv", ci, v)] = w
+                w += 1
+    # build with the same numbering
+    tmp = chunk_net_build(n, clauses, units, unit_of, desig, net)
+    return tmp
+
+
+def chunk_net_build(n, clauses, units, unit_of, desig, net):
+    net.units, net.unit_of, net.desig, net.clauses = units, unit_of, desig, clauses
+    net.unused = n - len(unit_of)
+    net.verts = [dict(ports=[], table={}, kind=("unit", k)) for k in range(len(units))]
+    for ci, cl in enumerate(clauses):
+        for v in sorted(set(abs(l) for l in cl)):
+            if unit_of[v] != desig[ci]:
+                w = len(net.wires)
+                net.wires.append((desig[ci], unit_of[v]))
+                net.verts[desig[ci]]["ports"].append((w, "r"))
+                net.verts[unit_of[v]]["ports"].append((w, "c"))
+    for k, U in enumerate(units):
+        Us = sorted(U)
+        ports = net.verts[k]["ports"]
+        cls = [ci for ci in range(len(clauses)) if desig[ci] == k]
+        tab = {}
+        for pbits in itertools.product((0, 1), repeat=len(ports)):
+            tot = 0
+            for xb in itertools.product((0, 1), repeat=len(Us)):
+                val = dict(zip(Us, xb))
+                ok = True
+                rowval = {}
+                for (w, end), b in zip(ports, pbits):
+                    if end == "c":
+                        if val[_WIREMAP[(id(net), w)][1]] != b:
+                            ok = False
+                            break
+                    else:
+                        rowval[w] = b
+                if not ok:
+                    continue
+                for ci in cls:
+                    vv = {}
+                    for v in sorted(set(abs(l) for l in clauses[ci])):
+                        vv[v] = val[v] if v in U else rowval[_WIREMAP[(id(net), "cv", ci, v)]]
+                    if not clause_sat(clauses[ci], vv):
+                        ok = False
+                        break
+                if ok:
+                    tot += 1
+            if tot:
+                tab[pbits] = tot
+        net.verts[k]["table"] = tab
+    return net
+
+
+# ----------------------------------------------------------------------------- packing (Lemma D.3)
+class Packing:
+    def __init__(self, net, labels, a):
+        self.a, self.L = a, 1 << a
+        self.S = list(range(-self.L, self.L))
+        by = {}
+        for w, (rv, cv) in enumerate(net.wires):
+            rl, cl = labels[rv], labels[cv]
+            pat = tuple((min(rl[i], cl[i]), max(rl[i], cl[i])) for i in range(a))
+            ori = tuple(0 if rl[i] <= cl[i] else 1 for i in range(a) if rl[i] != cl[i])
+            by.setdefault(pat, {}).setdefault(ori, []).append(w)
+        self.packets = []
+        self.where = {}
+        for pat, d in sorted(by.items()):
+            uneq = [i for i in range(a) if pat[i][0] != pat[i][1]]
+            eq = [i for i in range(a) if pat[i][0] == pat[i][1]]
+            cap = 1 << len(eq)
+            npk = max((len(ws) + cap - 1) // cap for ws in d.values())
+            for k in range(npk):
+                pk = dict(pat=pat, wire_at={})
+                for ori, ws in sorted(d.items()):
+                    for c, w in enumerate(ws[k * cap:(k + 1) * cap]):
+                        s = 0
+                        for idx, i in enumerate(uneq):
+                            s |= ori[idx] << i
+                        for idx, i in enumerate(eq):
+                            s |= ((c >> idx) & 1) << i
+                        assert s not in pk["wire_at"]
+                        pk["wire_at"][s] = w
+                        self.where[w] = (len(self.packets), s)
+                self.packets.append(pk)
+        # Lemma D.3 (1)-(2): every wire at the same slot at both ends, symbols match the convention
+        for w, (rv, cv) in enumerate(net.wires):
+            P, s = self.where[w]
+            for i in range(a):
+                assert self.row_sym(P, s, i) == labels[rv][i]
+                assert self.col_sym(P, s, i) == labels[cv][i]
+        self.Cp0 = 1
+        for s in self.S:
+            if s != 0:
+                self.Cp0 *= -s
+
+    def row_sym(self, P, x, i):
+        lo, hi = self.packets[P]["pat"][i]
+        return lo if lo == hi or not (x >> i) & 1 else hi
+
+    def col_sym(self, P, y, i):
+        lo, hi = self.packets[P]["pat"][i]
+        return lo if lo == hi else (hi if not (y >> i) & 1 else lo)
+
+    def Wpoly(self, d):
+        """C'(0) W_xy(T) for y - x = d: prod_{s in S, s != d} (T - s) (integer polynomial in T)."""
+        p = [1]
+        for s in self.S:
+            if s != d:
+                p = poly_mul(p, [-s, 1])
+        return p
+
+
+# ----------------------------------------------------------------------------- F(T) (D.8)
+def F_poly(net, pk):
+    """Exact F(T) as a list of Fraction coefficients, by evaluation at deg+1 integer points."""
+    M, L = len(net.wires), pk.L
+    deg = M * (2 * L - 1)
+    nonzero = []
+    for x in range(1 << (2 * M)):
+        X = [(x >> w) & 1 for w in range(M)]
+        Y = [(x >> (M + w)) & 1 for w in range(M)]
+        p = 1
+        for v in net.verts:
+            p *= v["table"].get(tuple(Y[w] if e == "r" else X[w] for w, e in v["ports"]), 0)
+            if p == 0:
+                break
+        if p:
+            nonzero.append((p, X, Y))
+    Wp = {}
+    pts = list(range(deg + 1))
+    vals = []
+    for T0 in pts:
+        wv = {}
+        for P, pkd in enumerate(pk.packets):
+            for x in pkd["wire_at"]:
+                for y in pkd["wire_at"]:
+                    d = y - x
+                    if d not in Wp:
+                        Wp[d] = pk.Wpoly(d)
+                    wv[(P, x, y)] = sum(c * T0 ** k for k, c in enumerate(Wp[d]))
+        tot = 0
+        for p, X, Y in nonzero:
+            prod = p
+            for w in range(M):
+                P, x = pk.where[w]
+                form = sum(wv[(P, x, y)] * X[w2] for y, w2 in pk.packets[P]["wire_at"].items())
+                prod *= form if Y[w] else (pk.Cp0 - form)
+                if prod == 0:
+                    break
+            tot += prod
+        vals.append(Fr(tot, pk.Cp0 ** M))
+    # Newton interpolation -> monomial coefficients
+    n = len(pts)
+    coef = vals[:]
+    for j in range(1, n):
+        for i in range(n - 1, j - 1, -1):
+            coef[i] = (coef[i] - coef[i - 1]) / (pts[i] - pts[i - j])
+    poly = [coef[n - 1]]
+    for i in range(n - 2, -1, -1):
+        poly = poly_mul(poly, [Fr(-pts[i]), Fr(1)])
+        poly[0] += coef[i]
+    return poly
+
+
+def taylor_at(poly, t, alpha, q):
+    """Coefficients of F(t + alpha z) mod z^q (exact)."""
+    out = [Fr(0)] * q
+    for k, c in enumerate(poly):
+        if c:
+            for j in range(min(k, q - 1) + 1):
+                out[j] += c * math.comb(k, j) * Fr(t) ** (k - j) * Fr(alpha) ** j
+    return out
+
+
+# ----------------------------------------------------------------------------- Lemma D.5
+def multiplicities(a, u, h):
+    L = 1 << a
+    S = list(range(-L, L))
+    q = {}
+    for t in S:
+        if t != 0:
+            i = v2(t)
+            q[t] = h * max(0, u - i)
+    return q
+
+
+def recover(data, qmult, a, exact=True, P=None):
+    """Hermite recovery (D.9). data[t] = list of q_t coefficients (Fractions, or residues mod 2^P[t])."""
+    L = 1 << a
+    alpha = 2 ** (a + 1)
+    S = list(range(-L, L))
+    total = Fr(0)
+    for t, qt in qmult.items():
+        if qt == 0:
+            continue
+        # E_t(t + alpha z) = prod_{q != 0, t} (1 + alpha z / (t - q))^{q_q}, E_t(0) = prod ((0 - q)/(t - q))^{q_q}
+        Et0 = Fr(1)
+        ser = [Fr(1)] + [Fr(0)] * (qt - 1)
+        for s in S:
+            if s in (0, t) or qmult.get(s, 0) == 0:
+                continue
+            Et0 *= Fr(-s, t - s) ** qmult[s]
+            fac = [Fr(1), Fr(alpha, t - s)] + [Fr(0)] * max(0, qt - 2)
+            for _ in range(qmult[s]):
+                ser = ser_mul(ser, fac[:qt], qt)
+        inv = ser_inv(ser, qt)
+        d = [Fr(c) for c in data[t]]
+        quo = ser_mul(d, inv, qt)
+        zval = Fr(-t, alpha)
+        total += Et0 * sum(c * zval ** j for j, c in enumerate(quo))
+    return total
+
+
+def loss_bits(qmult, a, t):
+    """-v2(E_t(0)) + (q_t - 1)(a + 1 - i): precision lost by the recovery at node t."""
+    L = 1 << a
+    Et0 = Fr(1)
+    for s in range(-L, L):
+        if s in (0, t) or qmult.get(s, 0) == 0:
+            continue
+        Et0 *= Fr(-s, t - s) ** qmult[s]
+    i = v2(t)
+    return -v2(Et0) + (qmult[t] - 1) * (a + 1 - i)
+
+
+# ----------------------------------------------------------------------------- modes (D.4.5-D.4.6)
+class NodeExpansion:
+    """Mode expansion of F(t + alpha z) mod (2^p, z^q) at node t with i = v2(t)."""
+
+    def __init__(self, net, pk, labels, t, p, q, weights="paper"):
+        self.net, self.pk, self.t, self.p, self.q = net, pk, t, p, q
+        self.m = 1 << p
+        a, L = pk.a, pk.L
+        self.alpha = 2 ** (a + 1)
+        i = v2(t)
+        self.i = i
+        self.grp = [labels[v][i] for v in range(len(net.verts))]
+        M = len(net.wires)
+        # exact series of C'(0) W_xy(t + alpha z) / C'(0)
+        self.Wser = {}
+        for P, pkd in enumerate(pk.packets):
+            for x in range(L):
+                for y in range(L):
+                    d = y - x
+                    poly = pk.Wpoly(d)
+                    s = taylor_at([Fr(c, pk.Cp0) for c in poly], t, self.alpha, q)
+                    self.Wser[(P, x, y)] = s
+        # groups of the ports
+        self.rowg = {w: self.grp[net.wires[w][0]] for w in range(M)}
+        self.colg = {w: self.grp[net.wires[w][1]] for w in range(M)}
+        # modes
+        self.modes = []          # (P, y0, b, source, target, weight)
+        self.coef = {}           # (w_row, mode index) -> residue series
+        self.local = {}          # w_row -> list of (w_col, residue series)
+        for w in range(M):
+            P, x = pk.where[w]
+            self.local[w] = []
+            for y, w2 in pk.packets[P]["wire_at"].items():
+                if self.colg[w2] == self.rowg[w]:
+                    self.local[w].append((w2, [red(c, p) for c in self.Wser[(P, x, y)]]))
+        step = 1 << (i + 1)
+        for P, pkd in enumerate(pk.packets):
+            lo, hi = pkd["pat"][i]
+            if lo == hi:
+                continue
+            for y0 in range(step):
+                cols = [(j, pkd["wire_at"][y0 + step * j]) for j in range(L // step)
+                        if (y0 + step * j) in pkd["wire_at"]]
+                src = pk.col_sym(P, y0, i)
+                tgt = hi if src == lo else lo
+                rows = [(x, w) for x, w in pkd["wire_at"].items() if pk.row_sym(P, x, i) == tgt]
+                if not cols or not rows:
+                    continue
+                for b in range(p):
+                    wgt = (b + 1) if weights == "paper" else (a + 1 - i + b)
+                    if wgt >= p:
+                        break
+                    # L_Z(X) = sum_j j^b X_y ; trivial if all j^b vanish
+                    lin = [(j ** b if (j or b == 0) else 0, w2) for j, w2 in cols]
+                    lin = [(c, w2) for c, w2 in lin if c]
+                    if not lin:
+                        continue
+                    k = len(self.modes)
+                    self.modes.append(dict(P=P, y0=y0, b=b, src=src, tgt=tgt, w=wgt, lin=lin))
+                    for x, wr in rows:
+                        A = Fr(t - y0 + x)
+                        assert v2(A) <= i
+                        first = taylor_at([Fr(c, pk.Cp0) for c in pk.Wpoly(y0 - x)], t, self.alpha, q)
+                        base = [A, Fr(self.alpha)] + [Fr(0)] * max(0, q - 2)
+                        invb = ser_inv(base[:q], q)
+                        ratio = [Fr(2 ** (i + 1)) * c for c in invb]
+                        c = first
+                        for _ in range(b):
+                            c = ser_mul(c, ratio, q)
+                        assert all(v2(cc) >= wgt for cc in c), ("weight", wgt, [v2(cc) for cc in c])
+                        self.coef[(wr, k)] = [red(cc, p) for cc in c]
+        # (D.12) check: every crossing entry equals its mode expansion mod 2^p
+        for P, pkd in enumerate(pk.packets):
+            for x, wr in pkd["wire_at"].items():
+                for y, wc in pkd["wire_at"].items():
+                    if self.colg[wc] == self.rowg[wr]:
+                        continue
+                    y0, j = y % step, y // step
+                    acc = [0] * q
+                    for k, md in enumerate(self.modes):
+                        if md["P"] == P and md["y0"] == y0 and (wr, k) in self.coef:
+                            jb = j ** md["b"] if (j or md["b"] == 0) else 0
+                            acc = ps_add_mod(acc, [(jb * c) % self.m for c in self.coef[(wr, k)]], self.m)
+                    direct = [red(c, p) for c in self.Wser[(P, x, y)]]
+                    assert acc == direct, ("D.12 failed", P, x, y)
+        self.r_groups = sorted(set(self.grp))
+        self.tg = {g: [k for k, md in enumerate(self.modes) if md["tgt"] == g] for g in self.r_groups}
+        self.sg = {g: [k for k, md in enumerate(self.modes) if md["src"] == g] for g in self.r_groups}
+        self.inc = {g: sorted(set(self.tg[g]) | set(self.sg[g])) for g in self.r_groups}
+        self.child_calls = 0
+
+    # -- tuples
+    def tuples(self, idx, budget):
+        """All exponent tuples (dict mode -> exp > 0) on modes idx with total weight < budget."""
+        out = []
+
+        def rec(j, left, cur):
+            if j == len(idx):
+                out.append(dict(cur))
+                return
+            k = idx[j]
+            wk = self.modes[k]["w"]
+            e = 0
+            while e * wk < left:
+                if e:
+                    cur[k] = e
+                rec(j + 1, left - e * wk, cur)
+                e += 1
+            cur.pop(k, None)
+        rec(0, budget, {})
+        return out
+
+    def weight(self, beta):
+        return sum(self.modes[k]["w"] * e for k, e in beta.items())
+
+    # -- children
+    def group_table(self, g):
+        """V_g[gamma] for all tuples gamma on I_g of weight < p (each child contracted once)."""
+        net, m, q, p = self.net, self.m, self.q, self.p
+        verts = [v for v in range(len(net.verts)) if self.grp[v] == g]
+        rows = [w for w in range(len(net.wires)) if self.rowg[w] == g]
+        cols = [w for w in range(len(net.wires)) if self.colg[w] == g]
+        ports = sorted(set(rows) | set(cols))
+        gammas = self.tuples(self.inc[g], p)
+        tg = set(self.tg[g])
+        table = {self.key(gm): [0] * q for gm in gammas}
+        for bits in itertools.product((0, 1), repeat=len(rows) + len(cols)):
+            Y = dict(zip(rows, bits[:len(rows)]))
+            X = dict(zip(cols, bits[len(rows):]))
+            tv = 1
+            for v in verts:
+                tv *= net.verts[v]["table"].get(
+                    tuple(Y[w] if e == "r" else X[w] for w, e in net.verts[v]["ports"]), 0)
+                if tv == 0:
+                    break
+            if tv == 0:
+                continue
+            # product of the row factors as a polynomial in the target modes
+            polyd = {(): [tv % m] + [0] * (q - 1)}
+            for w in rows:
+                loc = [0] * q
+                for w2, ser in self.local[w]:
+                    if X[w2]:
+                        loc = ps_add_mod(loc, ser, m)
+                terms = [((), loc if Y[w] else [(1 - loc[0]) % m] + [(-c) % m for c in loc[1:]])]
+                for k in self.tg[g]:
+                    if (w, k) in self.coef:
+                        c = self.coef[(w, k)]
+                        terms.append((k, c if Y[w] else [(-cc) % m for cc in c]))
+                new = {}
+                for key, val in polyd.items():
+                    for k, c in terms:
+                        if k == ():
+                            nk = key
+                        else:
+                            dd = dict(key)
+                            dd[k] = dd.get(k, 0) + 1
+                            if self.weight(dd) >= p:
+                                continue
+                            nk = tuple(sorted(dd.items()))
+                        prod = ps_mul_mod(val, c, q, m)
+                        if nk in new:
+                            new[nk] = ps_add_mod(new[nk], prod, m)
+                        else:
+                            new[nk] = prod
+                polyd = new
+            Lval = {k: sum(c * X[w2] for c, w2 in self.modes[k]["lin"]) for k in self.sg[g]}
+            for gm in gammas:
+                tkey = tuple(sorted((k, e) for k, e in gm.items() if k in tg))
+                if tkey not in polyd:
+                    continue
+                f = 1
+                for k, e in gm.items():
+                    if k not in tg:
+                        f *= Lval[k] ** e
+                if f == 0:
+                    continue
+                kk = self.key(gm)
+                table[kk] = ps_add_mod(table[kk], [(f * c) % m for c in polyd[tkey]], m)
+        self.child_calls += len(gammas)
+        return table
+
+    @staticmethod
+    def key(beta):
+        return tuple(sorted(beta.items()))
+
+    def sum_paper(self):
+        """(D.16) as in the paper: every tuple beta, every group (children recomputed per tuple)."""
+        tables = {g: self.group_table(g) for g in self.r_groups}
+        tot = [0] * self.q
+        nb = 0
+        for beta in self.tuples(list(range(len(self.modes))), self.p):
+            nb += 1
+            val = [1] + [0] * (self.q - 1)
+            for g in self.r_groups:
+                sub = {k: e for k, e in beta.items() if k in self.inc[g]}
+                val = ps_mul_mod(val, tables[g][self.key(sub)], self.q, self.m)
+            tot = ps_add_mod(tot, val, self.m)
+        return tot, nb, nb * len(self.r_groups)
+
+    def sum_memo(self):
+        self.child_calls = 0
+        tables = {g: self.group_table(g) for g in self.r_groups}
+        tot = [0] * self.q
+        nb = 0
+        for beta in self.tuples(list(range(len(self.modes))), self.p):
+            nb += 1
+            val = [1] + [0] * (self.q - 1)
+            for g in self.r_groups:
+                sub = {k: e for k, e in beta.items() if k in self.inc[g]}
+                val = ps_mul_mod(val, tables[g][self.key(sub)], self.q, self.m)
+            tot = ps_add_mod(tot, val, self.m)
+        return tot, nb, self.child_calls
+
+    def sum_dp(self):
+        """Group-by-group elimination: states are tuples on the cut, steps enumerate cut + new modes."""
+        self.child_calls = 0
+        tables = {g: self.group_table(g) for g in self.r_groups}
+        order = self.r_groups
+        pos = {g: n for n, g in enumerate(order)}
+        ends = [(md["src"], md["tgt"]) for md in self.modes]
+        Phi = {(): [1] + [0] * (self.q - 1)}
+        max_enum = 0
+        for n_, g in enumerate(order):
+            N_new = [k for k in self.inc[g] if max(pos[ends[k][0]], pos[ends[k][1]]) > n_
+                     and min(pos[ends[k][0]], pos[ends[k][1]]) == n_]
+            new_tuples = self.tuples(N_new, self.p)
+            newPhi = {}
+            enum = 0
+            for skey, sval in Phi.items():
+                s = dict(skey)
+                ws = self.weight(s)
+                for nt in new_tuples:
+                    if ws + self.weight(nt) >= self.p:
+                        continue
+                    enum += 1
+                    full = dict(s)
+                    full.update(nt)
+                    gamma = {k: e for k, e in full.items() if k in self.inc[g]}
+                    val = ps_mul_mod(sval, tables[g][self.key(gamma)], self.q, self.m)
+                    # project: drop modes whose both ends are now processed
+                    proj = {k: e for k, e in full.items()
+                            if max(pos[ends[k][0]], pos[ends[k][1]]) > n_}
+                    pk_ = self.key(proj)
+                    newPhi[pk_] = ps_add_mod(newPhi[pk_], val, self.m) if pk_ in newPhi else val
+            Phi = newPhi
+            max_enum = max(max_enum, enum)
+        return Phi.get((), [0] * self.q), max_enum, self.child_calls
+
+    def child_network_value(self, g, gamma):
+        """Build the child network of D.4.6 explicitly and contract it by brute force."""
+        net, pk, m, q = self.net, self.pk, self.m, self.q
+        verts = [v for v in range(len(net.verts)) if self.grp[v] == g]
+        child_ports = sorted({w for w in range(len(net.wires)) if self.rowg[w] == g} |
+                             {w for w in range(len(net.wires)) if self.colg[w] == g})
+        # edges of the child: (wire, end) for every retained port; each joins its old vertex and its packet
+        edges = [(w, "r") for w in child_ports if self.rowg[w] == g] + \
+                [(w, "c") for w in child_ports if self.colg[w] == g]
+        tg = set(self.tg[g])
+        tot = [0] * q
+        for bits in itertools.product((0, 1), repeat=len(edges)):
+            val = dict(zip(edges, bits))
+            tv = 1
+            for v in verts:
+                tv *= net.verts[v]["table"].get(
+                    tuple(val[(w, e)] for w, e in net.verts[v]["ports"]), 0)
+                if tv == 0:
+                    break
+            if tv == 0:
+                continue
+            ser = [tv % m] + [0] * (q - 1)
+            for P in range(len(pk.packets)):
+                ser = ps_mul_mod(ser, self.packet_tensor(g, P, gamma, val), q, m)
+            tot = ps_add_mod(tot, ser, m)
+        return tot
+
+    def packet_tensor(self, g, P, gamma, val):
+        m, q = self.m, self.q
+        pkd = self.pk.packets[P]
+        rows = [w for w in pkd["wire_at"].values() if self.rowg[w] == g]
+        tmodes = [k for k in self.tg[g] if self.modes[k]["P"] == P]
+        smodes = [k for k in self.sg[g] if self.modes[k]["P"] == P]
+        want = tuple(sorted((k, gamma[k]) for k in tmodes if k in gamma))
+        polyd = {(): [1] + [0] * (q - 1)}
+        for w in rows:
+            loc = [0] * q
+            for w2, ser in self.local[w]:
+                if val[(w2, "c")]:
+                    loc = ps_add_mod(loc, ser, m)
+            yb = val[(w, "r")]
+            terms = [((), loc if yb else [(1 - loc[0]) % m] + [(-c) % m for c in loc[1:]])]
+            for k in tmodes:
+                if (w, k) in self.coef:
+                    c = self.coef[(w, k)]
+                    terms.append((k, c if yb else [(-cc) % m for cc in c]))
+            new = {}
+            for key, v in polyd.items():
+                for k, c in terms:
+                    if k == ():
+                        nk = key
+                    else:
+                        dd = dict(key)
+                        dd[k] = dd.get(k, 0) + 1
+                        if dd[k] > gamma.get(k, 0):
+                            continue
+                        nk = tuple(sorted(dd.items()))
+                    prod = ps_mul_mod(v, c, q, m)
+                    new[nk] = ps_add_mod(new[nk], prod, m) if nk in new else prod
+            polyd = new
+        ser = polyd.get(want, [0] * q)
+        f = 1
+        for k in smodes:
+            e = gamma.get(k, 0)
+            if e:
+                f *= sum(c * val[(w2, "c")] for c, w2 in self.modes[k]["lin"]) ** e
+        return [(f * c) % m for c in ser]
+
+
+# ----------------------------------------------------------------------------- tests
+def random_formula(n, m, rng, width=3, maxocc=3):
+    for _ in range(1000):
+        occ = {v: 0 for v in range(1, n + 1)}
+        cls = []
+        ok = True
+        for _ in range(m):
+            cand = [v for v in range(1, n + 1) if occ[v] < maxocc]
+            if len(cand) < 1:
+                ok = False
+                break
+            k = min(width, len(cand), rng.randint(2, width))
+            vs = rng.sample(cand, k)
+            for v in vs:
+                occ[v] += 1
+            cls.append(tuple(v if rng.random() < 0.5 else -v for v in vs))
+        if ok:
+            return cls
+    raise RuntimeError
+
+
+def check_networks(rng, trials=30):
+    for _ in range(trials):
+        n = rng.randint(3, 7)
+        m = rng.randint(2, 5)
+        cls = random_formula(n, m, rng)
+        c = count_sat(n, cls)
+        assert formula_net(n, cls).contract() == c
+        units = make_units(n, cls, rng.randint(1, 3), rng)
+        assert chunk_net_mapped(n, cls, units).contract() == c
+    return True
+
+
+def setup(rng, n, m, a, r, chunks=False, Lc=2):
+    cls = random_formula(n, m, rng)
+    if chunks:
+        net = chunk_net_mapped(n, cls, make_units(n, cls, Lc, rng))
+    else:
+        net = formula_net(n, cls)
+    labels = [tuple(rng.randrange(r) for _ in range(a)) for _ in net.verts]
+    return n, cls, net, labels, Packing(net, labels, a)
+
+
+def direct_taylor_mod(net, pk, t, p, q):
+    """F(t + alpha z) mod (2^p, z^q) straight from (D.8), without modes."""
+    m, alpha, M = 1 << p, 2 ** (pk.a + 1), len(net.wires)
+    Wres = {}
+    for P, pkd in enumerate(pk.packets):
+        for x in pkd["wire_at"]:
+            for y in pkd["wire_at"]:
+                Wres[(P, x, y)] = [red(c, p) for c in
+                                   taylor_at([Fr(c, pk.Cp0) for c in pk.Wpoly(y - x)], t, alpha, q)]
+    tot = [0] * q
+    for xx in range(1 << (2 * M)):
+        X = [(xx >> w) & 1 for w in range(M)]
+        Y = [(xx >> (M + w)) & 1 for w in range(M)]
+        tv = 1
+        for v in net.verts:
+            tv *= v["table"].get(tuple(Y[w] if e == "r" else X[w] for w, e in v["ports"]), 0)
+            if tv == 0:
+                break
+        if tv == 0:
+            continue
+        ser = [tv % m] + [0] * (q - 1)
+        for w in range(M):
+            P, x = pk.where[w]
+            form = [0] * q
+            for y, w2 in pk.packets[P]["wire_at"].items():
+                if X[w2]:
+                    form = ps_add_mod(form, Wres[(P, x, y)], m)
+            f = form if Y[w] else [(1 - form[0]) % m] + [(-c) % m for c in form[1:]]
+            ser = ps_mul_mod(ser, f, q, m)
+        tot = ps_add_mod(tot, ser, m)
+    return tot
+
+
+def byvars_value(ne, g, gamma):
+    """Leaf child of group g for a chunk network, summed over the variables of its chunks (Gemini, item 2):
+    fixing the variables fixes every column wire of the group; each designated clause then depends only on
+    its external row bits and splits into at most two product terms; the row bits enter the packet factors
+    as unary weights. Must equal V_g[gamma]."""
+    net, pk, m, q = ne.net, ne.pk, ne.m, ne.q
+    units_g = [k for k in range(len(net.verts)) if ne.grp[k] == g]
+    vars_g = sorted(set().union(*[net.units[k] for k in units_g])) if units_g else []
+    cls_g = [ci for ci in range(len(net.clauses)) if net.desig[ci] in units_g]
+    rows_g = [w for w in range(len(net.wires)) if ne.rowg[w] == g]
+    tg = set(ne.tg[g])
+    total = [0] * q
+    branch_max = 0
+    for xb in itertools.product((0, 1), repeat=len(vars_g)):
+        val = dict(zip(vars_g, xb))
+        X = {w: val[_WIREMAP[(id(net), w)][1]] for w in range(len(net.wires)) if ne.colg[w] == g}
+        # term lists per clause: (coefficient, {row wire: (weight at y=0, weight at y=1)})
+        termlists = []
+        dead = False
+        for ci in cls_g:
+            U = net.units[net.desig[ci]]
+            internal_true = False
+            ext = []
+            for l in net.clauses[ci]:
+                v = abs(l)
+                if v in U:
+                    internal_true |= (val[v] == (1 if l > 0 else 0))
+                else:
+                    ext.append((_WIREMAP[(id(net), "cv", ci, v)], l > 0))
+            if internal_true:
+                continue
+            if not ext:
+                dead = True
+                break
+            # sat = 1 - prod_j [literal j false]: two product terms
+            falsew = {}
+            for w, pos in ext:
+                falsew[w] = (1, 0) if pos else (0, 1)      # weight of y when literal j is false
+            termlists.append([(1, {}), (-1, falsew)])
+        if dead:
+            continue
+        branch_max = max(branch_max, sum(1 for tl in termlists if len(tl) > 1))
+        for choice in itertools.product(*termlists) if termlists else [()]:
+            coef = 1
+            wts = {}
+            for c, wd in choice:
+                coef *= c
+                for w, wv in wd.items():
+                    old = wts.get(w, (1, 1))
+                    wts[w] = (old[0] * wv[0], old[1] * wv[1])
+            ser = [coef % m] + [0] * (q - 1)
+            for P in range(len(pk.packets)):
+                pkd = pk.packets[P]
+                prow = [w for w in pkd["wire_at"].values() if ne.rowg[w] == g]
+                tmodes = [k for k in ne.tg[g] if ne.modes[k]["P"] == P]
+                smodes = [k for k in ne.sg[g] if ne.modes[k]["P"] == P]
+                want = tuple(sorted((k, gamma[k]) for k in tmodes if k in gamma))
+                polyd = {(): [1] + [0] * (q - 1)}
+                for w in prow:
+                    loc = [0] * q
+                    for w2, sr in ne.local[w]:
+                        if X[w2]:
+                            loc = ps_add_mod(loc, sr, m)
+                    w0, w1 = wts.get(w, (1, 1))
+                    # w0 (1 - form) + w1 form = w0 + (w1 - w0) form
+                    base = [(w0 + (w1 - w0) * loc[0]) % m] + [((w1 - w0) * c) % m for c in loc[1:]]
+                    terms = [((), base)]
+                    for k in tmodes:
+                        if (w, k) in ne.coef:
+                            terms.append((k, [((w1 - w0) * c) % m for c in ne.coef[(w, k)]]))
+                    new = {}
+                    for key, v in polyd.items():
+                        for k, c in terms:
+                            if k == ():
+                                nk = key
+                            else:
+                                dd = dict(key)
+                                dd[k] = dd.get(k, 0) + 1
+                                if dd[k] > gamma.get(k, 0):
+                                    continue
+                                nk = tuple(sorted(dd.items()))
+                            pr = ps_mul_mod(v, c, q, m)
+                            new[nk] = ps_add_mod(new[nk], pr, m) if nk in new else pr
+                    polyd = new
+                pv = polyd.get(want, [0] * q)
+                f = 1
+                for k in smodes:
+                    e = gamma.get(k, 0)
+                    if e:
+                        f *= sum(c * X[w2] for c, w2 in ne.modes[k]["lin"]) ** e
+                ser = ps_mul_mod(ser, [(f * c) % m for c in pv], q, m)
+            total = ps_add_mod(total, ser, m)
+    return total, len(vars_g), branch_max
+
+
+BYVARS = []
+
+
+def stress(rng, trials):
+    """Mode identities on larger toys: direct (D.8) = per tuple = memo = group-by-group DP."""
+    out = []
+    for trial in range(trials):
+        a = rng.choice([1, 2, 2, 3])
+        r = rng.choice([3, 4, 5])
+        chunks = trial % 3 == 2
+        n_, cls, net, labels, pk = setup(rng, rng.randint(4, 8 if chunks else 5), rng.randint(3, 5), a, r,
+                                         chunks=chunks, Lc=rng.choice([2, 3]))
+        M = len(net.wires)
+        if M < 3 or M > 8:
+            continue
+        t = rng.choice([s for s in pk.S if s and v2(s) < a])
+        p, q = rng.choice([4, 5, 6]), rng.choice([1, 2, 3])
+        wts = rng.choice(["paper", "sharp"])
+        ne = NodeExpansion(net, pk, labels, t, p, q, weights=wts)
+        direct = direct_taylor_mod(net, pk, t, p, q)
+        s1, nb, _ = ne.sum_paper()
+        s2, _, calls2 = ne.sum_memo()
+        s3, enum, _ = ne.sum_dp()
+        assert s1 == direct and s2 == direct and s3 == direct, ("stress D.16", trial)
+        if chunks:
+            for g in ne.r_groups:
+                tab = ne.group_table(g)
+                for gm in rng.sample(list(tab.keys()), min(4, len(tab))):
+                    bv, nv, br = byvars_value(ne, g, dict(gm))
+                    assert bv == tab[gm], ("byvars leaf", trial, g)
+                    BYVARS.append((len([w for w in range(M) if ne.rowg[w] == g or ne.colg[w] == g]), nv, br))
+        out.append((a, r, chunks, M, t, p, q, wts, len(ne.modes), nb, nb * len(ne.r_groups), calls2, enum))
+    return out
+
+
+def main():
+    rng = random.Random(int(sys.argv[1]) if len(sys.argv) > 1 else 1)
+    report = {}
+    check_networks(rng)
+    report["networks"] = "plain and chunk networks contract to #F on 30 random formulas"
+
+    # 3 + 4: F(T), Lemma D.4, tapered Hermite recovery with truncated Taylor data
+    rec = []
+    for trial in range(8):
+        a = rng.choice([2, 3])
+        n_, cls, net, labels, pk = setup(rng, rng.randint(3, 4), rng.randint(2, 3), a, 3,
+                                     chunks=(trial % 2 == 1))
+        M = len(net.wires)
+        if M == 0 or M > 6:
+            continue
+        F = F_poly(net, pk)
+        deg = max(k for k, c in enumerate(F) if c) if any(F) else 0
+        assert deg <= M * (2 * pk.L - 1)
+        assert F[0] == net.contract_core()
+        alpha = 2 ** (a + 1)
+        for t in pk.S:
+            if t:
+                assert all(v2(c) >= 0 for c in taylor_at(F, t, alpha, 6))      # Lemma D.4
+        for u in range(1, a + 1):
+            Lh = pk.L
+            hden = sum((Lh >> i) * (u - i) for i in range(u))
+            h = (M * (2 * Lh - 1)) // hden + 1
+            qm = multiplicities(a, u, h)
+            assert sum(qm.values()) > M * (2 * Lh - 1)
+            data = {t: taylor_at(F, t, alpha, qt) for t, qt in qm.items() if qt}
+            assert recover(data, qm, a) == F[0]
+            p = 6
+            Pt = {t: p + loss_bits(qm, a, t) for t in data}
+            trunc = {t: [red(c, Pt[t]) for c in data[t]] for t in data}
+            got = recover(trunc, qm, a)
+            assert v2(got - F[0]) >= p, ("precision", v2(got - F[0]))
+            # with 3 bits less at every node the recovery may fail: record how often
+            trunc2 = {t: [red(c, max(1, Pt[t] - 3)) for c in data[t]] for t in data}
+            ok2 = v2(recover(trunc2, qm, a) - F[0]) >= p
+            bound = {t: p + 6 * h * (Lh >> v2(t)) + 4 * M * (a + 1) for t in data}
+            rec.append(dict(a=a, u=u, M=M, h=h, Pt_max=max(Pt.values()),
+                            bound_max=max(bound.values()), ok_minus3=ok2))
+    report["hermite"] = rec
+
+    # 5: mode expansion identities at small precision
+    modes_res = []
+    for trial in range(10):
+        a = rng.choice([1, 2, 2, 3])
+        r = rng.choice([3, 4])
+        chunks = trial % 3 == 2
+        n_, cls, net, labels, pk = setup(rng, rng.randint(3, 5), rng.randint(2, 4), a, r, chunks=chunks)
+        M = len(net.wires)
+        if M == 0 or M > 6:
+            continue
+        F = F_poly(net, pk)
+        alpha = 2 ** (a + 1)
+        for t in rng.sample([s for s in pk.S if s and v2(s) < a], 2):
+            p, q = rng.choice([4, 5]), rng.choice([1, 2, 3])
+            for wts in ("paper", "sharp"):
+                ne = NodeExpansion(net, pk, labels, t, p, q, weights=wts)
+                direct = [red(c, p) for c in taylor_at(F, t, alpha, q)]
+                s1, nb, calls1 = ne.sum_paper()
+                s2, nb2, calls2 = ne.sum_memo()
+                s3, enum, calls3 = ne.sum_dp()
+                assert s1 == direct and s2 == direct and s3 == direct, ("D.16", t, wts, direct, s1, s2, s3)
+                # child networks of D.4.6 contract to the table values
+                for g in ne.r_groups:
+                    tab = ne.group_table(g)
+                    for gm in rng.sample(list(tab.keys()), min(3, len(tab))):
+                        assert ne.child_network_value(g, dict(gm)) == tab[gm]
+                modes_res.append(dict(a=a, r=r, chunks=chunks, M=M, t=t, p=p, q=q, w=wts,
+                                      modes=len(ne.modes), tuples=nb, paper_children=nb * len(ne.r_groups),
+                                      memo_children=calls2, dp_max_enum=enum))
+    report["modes"] = modes_res
+
+    # 6: end to end at a = 1 (u = 1): #F from mode sums at the precision of Lemma D.5
+    e2e = []
+    for trial in range(6):
+        chunks = trial % 2 == 1
+        r = 3
+        n_, cls, net, labels, pk = setup(rng, rng.randint(3, 4), rng.randint(2, 3), 1, r, chunks=chunks)
+        M = len(net.wires)
+        if M == 0 or M > 5:
+            continue
+        nvars = n_
+        target = count_sat(nvars, cls)
+        p = nvars + 1
+        a, u = 1, 1
+        Lh = 2
+        h = (M * (2 * Lh - 1)) // Lh + 1
+        qm = multiplicities(a, u, h)
+        data = {}
+        stats = []
+        for t, qt in qm.items():
+            if not qt:
+                continue
+            Pt = p + loss_bits(qm, a, t)
+            ne = NodeExpansion(net, pk, labels, t, Pt, qt, weights="sharp")
+            s3, enum, calls = ne.sum_dp()
+            data[t] = s3
+            stats.append((t, Pt, qt, len(ne.modes), enum, calls))
+        got = recover(data, qm, a)
+        assert v2(got - Fr(net.contract_core())) >= p, "end to end"
+        cnt = red(got, p) << net.unused
+        assert cnt == target, (cnt, target)
+        e2e.append(dict(chunks=chunks, M=M, count=target, nodes=stats))
+    report["end_to_end"] = e2e
+    st = stress(rng, int(sys.argv[2]) if len(sys.argv) > 2 else 40)
+    report["stress"] = dict(cases=len(st), max_modes=max(x[8] for x in st),
+                            max_tuples=max(x[9] for x in st),
+                            dp_below_paper=sum(1 for x in st if x[12] < x[9]),
+                            memo_below_paper=sum(1 for x in st if x[11] < x[10]),
+                            byvars_checks=len(BYVARS), byvars_rows=BYVARS[:20],
+                            rows=st)
+    return report
+
+
+if __name__ == "__main__":
+    import json
+    rep = main()
+    print(json.dumps(rep, indent=1, default=str))

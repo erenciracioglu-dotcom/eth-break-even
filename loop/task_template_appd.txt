@@ -1,0 +1,11 @@
+TASK {{id}} (attempt {{attempt}} of {{max_attempts}}): {{title}}
+
+Files you may edit: {{files}}
+
+{{spec}}
+
+Current best, as measured by the hidden referee: break-even against 2^(n/3) at lam = {{third}} (verified code
+flags: {{flags}}).
+{{feedback}}
+Stop when {{stop}}.
+You have at most {{steps}} tool steps; keep the last few for a final smoke_appd.py run and your report.

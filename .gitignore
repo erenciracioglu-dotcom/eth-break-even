@@ -9,3 +9,5 @@ loop.lock
 report.html
 state/status.json
 state/test_log.jsonl
+STOP_APPD
+loop_appd.lock
