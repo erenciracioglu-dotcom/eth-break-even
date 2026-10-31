@@ -30,10 +30,12 @@
   ],
   "steps": 30,
   "max_attempts": 3,
-  "status": "running",
-  "attempts": 0,
+  "status": "done",
+  "attempts": 1,
   "expected": "head oracle: ppsz threshold about 1,117,000 (2x lower), e at 2224173 about 0.308; PROVISIONAL",
   "spec": "assembly_public.py offers two regimes for the label-balancing step: 'paper' (Lemma 4.5 as written: 2(b+w) D^2 <= M) and 'freedman' (a provisional extension proposed by the head: D ln D <= M / (4(b+w)), with h <= 2M/D copies). 'freedman' allows a much larger label space D, so Qmax roughly doubles. Make choose_params use regime 'freedman' for every lam: set REGIME = \"freedman\" and check that the search ranges (the r values, the Q values up to Qmax, the R grid) still cover the optimum, which now has larger Q and a somewhat larger r than in the paper regime. Every returned dict must have regime 'freedman' and be valid (exponent_of(params, lam)['valid'] is True).",
-  "stop": "smoke.py passes, it shows regime 'freedman', and the e it prints at lam=2224173 is at most 0.3100 (the head's estimate is about 0.308); if that is out of reach after two changes to the search ranges, stop at your best value"
+  "stop": "smoke.py passes, it shows regime 'freedman', and the e it prints at lam=2224173 is at most 0.3100 (the head's estimate is about 0.308); if that is out of reach after two changes to the search ranges, stop at your best value",
+  "result": "ppsz threshold 2,140,603 -> 1,117,111; e at 2224173 0.381519 -> 0.308236 (47.81% lower threshold)",
+  "done_iter": 2
  }
 ]

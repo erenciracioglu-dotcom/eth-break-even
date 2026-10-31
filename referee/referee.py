@@ -1,10 +1,13 @@
-"""FROZEN referee. Usage: python referee.py <algo_dir> <out_json>
+"""FROZEN referee, version 2. Usage: python referee.py <algo_dir> <out_json>
 
 Runs three gates on the agent's copy of algo/ in separate processes:
   verify  - exact counts on hidden formulas vs a frozen brute force, construction checks
+            (and the designated-variable construction when the code offers it)
   measure - the accounting facts of the frozen assembly hold on real designs
   score   - break-even sizes; every query is re-scored here with the clean assembly,
             so a patched assembly inside the agent's process cannot fake a score.
+Parameters with designated = True only count when the verify gate confirmed the designated
+construction (designated_verified); otherwise those queries are scored as invalid.
 """
 import json
 import os
@@ -39,15 +42,18 @@ def run_gate(algo, gate, outdir):
     return res
 
 
-def rescore(score_res):
+def rescore(score_res, designated_ok):
     """Clean re-scoring of every query; certified thresholds come only from these."""
     queries = score_res.get("queries") or []
-    tamper, certs = [], {}
+    tamper, certs, blocked = [], {}, 0
     for q in queries:
         s = A.exponent_of(q["params"], q["lam"])
         e = s["e"] if s["valid"] else 9.0
         if abs(e - float(q["e"])) > 1e-9:
             tamper.append({"lam": q["lam"], "claimed": q["e"], "clean": e})
+        if s.get("valid") and s.get("designated") and not designated_ok:
+            e = 9.0
+            blocked += 1
         q["e_clean"] = e
     for key, target in A.TARGETS.items():
         good = [q for q in queries if q["e_clean"] < target]
@@ -58,7 +64,7 @@ def rescore(score_res):
             certs[key] = None
     ref = [q for q in queries if q["lam"] == 2224173]
     e_ref = ref[-1]["e_clean"] if ref else None
-    return certs, tamper, e_ref
+    return certs, tamper, e_ref, blocked
 
 
 def main():
@@ -69,23 +75,33 @@ def main():
     verify = run_gate(algo, "verify", outdir)
     measure = run_gate(algo, "measure", outdir) if verify.get("ok") else {"ok": False, "skipped": True}
     score = run_gate(algo, "score", outdir) if measure.get("ok") else {"ok": False, "skipped": True}
-    certs, tamper, e_ref = rescore(score) if score.get("queries") else ({}, [], None)
+    designated_ok = bool(verify.get("designated_verified"))
+    certs, tamper, e_ref, blocked = (rescore(score, designated_ok) if score.get("queries")
+                                     else ({}, [], None, 0))
+    summary = {k: v for k, v in score.items() if k != "queries"}
+    if blocked and not certs.get("ppsz") and not summary.get("error"):
+        summary["error"] = ("parameters with designated=True were used, but the verify gate did not "
+                            "confirm a designated construction (designated_verified is false)")
     result = {
+        "version": 2,
         "verify_ok": bool(verify.get("ok")),
         "measure_ok": bool(measure.get("ok")),
         "score_ok": bool(score.get("ok")) and not tamper and bool(certs.get("ppsz")),
+        "designated_verified": designated_ok,
+        "designated_blocked": blocked,
         "tamper": tamper[:5],
         "thresholds": {k: (v["lam"] if v else None) for k, v in certs.items()},
         "certificates": certs,
         "e_at_2224173": e_ref,
-        "verify": {k: v for k, v in verify.items() if k != "trace"} | ({"trace": verify["trace"]} if "trace" in verify else {}),
+        "verify": verify,
         "measure": measure,
-        "score_summary": {k: v for k, v in score.items() if k != "queries"},
+        "score_summary": summary,
         "seconds": round(time.time() - t0, 1),
     }
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(result, fh, indent=1, default=str)
-    print(json.dumps({k: result[k] for k in ("verify_ok", "measure_ok", "score_ok", "thresholds", "e_at_2224173", "seconds")}))
+    print(json.dumps({k: result[k] for k in ("verify_ok", "measure_ok", "score_ok", "designated_verified",
+                                             "thresholds", "e_at_2224173", "seconds")}))
 
 
 if __name__ == "__main__":

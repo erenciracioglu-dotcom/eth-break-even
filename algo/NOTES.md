@@ -30,3 +30,15 @@ Qmax = floor(max_log2D(lam, regime) / (2 log2 r)).
 - choose_params must be deterministic and take under 3 seconds per call.
 - Do not create files larger than 1 MB.
 - A hidden referee checks correctness on other formulas and computes the real score.
+
+## Version 2 of the cost model (2026-10-31)
+
+- Regime "tight": extra parameter delta in [1e-6, 1]; D ln D <= delta^2 M / (4(b+w)) and
+  h <= (1 + delta) M/D. delta = 1 equals "freedman". Call max_log2D(lam, "tight", delta) and
+  exponents_over_R(lam, r, Q, Rs, "tight", delta), and return "delta" in the dict.
+- Parameter designated (bool, default False): every clause reads one of its own variables
+  directly, so only M_eff = sum_f (|I_f| - 1) <= 2n occurrences carry replacement rows and the
+  taylor term uses 2 instead of 3 occurrences per variable. Call max_log2D(lam, regime, delta,
+  True) and exponents_over_R(lam, r, Q, Rs, regime, delta, True) and return designated=True.
+  Allowed with regimes "freedman" and "tight" only. The hidden referee counts designated
+  parameters only when its own hidden checks of build_design(..., designated=True) pass.
