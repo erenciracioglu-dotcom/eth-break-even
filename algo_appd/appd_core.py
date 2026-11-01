@@ -144,6 +144,120 @@ def ps_add_mod(a, b, m):
     return [(x + y) % m for x, y in zip(a, b)]
 
 
+def ps_sub_mod(a, b, m):
+    return [(x - y) % m for x, y in zip(a, b)]
+
+
+# ----------------------------------------------------------------------------- shell matrix products (appd-shellmm)
+def naive_matmul(A, B, q, m):
+    """Schoolbook product of an n x k matrix A of series and a k x l matrix B of series (list of q ints mod m):
+    n rows of l series; every ring product goes through the module-level ps_mul_mod."""
+    n, l = len(A), len(B[0]) if B else 0
+    C = [[[0] * q for _ in range(l)] for _ in range(n)]
+    for i in range(n):
+        Ai, Ci = A[i], C[i]
+        for t in range(len(B)):
+            a = Ai[t]
+            if not any(a):
+                continue
+            Bt = B[t]
+            for j in range(l):
+                b = Bt[j]
+                if not any(b):
+                    continue
+                Ci[j] = ps_add_mod(Ci[j], ps_mul_mod(a, b, q, m), m)
+    return C
+
+
+def _mat_add(X, Y, m):
+    return [[ps_add_mod(x, y, m) for x, y in zip(rowx, rowy)] for rowx, rowy in zip(X, Y)]
+
+
+def _mat_sub(X, Y, m):
+    return [[ps_sub_mod(x, y, m) for x, y in zip(rowx, rowy)] for rowx, rowy in zip(X, Y)]
+
+
+def _quad(X, r0, r1, c0, c1, q, m):
+    """The rows r0:r1 and columns c0:c1 of X as a matrix; zero series where X has no entry."""
+    out = []
+    for r in range(r0, r1):
+        row = X[r] if 0 <= r < len(X) else None
+        out.append([row[c] if (row is not None and 0 <= c < len(row)) else [0] * q for c in range(c0, c1)])
+    return out
+
+
+def strassen_sq(X, Y, q, m):
+    """S x S matrix product with Strassen's algorithm (S a power of two, entries series mod m); falls back to
+    naive_matmul for S <= 2. Only ring additions, subtractions and ps_mul_mod products are used."""
+    S = len(X)
+    if S <= 2:
+        return naive_matmul(X, Y, q, m)
+    h = S // 2
+    A11 = _quad(X, 0, h, 0, h, q, m)
+    A12 = _quad(X, 0, h, h, S, q, m)
+    A21 = _quad(X, h, S, 0, h, q, m)
+    A22 = _quad(X, h, S, h, S, q, m)
+    B11 = _quad(Y, 0, h, 0, h, q, m)
+    B12 = _quad(Y, 0, h, h, S, q, m)
+    B21 = _quad(Y, h, S, 0, h, q, m)
+    B22 = _quad(Y, h, S, h, S, q, m)
+    M1 = strassen_sq(_mat_add(A11, A22, m), _mat_add(B11, B22, m), q, m)
+    M2 = strassen_sq(_mat_add(A21, A22, m), B11, q, m)
+    M3 = strassen_sq(A11, _mat_sub(B12, B22, m), q, m)
+    M4 = strassen_sq(A22, _mat_sub(B21, B11, m), q, m)
+    M5 = strassen_sq(_mat_add(A11, A12, m), B22, q, m)
+    M6 = strassen_sq(_mat_sub(A21, A11, m), _mat_add(B11, B12, m), q, m)
+    M7 = strassen_sq(_mat_sub(A12, A22, m), _mat_add(B21, B22, m), q, m)
+    C11 = _mat_add(_mat_sub(_mat_add(M1, M4, m), M5, m), M7, m)
+    C12 = _mat_add(M3, M5, m)
+    C21 = _mat_add(M2, M4, m)
+    C22 = _mat_add(_mat_sub(_mat_add(M1, M6, m), M2, m), M3, m)
+    return [C11[r] + C12[r] for r in range(h)] + [C21[r] + C22[r] for r in range(h)]
+
+
+def _slice(row, c0, c1, q):
+    """The entries of row in the columns c0:c1 as series; zero series where row has no entry."""
+    return [row[c] if (row is not None and 0 <= c < len(row) and row[c] is not None) else [0] * q
+            for c in range(c0, c1)]
+
+
+def matmul(A, B, q, m):
+    """Product of an n x k matrix A and a k x l matrix B of series mod m, by Strassen on S x S blocks with
+    S the largest power of two <= min(n, k, l); zero series pad the blocks outside A and B."""
+    n, k = len(A), len(B)
+    l = len(B[0]) if k else 0
+    S = 1 << (min(n, k, l).bit_length() - 1)
+    out = [[None] * ((l + S - 1) // S) for _ in range((n + S - 1) // S)]
+    for bi in range(len(out)):
+        r0, r1 = bi * S, min(bi * S + S, n)
+        Arows = [row[0:k] for row in A[r0:r1]]
+        Arows += [[None] * k for _ in range(S - (r1 - r0))]
+        for bj in range(len(out[bi])):
+            c0, c1 = bj * S, min(bj * S + S, l)
+            acc = None
+            for bk in range((k + S - 1) // S):
+                g0, g1 = bk * S, min(bk * S + S, k)
+                Ab = [_slice(row, g0, g1, q) + [[0] * q] * (S - (g1 - g0)) for row in Arows]
+                Bb = [_slice(row, c0, c1, q) for row in B[g0:g1]] + \
+                     [[[0] * q] * (c1 - c0) for _ in range(S - (g1 - g0))]
+                P = strassen_sq(Ab, Bb, q, m)
+                if acc is None:
+                    acc = P
+                else:
+                    acc = _mat_add(acc, P, m)
+            if acc is None:
+                acc = [[[0] * q for _ in range(S)] for _ in range(S)]
+            out[bi][bj] = [row[c0 - bj * S:c1 - bj * S] for row in acc[:r1 - r0]]
+    res = []
+    for bi in range(len(out)):
+        for r in range(len(out[bi][0])):
+            row = []
+            for bj in range(len(out[0])):
+                row.extend(out[bi][bj][r])
+            res.append(row)
+    return res
+
+
 # ----------------------------------------------------------------------------- formulas, networks
 def count_sat(n, clauses):
     c = 0
@@ -771,6 +885,66 @@ class NodeExpansion:
             Phi = newPhi
         return Phi.get((), [0] * self.q), max_enum, self.child_calls
 
+    def shells(self, idx):
+        """self.tuples(idx, self.p) put into shells by their exact weight self.weight(...); the shells are returned
+        in increasing weight (each a list of dicts)."""
+        byw = {}
+        for t in self.tuples(idx, self.p):
+            byw.setdefault(self.weight(t), []).append(t)
+        return [byw[w] for w in sorted(byw)]
+
+    def sum_mm(self):
+        """Same sum as sum_dp (appd-shellmm), group by group, as shell matrix products: at the step of group g the
+        cut modes split into X (not touching g), Y (touching g) and the new modes Z (g to later groups); each of X,
+        Y and Z is grouped by exact weight (shells) and every shell triple (w1, w2, w3) with w1 + w2 + w3 < p is one
+        full block product matmul(A[X_w1 x Y_w2], B[Y_w2 x Z_w3]) whose entries are added into the new state.
+        Return (series, shapes, self.child_calls) with self.child_calls reset to 0 first; shapes is the list, in step
+        order, of the sorted lists of the triples (len(xl), len(yl), len(zl)) of the step."""
+        self.child_calls = 0
+        tables = {g: self.group_table(g) for g in self.r_groups}
+        pos = {g: j for j, g in enumerate(self.r_groups)}
+        endpos = {}
+        for k, md in enumerate(self.modes):
+            endpos[k] = (min(pos[md["src"]], pos[md["tgt"]]), max(pos[md["src"]], pos[md["tgt"]]))
+        zero = [0] * self.q
+        Phi = {(): [1] + [0] * (self.q - 1)}
+        shapes = []
+        for j, g in enumerate(self.r_groups):
+            incg = set(self.inc[g])
+            cut = sorted(k for k, (lo, hi) in endpos.items() if lo < j <= hi)
+            X = [k for k in cut if k not in incg]
+            Y = [k for k in cut if k in incg]
+            Z = sorted(k for k, (lo, hi) in endpos.items() if lo == j < hi)
+            shX, shY, shZ = self.shells(X), self.shells(Y), self.shells(Z)
+            new = {}
+            step = []
+            for xl in shX:
+                w1 = self.weight(xl[0])
+                for yl in shY:
+                    w2 = self.weight(yl[0])
+                    if w1 + w2 >= self.p:
+                        continue
+                    Am = []
+                    for x_i in xl:
+                        xd = dict(x_i)
+                        Am.append([Phi.get(self.key({**xd, **dict(y_s)}), zero) for y_s in yl])
+                    for zl in shZ:
+                        w3 = self.weight(zl[0])
+                        if w1 + w2 + w3 >= self.p:
+                            continue
+                        Bm = [[tables[g][self.key({**dict(y_s), **dict(z_j)})] for z_j in zl] for y_s in yl]
+                        Cm = matmul(Am, Bm, self.q, self.m)
+                        step.append((len(xl), len(yl), len(zl)))
+                        for i, x_i in enumerate(xl):
+                            xd = dict(x_i)
+                            for jj, z_j in enumerate(zl):
+                                key = self.key({**xd, **dict(z_j)})
+                                val = Cm[i][jj]
+                                new[key] = ps_add_mod(new[key], val, self.m) if key in new else val
+            shapes.append(sorted(step))
+            Phi = new
+        return Phi.get((), [0] * self.q), shapes, self.child_calls
+
     def child_network_value(self, g, gamma):
         """Build the child network of D.4.6 explicitly and contract it by brute force."""
         net, pk, m, q = self.net, self.pk, self.m, self.q
@@ -1017,12 +1191,17 @@ def node_value(net, pk, labels, t, p, q, weights="paper", method="dp", basis="po
     elif method == "dp":
         ser, max_enum, calls = ne.sum_dp()
         stats = {"max_enum": max_enum, "child_calls": calls, "modes": len(ne.modes)}
+    elif method == "mm":
+        ser, shapes, calls = ne.sum_mm()
+        stats = {"shapes": shapes,
+                 "max_enum": max([sum(n * k * l for (n, k, l) in s) for s in shapes] or [0]),
+                 "child_calls": calls, "modes": len(ne.modes)}
     else:
         raise ValueError("unknown method " + str(method))
     return ser, stats
 
 
-def count_e2e(n, clauses, chunks=True, Lc=2, r=3, seed=0, a=1, u=1, basis="power"):
+def count_e2e(n, clauses, chunks=True, Lc=2, r=3, seed=0, a=1, u=1, basis="power", method="dp"):
     """Exact #F by the whole algorithm with packet coordinates a and retained valuation levels u: build the
     network (chunk super-vertices when chunks, units from make_units(n, clauses, Lc, random.Random(seed))),
     labels of a coordinates tuple(rng.randrange(r)) * a per vertex from the same rng, packing,
@@ -1049,7 +1228,10 @@ def count_e2e(n, clauses, chunks=True, Lc=2, r=3, seed=0, a=1, u=1, basis="power
             continue
         Pt = p + loss_bits(qm, a, t)
         ne = NodeExpansion(net, pk, labels, t, Pt, qt, weights="sharp", basis=basis)
-        ser, _me, _cc = ne.sum_dp()
+        if method == "mm":
+            ser, _sh, _cc = ne.sum_mm()
+        else:
+            ser, _me, _cc = ne.sum_dp()
         data[t] = ser
     got = red(recover(data, qm, a), p)
     return (got * pow(2, net.unused, 1 << p)) % (1 << p)

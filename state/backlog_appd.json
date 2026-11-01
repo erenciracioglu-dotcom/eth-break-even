@@ -126,7 +126,7 @@
   "after": [
    "T18"
   ],
-  "status": "open",
+  "status": "running",
   "priority": 40,
   "max_attempts": 3,
   "steps": 70

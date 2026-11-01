@@ -60,7 +60,7 @@ def est_u(rd, Md, delta, lam, lp_in):
     return max(2, u)
 
 
-def rank_e(r, delta, Lc, lam, leafvars, cK=2.0):
+def rank_e(r, delta, Lc, lam, leafvars, cK=2.0, shellmm=False):
     """Analytic replica: greedy u_d from the padding budget, a_d = min_a, cost exponent of the assembly."""
     L = len(r)
     M = _M(r, delta, Lc, True)
@@ -71,7 +71,7 @@ def rank_e(r, delta, Lc, lam, leafvars, cK=2.0):
         ad = min_a(ud, lp_in, M[d])
         u.append(ud)
         x = M[d] / math.sqrt(ud)
-        ar = A.tup(ud, A.eps_dp(r[d]), dm, cK) * x
+        ar = A.tup(ud, A.eps_mode(r[d], {"modedp": True, "shellmm": shellmm}), dm, cK) * x
         ch = A.tup(ud, A.f_grp(r[d]), dm, cK) * x
         worst = max(worst, cum + ar)
         cum += ch
@@ -182,9 +182,9 @@ def build(r, delta, Lc, flags, lam, ustart=None):
 
 def choose_params(lam, target="third"):
     flags = dict(perclass=True, labelfree=True, memo=False, modedp=False, chunks=False, leafvars=False,
-                 newton=False, ldu=False)
+                 newton=False, ldu=False, shellmm=False)
     if USE_CODE_FLAGS:
-        flags.update(memo=True, modedp=True, chunks=True, newton=True, ldu=True)
+        flags.update(memo=True, modedp=True, chunks=True, newton=True, ldu=True, shellmm=True)
     lam = float(lam)
     shapes = []
     for r0 in R0:
@@ -202,7 +202,7 @@ def choose_params(lam, target="third"):
         lv = flags["chunks"] and len(shape) == 1
         for delta in DELTAS:
             for Lc in LCS:
-                e, _ = rank_e(list(shape), delta, Lc, lam, lv, cK)
+                e, _ = rank_e(list(shape), delta, Lc, lam, lv, cK, flags["shellmm"])
                 cand.append((e, shape, delta, Lc))
     cand.sort(key=lambda x: x[0])
     best = None
