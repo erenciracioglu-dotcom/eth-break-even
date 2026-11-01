@@ -634,3 +634,12 @@ round 5 ends there.
   precision up to 77 bits (root nodes up to 58). 14 formulas were skipped by a memory guard (a level-1 node above 200,000 mode tuples).
   This executes what the cost model's second level assumes (child wire count, packet-vertex degree 2 L_parent,
   inherited precision); it does not test the asymptotic label balance.
+- T18 audit (head, 19:05): Qwen's change matches the specification (inline LDU branch in __init__, the asserts on
+  unknown bases and on integrality, the D.12 branch with series products, series-aware packet_tensor and
+  byvars_value through the helpers; appd_params sets ldu with the other code flags). It also rewrote both files
+  with CRLF line endings (no functional effect; 85 lines added, 13 removed when whitespace is ignored). One attempt
+  of 11 minutes; the referee verified every flag including ldu and scored third 1,370, occ3sat 5,518, ppsz 1,044,
+  sharp3sat 368, brute 197, equal to the head's own LDU implementation.
+- Round 6 summary: against 2^(n/3) the Appendix D break-even went 5,300 -> 2,670 (Newton, T17) -> 1,370 (Cauchy
+  LDU, T18), each step a halving as the cost model predicts (log N of the mode tuples scales with sqrt(cK)). Both
+  lemmas are head proofs with exact checks; the second recursion level is now executed on toys (appd-twolevel).

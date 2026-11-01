@@ -97,9 +97,12 @@
   "after": [
    "T17"
   ],
-  "status": "running",
+  "status": "done",
   "priority": 40,
   "max_attempts": 3,
-  "steps": 70
+  "steps": 70,
+  "attempts": 1,
+  "result": "third threshold 2,670 -> 1,370 (48.69% lower threshold)",
+  "done_iter": 5
  }
 ]
