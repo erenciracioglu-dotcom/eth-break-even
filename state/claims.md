@@ -643,3 +643,103 @@ round 5 ends there.
 - Round 6 summary: against 2^(n/3) the Appendix D break-even went 5,300 -> 2,670 (Newton, T17) -> 1,370 (Cauchy
   LDU, T18), each step a halving as the cost model predicts (log N of the mode tuples scales with sqrt(cK)). Both
   lemmas are head proofs with exact checks; the second recursion level is now executed on toys (appd-twolevel).
+
+## Round 7 (1 November, evening): three outside reviews (ChatGPT, Gemini, Fable), shell matrix products [T20]
+- appd-shellmm [head proof sketch, suggested by ChatGPT]. In sum_dp the step for group g computes
+  Phi'[x + z] = sum_y Phi[x + y] T_g[y + z] over w(x) + w(y) + w(z) < p_t, where x runs over the tuples on the cut modes
+  that do not touch g (processed group to later group), y over the cut modes that touch g and z over the modes from g
+  to later groups; every cut tuple of weight < p_t is a state (induction on the steps), so the enumerated
+  combinations are exactly the triples of total weight < p_t. Grouping x, y and z by exact weight (shells), each
+  shell triple (w1, w2, w3) with w1 + w2 + w3 < p_t is one full block product A[X_w1 x Y_w2] B[Y_w2 x Z_w3] and the
+  triples partition the combinations, so the sum is unchanged term by term. Strassen's identities use only ring
+  additions, subtractions and products, so they hold in (Z/2^P)[z]/(z^q); with S the largest power of two
+  <= min(n, k, l) an n x k x l block product takes ceil(n/S) ceil(k/S) ceil(l/S) 7^(log2 S - 1) 8 ring products,
+  O(n k l S^(log2 7 - 3)). Cost: there are fewer than p_t^3 shells (a polynomial factor). For a shell with sizes
+  N_x, N_y, N_z the cost is N_x N_y N_z S^(omega - 3) = max over j of N_x N_y N_z N_j^(omega - 3). The generating
+  function bound N_V(w) <= Z_V(s_V) e^(s_V w), with s_V = s for the two larger sets and s/(omega - 2) for set j,
+  gives log cost <= s p_t + (c/s)(A_tot - (1 - (omega - 2)^2) A_j) for every s (A_V proportional to the modes of V,
+  the same constants as the tuple count), hence 2 sqrt(c p_t (A_tot - (1 - (omega - 2)^2) A_j)), largest for the
+  smallest A_j. With group-pair counts (k-1)(r-k), k-1 and r-k for x, y and z the mode fraction becomes
+  eps_mm(r) = max_k 2[(k-1)(r-k) + (k-1) + (r-k) - (1 - (omega - 2)^2) min(k-1, (k-1)(r-k), r-k)] / r^2
+  (omega = log2 7: 0.5696 at r = 7 against eps_dp 0.6122). Among all merge trees (blocks a, b, rest c, fraction
+  2[ab + ac + bc - (1 - (omega - 2)^2) min(ab, ac, bc)]/r^2) the one-group-at-a-time order is already optimal for
+  omega = 3 and log2 7 at every r <= 16 (merge_tree.py); trees that cut the groups into thirds only help near
+  omega = 2.37.
+  Head checks: shellmm.py + shellmm_check.py in the cloud (seeds 1-5): 108 node instances x 3 bases (power, Newton,
+  LDU), 5,435 block products, up to 28 modes: values equal (D.8) and sum_dp, block shapes equal the shell structure,
+  the largest step's block work sum n k l equals the dp enumeration; Strassen exact on 8 shapes with 7^(k-1) 8 ring
+  products at 2^k (19,208 instead of 32,768 at 32 x 32 x 32). The same code is mm_blocks.MM_CODE (reference and head
+  solution on this PC, work/head/r7).
+  What-if with Qwen's choose_params on the frozen model (whatif.py): Strassen 1,280 / 5,137 / 977 / 347 / 187
+  (third / occ3sat / ppsz / sharp3sat / brute; before 1,370 / 5,518 / 1,044 / 368 / 197); with the best known
+  exponent omega = 2.371339 (galactic algorithms, not an implementable step) 1,177 / 4,766 / 892 / 303 / 176 one group
+  at a time, 1,194 / 4,740 / 913 / 330 / 171 with the best trees (the parameter search is a heuristic).
+- referee_appd version 4: mm items decide only the new flag shellmm (eps_mm instead of eps_dp): matmul exact on 11
+  shapes with at most 7^(k-1) 8 ring products (counted through ps_mul_mod) at 4, 8, 16, 32; node_value(method="mm")
+  equals (D.8) on the 21 node cases (power) and 18 newton node cases (LDU), with the reference block shapes both in
+  its stats and in every matmul call (wrapped by the referee) and the reference dp count; count_e2e(method="mm",
+  basis="ldu") exact on the 8 newton end-to-end cases. Dry runs: the head's solution verifies every flag and scores
+  1,280 / 5,137 / 977 / 347 / 187 (= the what-if); the round-6 code keeps every old flag and its scores with shellmm
+  off; a schoolbook matmul and a sum_mm that bypasses matmul both fail shellmm.
+- appd-ldu finite bound [head proof, suggested by ChatGPT]. For k >= 0, B = 2^k, w_b = k + 2 + 4b - 2 s2(b) (b < B,
+  s2 = binary digit sum; these are the LDU weights a + 1 - i + 2b + 2 v2(b!) with k = a - i - 1) and every s > 0:
+  sum_b -log(1 - e^(-s w_b)) <= pi^2/(24 s). Proof: (1) W_k = {w_b} is majorized by V_k = {4b + 2}: by the top bit of
+  b, W_k = (W_(k-1) + 1) u (W_(k-1) + 2^(k+1) - 1) and V_k = V_(k-1) u (V_(k-1) + 2^(k+1)), in both the lower half
+  lies below the upper half (max W_(k-1) + 1 = 2^(k+1) - k < 2^(k+1) + k), so the sums of the j smallest elements
+  satisfy P_W(j) - P_V(j) >= j for j <= H = 2^(k-1) and >= H - t >= 0 for j = H + t (induction), with equal totals
+  2B^2. (2) g(x) = -log(1 - e^(-s x)) is convex, so Karamata gives sum g(w_b) <= sum g(4b + 2). (3) For convex g the
+  midpoint value is below the mean over [4b, 4b + 4], so sum_b g(4b + 2) <= (1/4) int_0^inf g = pi^2/(24 s). QED.
+  Consequence: a node with C full chains has at most exp(s p + C pi^2/(24 s)) tuples of weight < p for every s,
+  i.e. log N <= pi sqrt(C p / 6), which is exactly the frozen model's count with cK = 1/2: the LDU cost is a
+  finite-size upper bound, not only an asymptotic estimate (modes dropped at weight >= p or with empty forms only
+  lower the count). Checks: majorization and the inequality for k <= 22 on 60 values of s (ldu_bound.py).
+- Examined and set aside (with reasons):
+  * Fable, half-packet row cap (the exponents of a packet half sum to at most its rows, since every row factor is
+    affine in the modes; Fable estimated -4%): valid, but Chernoff with a second multiplier at the model's saddle
+    (s 2^k = 2.19, D_t = 2^(a-i)) shows the uncapped mean exponent per mode exceeds 1 only for chains of about
+    2^18 modes or more, and the cap costs a multiplier nu ~ e^(-4 s 2^k) ~ 1.6e-4: log N(capped)/log N = 0.99996 in the long-chain
+    limit (rowcap2.py). The large exponents sit on a few light modes that carry almost no entropy. Effect < 0.01%.
+  * Fable, balance constants 8192 Lc^2 and 172 halved (-1%) and partial packets (-2%, 1.1199^n column only): small;
+    the first needs a sharper balancing proof. Not pursued.
+  * Gemini 1 (fold the roots of C(T) into L and U for 6b-8b weight growth): impossible for this deformation. At z = 0
+    any factorisation K = P diag(d) Q with P, Q invertible over Z_(2) has the Smith invariants of K(0) as its diagonal
+    valuations; the LDU attains them (sum = v2 det K(0)), so no basis of the same block has heavier modes, and G is a
+    common scalar factor that already adds a + 1 - i to every mode. A further halving of cK needs a different
+    deformation W(T) (Fable's open question below), not a different factorisation.
+  * Gemini 2 (pair valuation levels to cut the factor 6 to about 2): the 6 = sum j^2/2^j comes from the node counts per
+    valuation level (half as many at each higher level), not from how levels are grouped; every multiplicity profile
+    is inside the taper LP, where the linear taper of Lemma D.5 is within 1.5% of the optimum (ledger, round 5).
+    No mechanism.
+  * Gemini 3 (drop the modes of empty slots): modes with an empty source form are already dropped, and the padding
+    keeps the packets full (dummies <= delta M). Already in the model.
+  * Gemini 4 (general 3-SAT through sparsification and Tovey copying, 15,000-25,000): copying multiplies the wires and
+    the sparsification density bound is far too large to give a meaningful number; the general-density entry below is
+    the direct version.
+- Open question (Fable, recorded as stated): can node values that are local at their own level make the 2-adic
+  determinant excess of the crossing blocks larger than (L/2) D_t per half? Cauchy reaches it through the
+  Vandermonde-square structure; XOR shifts, anti-shifts, inversion, free node values at unused levels, sparse packets
+  and extra nodes all lose (Fable); no proof that Cauchy is optimal. By the Smith-invariant remark above, this is the
+  only place a further halving of cK can come from. Fable's calibration: with labels, children and the cut free the
+  exponent is still about 4.5/sqrt(lambda), a floor near log2 n = 200 against 2^(n/3).
+- appd-density [model]: 3-CNF with m clauses and no occurrence bound. The chunk bound (appd-chunks item 1) gives
+  M_eff <= sum_f (|f| - 1) - n + u <= 2m - n + n/Lc. The balancing constants assume at most three occurrences, so
+  first replace each variable with more than B = 1024 occurrences by a chain of copies joined by equality constraints
+  of arity 2: each copy adds one variable and one constraint with |f| - 1 = 1, so M_eff does not grow; the number of
+  variables (and with it the leaf term) grows by at most 3m/(B - 2), and the balancing constant 8192 Lc^2 by (B/3)^4
+  (unit size and conflict degree scale with B), about 34 bits. At m/n = 4.26 (the random 3-SAT threshold),
+  conservatively also adding 3m/(B - 2) wires, the frozen v3 model with Qwen's choose_params gives 1.307^n 55,602,
+  1.637^n 16,439, 2^n 8,334 (without the occurrence cap and its extra bits 55,416 / 16,381 / 8,301, matching Fable's
+  55,420 / 16,384); with shellmm 51,728 / 15,295 / 7,755 (whatif3.py). The 2^(n/3) and 1.1199^n competitors are
+  specific to three occurrences.
+- T20 audit (head, 21:05): Qwen's change matches the specification: ps_sub_mod, naive_matmul (it also skips zero
+  entries, which only lowers the product count), strassen_sq with Strassen's seven products (C22 written as
+  M1 + M6 - M2 + M3), matmul on square blocks whose side is the largest power of two below the smallest dimension,
+  with zero padding, NodeExpansion.shells and sum_mm as specified (through the module-level matmul), node_value
+  method "mm" and count_e2e(method=...); appd_params passes shellmm to rank_e and uses A.eps_mode. One attempt of
+  8 minutes (47 requests). The referee verified every flag including shellmm (11 matmul, 39 node and 8 end-to-end
+  items, verify 148 s) and scored third 1,280, occ3sat 5,137, ppsz 977, sharp3sat 347, brute 187, equal to the
+  head's own solution and to the what-if.
+- Round 7 summary: against 2^(n/3) the Appendix D break-even went 1,370 -> 1,280 (-6.6%, shell matrix products with
+  Strassen, T20); the other columns fell by 5 to 7%. With the best known matrix multiplication exponent the model
+  would give about 1,180 (not implementable). The other levers in the three reviews are below 2% each or already in
+  the model; a further halving needs a different deformation (the open question above).
