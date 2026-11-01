@@ -182,9 +182,9 @@ def build(r, delta, Lc, flags, lam, ustart=None):
 
 def choose_params(lam, target="third"):
     flags = dict(perclass=True, labelfree=True, memo=False, modedp=False, chunks=False, leafvars=False,
-                 newton=False)
+                 newton=False, ldu=False)
     if USE_CODE_FLAGS:
-        flags.update(memo=True, modedp=True, chunks=True, newton=True)
+        flags.update(memo=True, modedp=True, chunks=True, newton=True, ldu=True)
     lam = float(lam)
     shapes = []
     for r0 in R0:

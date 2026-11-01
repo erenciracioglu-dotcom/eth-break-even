@@ -491,6 +491,8 @@ class NodeExpansion:
     """Mode expansion of F(t + alpha z) mod (2^p, z^q) at node t with i = v2(t)."""
 
     def __init__(self, net, pk, labels, t, p, q, weights="paper", basis="power"):
+        assert basis in ("power", "newton", "ldu"), "unknown basis " + str(basis)
+        assert not (basis == "ldu" and weights != "sharp"), "the ldu basis has only the sharp weights"
         self.net, self.pk, self.t, self.p, self.q = net, pk, t, p, q
         self.basis = basis
         self.m = 1 << p
@@ -523,7 +525,7 @@ class NodeExpansion:
                 if self.colg[w2] == self.rowg[w]:
                     self.local[w].append((w2, [red(c, p) for c in self.Wser[(P, x, y)]]))
         step = 1 << (i + 1)
-        for P, pkd in enumerate(pk.packets):
+        for P, pkd in enumerate(pk.packets if basis != "ldu" else []):
             lo, hi = pkd["pat"][i]
             if lo == hi:
                 continue
@@ -569,16 +571,78 @@ class NodeExpansion:
                             cc = c
                         assert all(v2(d) >= wgt for d in cc), ("weight", wgt, [v2(d) for d in cc])
                         self.coef[(wr, k)] = [red(d, p) for d in cc]
+        if basis == "ldu":
+            # Cauchy LDU of the crossing block: W_(x_k, x_l)(t + alpha z) = G * K_kl, K_kl = 1/(T + x_k - x_l),
+            # K = L diag(d) U over Z_(2)[[z]]; mode m has source form (U X)_m = sum_(l >= m) U_ml X_(x_l) and
+            # coefficient G L_km d_m in row k >= m.
+            half = 1 << i
+            n = L // 2
+            Cpoly = [1]
+            for sv in pk.S:
+                Cpoly = poly_mul(Cpoly, [-sv, 1])
+            G = taylor_at([Fr(c, pk.Cp0) for c in Cpoly], t, self.alpha, q)
+            for P, pkd in enumerate(pk.packets):
+                lo, hi = pkd["pat"][i]
+                if lo == hi:
+                    continue
+                for h in (0, 1):
+                    xk = [step * (k >> i) + (k & (half - 1)) + h * half for k in range(n)]
+                    src = pk.col_sym(P, xk[0], i)
+                    tgt = hi if src == lo else lo
+                    occ = [(k, pkd["wire_at"][x]) for k, x in enumerate(xk) if x in pkd["wire_at"]]
+                    rows = [(k, w) for (k, w) in occ if pk.row_sym(P, xk[k], i) == tgt]
+                    if not occ or not rows:
+                        continue
+                    K = [[ser_inv(([Fr(t + xk[r] - xk[s]), Fr(self.alpha)] + [Fr(0)] * q)[:q], q)
+                          for s in range(n)] for r in range(n)]
+                    Lm, d, Um = series_ldu(K, q)
+                    for m in range(n):
+                        b = m >> i
+                        wgt = a + 1 - i + 2 * b + 2 * v2fact(b)
+                        if wgt >= p:
+                            break
+                        lin = []
+                        for (k, w2) in occ:
+                            if k < m:
+                                continue
+                            tup = tuple(red(c, p) for c in Um[m][k])
+                            assert all(v2(c) >= 0 for c in Um[m][k]), ("U not integral", P, h, m, k)
+                            if any(tup):
+                                lin.append((tup, w2))
+                        if not lin:
+                            continue
+                        mi = len(self.modes)
+                        self.modes.append(dict(P=P, y0=h, b=m, src=src, tgt=tgt, w=wgt, lin=lin))
+                        for (k, wr) in rows:
+                            if k < m:
+                                continue
+                            assert all(v2(c) >= 0 for c in Lm[k][m]), ("L not integral", P, h, m, k)
+                            cc = ser_mul(ser_mul(G, d[m], q), Lm[k][m], q)
+                            assert all(v2(c) >= wgt for c in cc), ("weight", wgt, [v2(c) for c in cc])
+                            self.coef[(wr, mi)] = [red(c, p) for c in cc]
         # (D.12) check: every crossing entry equals its mode expansion mod 2^p
         for P, pkd in enumerate(pk.packets):
             for x, wr in pkd["wire_at"].items():
                 for y, wc in pkd["wire_at"].items():
                     if self.colg[wc] == self.rowg[wr]:
                         continue
-                    y0, j = y % step, y // step
                     acc = [0] * q
                     for k, md in enumerate(self.modes):
-                        if md["P"] == P and md["y0"] == y0 and (wr, k) in self.coef:
+                        if md["P"] != P or (wr, k) not in self.coef:
+                            continue
+                        if basis == "ldu":
+                            cb = None
+                            for c, w2 in md["lin"]:
+                                if w2 == wc:
+                                    cb = c
+                                    break
+                            if cb is None:
+                                continue
+                            acc = ps_add_mod(acc, ps_mul_mod(list(cb), self.coef[(wr, k)], q, self.m), self.m)
+                        else:
+                            y0, j = y % step, y // step
+                            if md["y0"] != y0:
+                                continue
                             jb = self.bfun(j, md["b"])
                             acc = ps_add_mod(acc, [(jb * c) % self.m for c in self.coef[(wr, k)]], self.m)
                     direct = [red(c, p) for c in self.Wser[(P, x, y)]]
@@ -592,7 +656,8 @@ class NodeExpansion:
     # -- basis functions
     def bfun(self, j, b):
         """Value of the basis function of index b at the column index j: j**b for the power basis,
-        math.comb(j, b) for the Newton (binomial) basis."""
+        math.comb(j, b) for the Newton (binomial) basis; not used by the Cauchy LDU basis, whose source forms
+        carry z-series coefficients in self.modes[k]["lin"]."""
         if self.basis == "newton":
             return math.comb(j, b)
         return j ** b if (j or b == 0) else 0
@@ -771,8 +836,10 @@ class NodeExpansion:
         for k in smodes:
             e = gamma.get(k, 0)
             if e:
-                f *= sum(c * val[(w2, "c")] for c, w2 in self.modes[k]["lin"]) ** e
-        return [(f * c) % m for c in ser]
+                f = src_mul(f, lin_eval(self.modes[k]["lin"], lambda w2: val[(w2, "c")], q, m), e, q, m)
+        if src_zero(f):
+            return [0] * q
+        return src_scale(f, ser, q, m)
 
 
 # ----------------------------------------------------------------------------- tests
@@ -922,8 +989,13 @@ def byvars_value(ne, g, gamma):
             for k in smodes:
                 e = gamma.get(k, 0)
                 if e:
-                    f *= sum(c * val[colvar[w2]] for c, w2 in ne.modes[k]["lin"]) ** e
-            total = ps_add_mod(total, [(sign * f * c) % m for c in ser], m)
+                    f = src_mul(f, lin_eval(ne.modes[k]["lin"], lambda w2: val[colvar[w2]], q, m), e, q, m)
+            if src_zero(f):
+                continue
+            term = src_scale(f, ser, q, m)
+            if sign < 0:
+                term = [(-c) % m for c in term]
+            total = ps_add_mod(total, term, m)
     return total, len(vars_), nsplit_max
 
 
@@ -932,8 +1004,8 @@ IMPLEMENTED = True      # set to True once every function below works
 
 def node_value(net, pk, labels, t, p, q, weights="paper", method="dp", basis="power"):
     """F(t + alpha z) mod (2^p, z^q) from the mode expansion at node t (v2(t) < pk.a): method "paper", "memo"
-    or "dp" selects NodeExpansion.sum_paper / sum_memo / sum_dp; basis "power" or "newton" selects the mode
-    basis. Return (series, stats) where stats is {"tuples" or "max_enum": int, "child_calls": int,
+    or "dp" selects NodeExpansion.sum_paper / sum_memo / sum_dp; basis "power", "newton" or "ldu" selects the
+    mode basis (ldu needs weights="sharp"). Return (series, stats) where stats is {"tuples" or "max_enum": int, "child_calls": int,
     "modes": len(ne.modes)}."""
     ne = NodeExpansion(net, pk, labels, t, p, q, weights=weights, basis=basis)
     if method == "paper":
@@ -956,7 +1028,7 @@ def count_e2e(n, clauses, chunks=True, Lc=2, r=3, seed=0, a=1, u=1, basis="power
     labels of a coordinates tuple(rng.randrange(r)) * a per vertex from the same rng, packing,
     h = M (2L - 1) // sum_{i < u} (L >> i)(u - i) + 1 with L = 2^a, multiplicities(a, u, h); at every node t
     with q_t > 0 use precision P_t = p + loss_bits(...) with p = n + 1 and the 'sharp' weights with the given
-    basis ("power" or "newton"), F(t + alpha z) mod (2^P_t, z^q_t) from sum_dp, then recover(...) and reduce
+    basis ("power", "newton" or "ldu"), F(t + alpha z) mod (2^P_t, z^q_t) from sum_dp, then recover(...) and reduce
     mod 2^p; multiply by 2^(unused variables). With a = 1, u = 1 this is the old a = 1, u = 1 call and must
     equal count_sat."""
     rng = random.Random(seed)
