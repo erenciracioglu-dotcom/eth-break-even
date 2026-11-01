@@ -4,9 +4,11 @@ assembly. USE_CODE_FLAGS switches on memo, modedp, chunks and leafvars, which on
 passes the verify gate. Keep one call well under 3 s.
 
 Search (attempt 2): three levels allowed, free u_d per level (not rho * u_0), wider r grids, delta grid down
-to 1e-4 and Lc up to 2^20. Shapes are pre-ranked with a cheap analytic replica of the assembly (closed-form
-greedy u from the padding budget + min_a), then the top candidates are refined with the real model: bisection
-on u_0, and inside every trial a bisection that maximises each remaining u_d. min_a is kept for a_d.
+to 1e-4 and Lc up to 2^20. USE_CODE_FLAGS also switches on newton (appd-newton, the binomial mode basis), which
+halves the mode-tuple constant cK in the replica (A.ck) and in the frozen assembly. Shapes are pre-ranked with a
+cheap analytic replica of the assembly (closed-form greedy u from the padding budget + min_a), then the top
+candidates are refined with the real model: bisection on u_0, and inside every trial a bisection that maximises
+each remaining u_d. min_a is kept for a_d.
 """
 import math
 import appd_assembly_public as A
@@ -58,7 +60,7 @@ def est_u(rd, Md, delta, lam, lp_in):
     return max(2, u)
 
 
-def rank_e(r, delta, Lc, lam, leafvars):
+def rank_e(r, delta, Lc, lam, leafvars, cK=2.0):
     """Analytic replica: greedy u_d from the padding budget, a_d = min_a, cost exponent of the assembly."""
     L = len(r)
     M = _M(r, delta, Lc, True)
@@ -69,8 +71,8 @@ def rank_e(r, delta, Lc, lam, leafvars):
         ad = min_a(ud, lp_in, M[d])
         u.append(ud)
         x = M[d] / math.sqrt(ud)
-        ar = A.tup(ud, A.eps_dp(r[d]), dm) * x
-        ch = A.tup(ud, A.f_grp(r[d]), dm) * x
+        ar = A.tup(ud, A.eps_dp(r[d]), dm, cK) * x
+        ch = A.tup(ud, A.f_grp(r[d]), dm, cK) * x
         worst = max(worst, cum + ar)
         cum += ch
         h = M[d] / (ud - 1)
@@ -179,9 +181,10 @@ def build(r, delta, Lc, flags, lam, ustart=None):
 
 
 def choose_params(lam, target="third"):
-    flags = dict(perclass=True, labelfree=True, memo=False, modedp=False, chunks=False, leafvars=False)
+    flags = dict(perclass=True, labelfree=True, memo=False, modedp=False, chunks=False, leafvars=False,
+                 newton=False)
     if USE_CODE_FLAGS:
-        flags.update(memo=True, modedp=True, chunks=True)
+        flags.update(memo=True, modedp=True, chunks=True, newton=True)
     lam = float(lam)
     shapes = []
     for r0 in R0:
@@ -194,11 +197,12 @@ def choose_params(lam, target="third"):
             for r2 in R2_RANK:
                 shapes.append((r0, r1, r2))
     cand = []
+    cK = A.ck(flags)
     for shape in shapes:
         lv = flags["chunks"] and len(shape) == 1
         for delta in DELTAS:
             for Lc in LCS:
-                e, _ = rank_e(list(shape), delta, Lc, lam, lv)
+                e, _ = rank_e(list(shape), delta, Lc, lam, lv, cK)
                 cand.append((e, shape, delta, Lc))
     cand.sort(key=lambda x: x[0])
     best = None

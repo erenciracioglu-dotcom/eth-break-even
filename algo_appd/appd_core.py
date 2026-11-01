@@ -27,6 +27,11 @@ def v2(x):
     return c
 
 
+def v2fact(b):
+    """v2(b!) = b - (number of ones in the binary form of b)."""
+    return b - bin(b).count("1")
+
+
 def red(x, P):
     """2-adic integer Fraction -> residue mod 2^P."""
     x = Fr(x)
@@ -425,8 +430,9 @@ def loss_bits(qmult, a, t):
 class NodeExpansion:
     """Mode expansion of F(t + alpha z) mod (2^p, z^q) at node t with i = v2(t)."""
 
-    def __init__(self, net, pk, labels, t, p, q, weights="paper"):
+    def __init__(self, net, pk, labels, t, p, q, weights="paper", basis="power"):
         self.net, self.pk, self.t, self.p, self.q = net, pk, t, p, q
+        self.basis = basis
         self.m = 1 << p
         a, L = pk.a, pk.L
         self.alpha = 2 ** (a + 1)
@@ -470,11 +476,13 @@ class NodeExpansion:
                 if not cols or not rows:
                     continue
                 for b in range(p):
-                    wgt = (b + 1) if weights == "paper" else (a + 1 - i + b)
+                    wgt = ((b + 1) if weights == "paper" else (a + 1 - i + b))
+                    if basis == "newton":
+                        wgt += v2fact(b)
                     if wgt >= p:
                         break
-                    # L_Z(X) = sum_j j^b X_y ; trivial if all j^b vanish
-                    lin = [(j ** b if (j or b == 0) else 0, w2) for j, w2 in cols]
+                    # L_Z(X) = sum_j j^b X_y (power) or sum_j binom(j, b) X_y (Newton); trivial if all vanish
+                    lin = [(self.bfun(j, b), w2) for j, w2 in cols]
                     lin = [(c, w2) for c, w2 in lin if c]
                     if not lin:
                         continue
@@ -484,14 +492,23 @@ class NodeExpansion:
                         A = Fr(t - y0 + x)
                         assert v2(A) <= i
                         first = taylor_at([Fr(c, pk.Cp0) for c in pk.Wpoly(y0 - x)], t, self.alpha, q)
-                        base = [A, Fr(self.alpha)] + [Fr(0)] * max(0, q - 2)
-                        invb = ser_inv(base[:q], q)
-                        ratio = [Fr(2 ** (i + 1)) * c for c in invb]
-                        c = first
-                        for _ in range(b):
-                            c = ser_mul(c, ratio, q)
-                        assert all(v2(cc) >= wgt for cc in c), ("weight", wgt, [v2(cc) for cc in c])
-                        self.coef[(wr, k)] = [red(cc, p) for cc in c]
+                        if basis == "newton":
+                            # N_b = N_(b-1) * c*b / (A - c*b + alpha z), N_0 = first
+                            cc = first
+                            for bb in range(1, b + 1):
+                                den = [A - Fr(step * bb), Fr(self.alpha)] + [Fr(0)] * max(0, q - 2)
+                                rb = [Fr(step * bb) * d for d in ser_inv(den[:q], q)]
+                                cc = ser_mul(cc, rb, q)
+                        else:
+                            base = [A, Fr(self.alpha)] + [Fr(0)] * max(0, q - 2)
+                            invb = ser_inv(base[:q], q)
+                            ratio = [Fr(2 ** (i + 1)) * c for c in invb]
+                            c = first
+                            for _ in range(b):
+                                c = ser_mul(c, ratio, q)
+                            cc = c
+                        assert all(v2(d) >= wgt for d in cc), ("weight", wgt, [v2(d) for d in cc])
+                        self.coef[(wr, k)] = [red(d, p) for d in cc]
         # (D.12) check: every crossing entry equals its mode expansion mod 2^p
         for P, pkd in enumerate(pk.packets):
             for x, wr in pkd["wire_at"].items():
@@ -502,7 +519,7 @@ class NodeExpansion:
                     acc = [0] * q
                     for k, md in enumerate(self.modes):
                         if md["P"] == P and md["y0"] == y0 and (wr, k) in self.coef:
-                            jb = j ** md["b"] if (j or md["b"] == 0) else 0
+                            jb = self.bfun(j, md["b"])
                             acc = ps_add_mod(acc, [(jb * c) % self.m for c in self.coef[(wr, k)]], self.m)
                     direct = [red(c, p) for c in self.Wser[(P, x, y)]]
                     assert acc == direct, ("D.12 failed", P, x, y)
@@ -511,6 +528,14 @@ class NodeExpansion:
         self.sg = {g: [k for k, md in enumerate(self.modes) if md["src"] == g] for g in self.r_groups}
         self.inc = {g: sorted(set(self.tg[g]) | set(self.sg[g])) for g in self.r_groups}
         self.child_calls = 0
+
+    # -- basis functions
+    def bfun(self, j, b):
+        """Value of the basis function of index b at the column index j: j**b for the power basis,
+        math.comb(j, b) for the Newton (binomial) basis."""
+        if self.basis == "newton":
+            return math.comb(j, b)
+        return j ** b if (j or b == 0) else 0
 
     # -- tuples
     def tuples(self, idx, budget):
@@ -845,11 +870,12 @@ def byvars_value(ne, g, gamma):
 IMPLEMENTED = True      # set to True once every function below works
 
 
-def node_value(net, pk, labels, t, p, q, weights="paper", method="dp"):
+def node_value(net, pk, labels, t, p, q, weights="paper", method="dp", basis="power"):
     """F(t + alpha z) mod (2^p, z^q) from the mode expansion at node t (v2(t) < pk.a): method "paper", "memo"
-    or "dp" selects NodeExpansion.sum_paper / sum_memo / sum_dp. Return (series, stats) where stats is
-    {"tuples" or "max_enum": int, "child_calls": int, "modes": len(ne.modes)}."""
-    ne = NodeExpansion(net, pk, labels, t, p, q, weights=weights)
+    or "dp" selects NodeExpansion.sum_paper / sum_memo / sum_dp; basis "power" or "newton" selects the mode
+    basis. Return (series, stats) where stats is {"tuples" or "max_enum": int, "child_calls": int,
+    "modes": len(ne.modes)}."""
+    ne = NodeExpansion(net, pk, labels, t, p, q, weights=weights, basis=basis)
     if method == "paper":
         ser, tup_n, calls = ne.sum_paper()
         stats = {"tuples": tup_n, "child_calls": calls, "modes": len(ne.modes)}
@@ -864,30 +890,33 @@ def node_value(net, pk, labels, t, p, q, weights="paper", method="dp"):
     return ser, stats
 
 
-def count_e2e(n, clauses, chunks=True, Lc=2, r=3, seed=0):
-    """Exact #F by the whole algorithm with a = 1 (L = 2), u = 1: build the network (chunk super-vertices when
-    chunks, units from make_units(n, clauses, Lc, random.Random(seed))), labels tuple(rng.randrange(r)) per vertex
-    from the same rng, packing, h = M(2L - 1) // L + 1, multiplicities(1, 1, h); at every node t with q_t > 0 use
-    precision P_t = p + loss_bits(...) with p = n + 1 and the 'sharp' weights, F(t + alpha z) mod (2^P_t, z^q_t)
-    from sum_dp, then recover(...) and reduce mod 2^p; multiply by 2^(unused variables). Must equal count_sat."""
+def count_e2e(n, clauses, chunks=True, Lc=2, r=3, seed=0, a=1, u=1, basis="power"):
+    """Exact #F by the whole algorithm with packet coordinates a and retained valuation levels u: build the
+    network (chunk super-vertices when chunks, units from make_units(n, clauses, Lc, random.Random(seed))),
+    labels of a coordinates tuple(rng.randrange(r)) * a per vertex from the same rng, packing,
+    h = M (2L - 1) // sum_{i < u} (L >> i)(u - i) + 1 with L = 2^a, multiplicities(a, u, h); at every node t
+    with q_t > 0 use precision P_t = p + loss_bits(...) with p = n + 1 and the 'sharp' weights with the given
+    basis ("power" or "newton"), F(t + alpha z) mod (2^P_t, z^q_t) from sum_dp, then recover(...) and reduce
+    mod 2^p; multiply by 2^(unused variables). With a = 1, u = 1 this is the old a = 1, u = 1 call and must
+    equal count_sat."""
     rng = random.Random(seed)
     if chunks:
         net = chunk_net_mapped(n, clauses, make_units(n, clauses, Lc, rng))
     else:
         net = formula_net(n, clauses)
-    a = 1
     labels = [tuple(rng.randrange(r) for _ in range(a)) for _ in net.verts]
     pk = Packing(net, labels, a)
     M = len(net.wires)
-    h = M * (2 * pk.L - 1) // pk.L + 1
-    qm = multiplicities(a, 1, h)
+    L = pk.L
+    h = M * (2 * L - 1) // sum((L >> i) * (u - i) for i in range(u)) + 1
+    qm = multiplicities(a, u, h)
     p = n + 1
     data = {}
     for t, qt in sorted(qm.items()):
         if qt == 0:
             continue
         Pt = p + loss_bits(qm, a, t)
-        ne = NodeExpansion(net, pk, labels, t, Pt, qt, weights="sharp")
+        ne = NodeExpansion(net, pk, labels, t, Pt, qt, weights="sharp", basis=basis)
         ser, _me, _cc = ne.sum_dp()
         data[t] = ser
     got = red(recover(data, qm, a), p)
