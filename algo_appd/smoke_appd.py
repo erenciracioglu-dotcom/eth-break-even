@@ -6,7 +6,9 @@ the paper tuple count; byvars_value against child_network_value on chunk network
 Newton checks (round 6): the same with NodeExpansion(..., basis="newton") at a = 2, 3 and 4, the weights
 w_b = (b + 1 + v2(b!)) or (a + 1 - i + b + v2(b!)), and count_e2e(..., a, u, basis="newton") at a = 2 and 3.
 Then e of choose_params at three lam values (lower is better; must be valid and under 3 s per call).
-Prints SMOKE OK or SMOKE FAIL (core and parameters), then NEWTON OK or NEWTON FAIL."""
+LDU checks (round 6): NodeExpansion(..., weights="sharp", basis="ldu") at a = 2, 3 and 4 (weights
+a + 1 - i + 2b + 2 v2(b!) with b = m >> i, series source forms), node values, byvars, count_e2e(..., basis="ldu").
+Prints SMOKE OK or SMOKE FAIL (core and parameters), then NEWTON OK or NEWTON FAIL, then LDU OK or LDU FAIL."""
 import math
 import random
 import time
@@ -152,9 +154,74 @@ def newton_checks():
     return ok_all
 
 
+def ldu_checks():
+    ok_all = True
+    pick = random.Random(13)
+    done = 0
+    for k in range(40):
+        if done >= 8:
+            break
+        seed, chunks = 500 + k, k % 2 == 1
+        a = pick.choice([2, 3, 3, 4])
+        n_, cls, net, labels, pk = C.setup(random.Random(seed), pick.randint(4, 6), pick.randint(3, 4), a,
+                                           pick.choice([3, 4]), chunks=chunks, Lc=2)
+        M = len(net.wires)
+        nodes = [s for s in pk.S if s and C.v2(s) < pk.a]
+        t, p, q = pick.choice(nodes), pick.choice([5, 6, 7]), pick.choice([1, 2])
+        if M < 2 or M > 7:
+            continue
+        done += 1
+        direct = C.direct_taylor_mod(net, pk, t, p, q)
+        line = []
+        try:
+            ne = C.NodeExpansion(net, pk, labels, t, p, q, weights="sharp", basis="ldu")
+        except Exception as exc:  # noqa: BLE001
+            print(f"ldu case {seed}: NodeExpansion(..., basis='ldu') failed: {repr(exc)[:200]} FAIL")
+            ok_all = False
+            continue
+        i = C.v2(t)
+        bad_w = [md for md in ne.modes if md["w"] != a + 1 - i + 2 * (md["b"] >> i) + 2 * v2fact(md["b"] >> i)]
+        if bad_w:
+            line.append(f"weights FAIL ({len(bad_w)} modes)")
+            ok_all = False
+        for method in ("paper", "memo", "dp"):
+            try:
+                ser, st = C.node_value(net, pk, labels, t, p, q, weights="sharp", method=method, basis="ldu")
+                good = [int(x) % (1 << p) for x in ser] == direct
+            except Exception as exc:  # noqa: BLE001
+                good = False
+                line.append(repr(exc)[:120])
+            line.append(f"{method}={'ok' if good else 'FAIL'}")
+            ok_all &= good
+        print(f"ldu case {seed}: a={a} chunks={chunks} M={M} t={t} p={p} q={q} modes {len(ne.modes)} " + " ".join(line))
+        if chunks:
+            for g in ne.r_groups[:2]:
+                for gm in ne.tuples(ne.inc[g], ne.p)[:3]:
+                    ref = ne.child_network_value(g, dict(gm))
+                    try:
+                        good = [int(x) % (1 << p) for x in C.byvars_value(ne, g, dict(gm))[0]] == ref
+                    except Exception as exc:  # noqa: BLE001
+                        good = False
+                        print("   ldu byvars error:", repr(exc)[:160])
+                    ok_all &= good
+                    if not good:
+                        print(f"   ldu byvars group {g} gamma {gm}: FAIL")
+    for k, (a, u) in enumerate([(2, 1), (2, 2), (2, 1), (2, 2), (3, 1), (3, 1)]):
+        seed, n = 600 + k, 3
+        cls = C.random_formula(n, 1 + k % 2, random.Random(seed))
+        try:
+            got = C.count_e2e(n, cls, chunks=k % 2 == 1, Lc=2, r=3, seed=seed, a=a, u=u, basis="ldu")
+        except Exception as exc:  # noqa: BLE001
+            got = repr(exc)[:160]
+        want = C.count_sat(n, cls)
+        print(f"ldu count_e2e seed {seed} a={a} u={u}: got {got} want {want} {'ok' if got == want else 'FAIL'}")
+        ok_all &= got == want
+    return ok_all
+
+
 def param_checks():
     ok_all = True
-    for lam in (2700, 5300, 23056):
+    for lam in (1350, 2700, 5300):
         t0 = time.time()
         p = P.choose_params(lam, "third")
         dt = time.time() - t0
@@ -171,3 +238,5 @@ if __name__ == "__main__":
     print("SMOKE OK" if a and b else "SMOKE FAIL")
     nw = newton_checks() if C.IMPLEMENTED else False
     print("NEWTON OK" if nw else "NEWTON FAIL")
+    lw = ldu_checks() if C.IMPLEMENTED else False
+    print("LDU OK" if lw else "LDU FAIL")

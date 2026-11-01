@@ -14,7 +14,11 @@ Weights: 'paper' w = b + 1, or 'sharp' w = a + 1 - i + b (every crossing entry o
 is divisible by 2^(a+1-i): C(t + alpha z)/C'(0) is divisible by alpha = 2^(a+1)).
 Bases (round 6): 'power' (the paper: source forms sum_j j^b X_(y0 + c j), coefficients W_(x, y0) (c / A)^b) or
 'newton' (binomial moments, suggested by GPT-6 Astra: source forms sum_j binom(j, b) X_(y0 + c j), coefficients
-W_(x, y0) prod_(l=1..b) c l / (A - c l), the b-th forward difference in j; every weight grows by v2(b!)).
+W_(x, y0) prod_(l=1..b) c l / (A - c l), the b-th forward difference in j; every weight grows by v2(b!)), or
+'ldu' (Cauchy LDU, also suggested by GPT-6 Astra; sharp weights only): the crossing block of a packet half (slots
+with bit i = h, ordered x_k = 2^(i+1) floor(k/2^i) + (k mod 2^i) + h 2^i) is K_kl = 1/(T + x_k - x_l) = L D U with unit
+triangular L, U over Z_(2)[[z]]; mode m has the source form (U X)_m (series coefficients) and coefficient
+G L_km d_m in row k, weight a + 1 - i + 2b + 2 v2(b!) with b = floor(m/2^i).
 """
 import itertools
 import math
@@ -78,6 +82,66 @@ def ser_inv(a, q):
 def v2fact(b):
     """v2(b!) = b - (number of ones in b)."""
     return b - bin(b).count("1")
+
+
+def lin_eval(lin, bit, q, m):
+    """Value of a source form at column bits: an int when every coefficient is an int, else a series mod m."""
+    if all(isinstance(c, int) for c, _ in lin):
+        return sum(c * bit(w2) for c, w2 in lin)
+    out = [0] * q
+    for c, w2 in lin:
+        if bit(w2):
+            if isinstance(c, int):
+                out[0] = (out[0] + c) % m
+            else:
+                out = [(x + y) % m for x, y in zip(out, c)]
+    return out
+
+
+def src_mul(f, v, e, q, m):
+    """f * v^e for f, v ints or series mod m (the result stays an int while both are ints)."""
+    if isinstance(f, int) and isinstance(v, int):
+        return f * v ** e
+    fs = [f % m] + [0] * (q - 1) if isinstance(f, int) else f
+    vs = [v % m] + [0] * (q - 1) if isinstance(v, int) else v
+    for _ in range(e):
+        fs = ps_mul_mod(fs, vs, q, m)
+    return fs
+
+
+def src_scale(f, ser, q, m):
+    """f * ser for an int or series f."""
+    if isinstance(f, int):
+        return [(f * c) % m for c in ser]
+    return ps_mul_mod(f, ser, q, m)
+
+
+def src_zero(f):
+    return (f == 0) if isinstance(f, int) else not any(f)
+
+
+def series_ldu(K, q):
+    """K = L diag(d) U over Q[[z]] mod z^q (unit triangular L, U); entries are lists of q Fractions."""
+    n = len(K)
+    A = [[list(K[r][s]) for s in range(n)] for r in range(n)]
+    unit = [Fr(1)] + [Fr(0)] * (q - 1)
+    Lm = [[None] * n for _ in range(n)]
+    Um = [[None] * n for _ in range(n)]
+    d = []
+    for k in range(n):
+        piv = A[k][k]
+        assert piv[0] != 0, "zero pivot"
+        pinv = ser_inv(piv, q)
+        d.append(piv)
+        Lm[k][k] = Um[k][k] = unit
+        for r in range(k + 1, n):
+            Lm[r][k] = ser_mul(A[r][k], pinv, q)
+        for s in range(k + 1, n):
+            Um[k][s] = ser_mul(A[k][s], pinv, q)
+        for r in range(k + 1, n):
+            for s in range(k + 1, n):
+                A[r][s] = [x - y for x, y in zip(A[r][s], ser_mul(Lm[r][k], A[k][s], q))]
+    return Lm, d, Um
 
 
 def ps_mul_mod(a, b, q, m):
@@ -442,7 +506,8 @@ class NodeExpansion:
     """Mode expansion of F(t + alpha z) mod (2^p, z^q) at node t with i = v2(t)."""
 
     def __init__(self, net, pk, labels, t, p, q, weights="paper", basis="power"):
-        assert basis in ("power", "newton")
+        assert basis in ("power", "newton", "ldu")
+        assert basis != "ldu" or weights == "sharp", "the ldu basis has sharp weights only"
         self.basis = basis
         self.net, self.pk, self.t, self.p, self.q = net, pk, t, p, q
         self.m = 1 << p
@@ -475,9 +540,11 @@ class NodeExpansion:
                 if self.colg[w2] == self.rowg[w]:
                     self.local[w].append((w2, [red(c, p) for c in self.Wser[(P, x, y)]]))
         step = 1 << (i + 1)
+        if basis == "ldu":
+            self._ldu_modes(i, step)
         for P, pkd in enumerate(pk.packets):
             lo, hi = pkd["pat"][i]
-            if lo == hi:
+            if lo == hi or basis == "ldu":
                 continue
             for y0 in range(step):
                 cols = [(j, pkd["wire_at"][y0 + step * j]) for j in range(L // step)
@@ -526,7 +593,12 @@ class NodeExpansion:
                     y0, j = y % step, y // step
                     acc = [0] * q
                     for k, md in enumerate(self.modes):
-                        if md["P"] == P and md["y0"] == y0 and (wr, k) in self.coef:
+                        if basis == "ldu":
+                            if md["P"] == P and (wr, k) in self.coef:
+                                cy = dict((w2, c) for c, w2 in md["lin"]).get(wc)
+                                if cy is not None:
+                                    acc = ps_add_mod(acc, ps_mul_mod(list(cy), self.coef[(wr, k)], q, self.m), self.m)
+                        elif md["P"] == P and md["y0"] == y0 and (wr, k) in self.coef:
                             jb = self.bfun(j, md["b"])
                             acc = ps_add_mod(acc, [(jb * c) % self.m for c in self.coef[(wr, k)]], self.m)
                     direct = [red(c, p) for c in self.Wser[(P, x, y)]]
@@ -536,6 +608,58 @@ class NodeExpansion:
         self.sg = {g: [k for k, md in enumerate(self.modes) if md["src"] == g] for g in self.r_groups}
         self.inc = {g: sorted(set(self.tg[g]) | set(self.sg[g])) for g in self.r_groups}
         self.child_calls = 0
+
+    def _ldu_modes(self, i, step):
+        """Cauchy LDU modes (see the module docstring): one block per packet half h (slots with bit i = h)."""
+        pk, p, q, t, m = self.pk, self.p, self.q, self.t, self.m
+        a, L, alpha = pk.a, pk.L, self.alpha
+        half = 1 << i
+        n = L // 2
+        Cpoly = [1]
+        for s in pk.S:
+            Cpoly = poly_mul(Cpoly, [-s, 1])
+        G = taylor_at([Fr(c, pk.Cp0) for c in Cpoly], t, alpha, q)
+        self.ldu_blocks = []
+        for P, pkd in enumerate(pk.packets):
+            lo, hi = pkd["pat"][i]
+            if lo == hi:
+                continue
+            for h in (0, 1):
+                pos = [step * (k >> i) + (k & (half - 1)) + h * half for k in range(n)]
+                src = pk.col_sym(P, pos[0], i)
+                tgt = hi if src == lo else lo
+                occ = [(k, pkd["wire_at"][pos[k]]) for k in range(n) if pos[k] in pkd["wire_at"]]
+                rows = [(k, w) for k, w in occ if pk.row_sym(P, pos[k], i) == tgt]
+                if not occ or not rows:
+                    continue
+                K = [[ser_inv(([Fr(t + pos[r] - pos[s]), Fr(alpha)] + [Fr(0)] * q)[:q], q) for s in range(n)]
+                     for r in range(n)]
+                Lm, d, Um = series_ldu(K, q)
+                self.ldu_blocks.append(dict(P=P, h=h, n=n, d=d))
+                for mm in range(n):
+                    b = mm >> i
+                    wgt = a + 1 - i + 2 * b + 2 * v2fact(b)
+                    if wgt >= p:
+                        break
+                    lin = []
+                    for k, w2 in occ:
+                        if k >= mm:
+                            cser = tuple(red(c, p) for c in Um[mm][k])
+                            assert all(v2(c) >= 0 for c in Um[mm][k]), "U not 2-adically integral"
+                            if any(cser):
+                                lin.append((cser, w2))
+                    if not lin:
+                        continue
+                    kk = len(self.modes)
+                    self.modes.append(dict(P=P, y0=h, b=mm, src=src, tgt=tgt, w=wgt, lin=lin))
+                    gd = ser_mul(G, d[mm], q)
+                    for k, wr in rows:
+                        if k < mm:
+                            continue
+                        assert all(v2(c) >= 0 for c in Lm[k][mm]), "L not 2-adically integral"
+                        c = ser_mul(gd, Lm[k][mm], q)
+                        assert all(v2(cc) >= wgt for cc in c), ("ldu weight", mm, wgt, [v2(cc) for cc in c])
+                        self.coef[(wr, kk)] = [red(cc, p) for cc in c]
 
     def bfun(self, j, b):
         """Value at column index j of the b-th source form."""
@@ -618,7 +742,7 @@ class NodeExpansion:
                         else:
                             new[nk] = prod
                 polyd = new
-            Lval = {k: sum(c * X[w2] for c, w2 in self.modes[k]["lin"]) for k in self.sg[g]}
+            Lval = {k: lin_eval(self.modes[k]["lin"], X.__getitem__, q, m) for k in self.sg[g]}
             for gm in gammas:
                 tkey = tuple(sorted((k, e) for k, e in gm.items() if k in tg))
                 if tkey not in polyd:
@@ -626,11 +750,11 @@ class NodeExpansion:
                 f = 1
                 for k, e in gm.items():
                     if k not in tg:
-                        f *= Lval[k] ** e
-                if f == 0:
+                        f = src_mul(f, Lval[k], e, q, m)
+                if src_zero(f):
                     continue
                 kk = self.key(gm)
-                table[kk] = ps_add_mod(table[kk], [(f * c) % m for c in polyd[tkey]], m)
+                table[kk] = ps_add_mod(table[kk], src_scale(f, polyd[tkey], q, m), m)
         self.child_calls += len(gammas)
         return table
 
@@ -766,8 +890,8 @@ class NodeExpansion:
         for k in smodes:
             e = gamma.get(k, 0)
             if e:
-                f *= sum(c * val[(w2, "c")] for c, w2 in self.modes[k]["lin"]) ** e
-        return [(f * c) % m for c in ser]
+                f = src_mul(f, lin_eval(self.modes[k]["lin"], lambda w2: val[(w2, "c")], q, m), e, q, m)
+        return src_scale(f, ser, q, m)
 
 
 # ----------------------------------------------------------------------------- tests
@@ -935,8 +1059,8 @@ def byvars_value(ne, g, gamma):
                 for k in smodes:
                     e = gamma.get(k, 0)
                     if e:
-                        f *= sum(c * X[w2] for c, w2 in ne.modes[k]["lin"]) ** e
-                ser = ps_mul_mod(ser, [(f * c) % m for c in pv], q, m)
+                        f = src_mul(f, lin_eval(ne.modes[k]["lin"], X.__getitem__, q, m), e, q, m)
+                ser = ps_mul_mod(ser, src_scale(f, pv, q, m), q, m)
             total = ps_add_mod(total, ser, m)
     return total, len(vars_g), branch_max
 

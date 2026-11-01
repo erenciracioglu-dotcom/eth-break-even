@@ -1,4 +1,4 @@
-"""FROZEN gates of referee_appd version 2 (round 6). Usage: python appd_gates.py <candidate_dir> <verify|score> <out_json> [verified_flags_json]
+"""FROZEN gates of referee_appd version 3 (round 6). Usage: python appd_gates.py <candidate_dir> <verify|score> <out_json> [verified_flags_json]
 
 verify: the agent's appd_core.py against the frozen reference appd_ref.py on hidden cases (cases_appd.json):
   node   - node_value(method = paper, memo, dp) equals F(t + alpha z) mod (2^p, z^q) from the frozen direct
@@ -10,9 +10,13 @@ verify: the agent's appd_core.py against the frozen reference appd_ref.py on hid
            source, target, weight, source form) and the reference coefficient residues; node_value(..., basis=
            "newton") equals (D.8) for paper, memo and dp with the reference child and enumeration counts; byvars on
            chunk networks; count_e2e(..., a, u, basis="newton") equals the brute-force count at a = 2 and 3.
+  ldu (version 3; decides only the ldu flag) - the same checks on the same hidden cases with basis="ldu" and
+           weights="sharp": modes, weights, series source forms and coefficient residues equal the reference; node
+           values by the three orders with the reference counts; byvars on chunk networks; end-to-end counts.
   direct_taylor_mod and F_poly of the agent module are blocked while it runs.
   Verified flags: memo (every memo item), modedp (every dp item), chunks (every item on a chunk network and every
-  chunk end-to-end count), leafvars (every byvars item), newton (every newton item). With IMPLEMENTED = False
+  chunk end-to-end count), leafvars (every byvars item), newton (every newton item), ldu (every ldu item).
+  With IMPLEMENTED = False
   nothing is tried and no code flag is verified (the gate still passes).
 score: break-even sizes from the agent's appd_params.choose_params(lam, target), re-scored here with the frozen
   appd_assembly.py; parameters that use an unverified code flag count as invalid.
@@ -41,12 +45,13 @@ def _mode_table(ne):
     for k, md in enumerate(ne.modes):
         key = (int(md["P"]), int(md["y0"]), int(md["b"]))
         rows = {int(wr): [int(c) % ne.m for c in ser] for (wr, kk), ser in ne.coef.items() if kk == k}
-        lin = sorted((int(c), int(w2)) for c, w2 in md["lin"])
+        lin = sorted(((tuple(int(x) % ne.m for x in c) if isinstance(c, (list, tuple)) else int(c)), int(w2))
+                     for c, w2 in md["lin"])
         out[key] = (md["src"], md["tgt"], int(md["w"]), lin, rows)
     return out
 
 
-def newton_items(C, cases):
+def newton_items(C, cases, basis="newton"):
     items = []
     for cs in cases.get("newton_node", []):
         rng = random.Random(cs["seed"])
@@ -57,16 +62,16 @@ def newton_items(C, cases):
         C._WIREMAP.update({k: v for k, v in R._WIREMAP.items() if k[0] == id(net)})
         nodes = [s for s in pk.S if s and R.v2(s) < pk.a]
         t = nodes[int(cs["tpick"] * len(nodes)) % len(nodes)]
-        p, q, w = cs["p"], cs["q"], cs["weights"]
+        p, q, w = cs["p"], cs["q"], (cs["weights"] if basis == "newton" else "sharp")
         direct = R.direct_taylor_mod(net, pk, t, p, q)
-        ref = R.NodeExpansion(net, pk, labels, t, p, q, weights=w, basis="newton")
+        ref = R.NodeExpansion(net, pk, labels, t, p, q, weights=w, basis=basis)
         _, _, ref_calls = ref.sum_memo()
         _, ref_enum, _ = ref.sum_dp()
         base = dict(seed=cs["seed"], chunks=cs["chunks"], a=pk.a, M=M, t=t, p=p, q=q, w=w, modes=len(ref.modes))
-        it = dict(base, kind="newton_modes")
+        it = dict(base, kind=basis + "_modes")
         ne = None
         try:
-            ne = C.NodeExpansion(net, pk, labels, t, p, q, weights=w, basis="newton")
+            ne = C.NodeExpansion(net, pk, labels, t, p, q, weights=w, basis=basis)
             mine, want = _mode_table(ne), _mode_table(ref)
             it["ok"] = mine == want
             if not it["ok"]:
@@ -75,9 +80,9 @@ def newton_items(C, cases):
             it.update(ok=False, error=traceback.format_exc()[-400:])
         items.append(it)
         for method in ("paper", "memo", "dp"):
-            it = dict(base, kind="newton_" + method)
+            it = dict(base, kind=basis + "_" + method)
             try:
-                ser, st = C.node_value(net, pk, labels, t, p, q, weights=w, method=method, basis="newton")
+                ser, st = C.node_value(net, pk, labels, t, p, q, weights=w, method=method, basis=basis)
                 ok = [int(x) % (1 << p) for x in ser] == direct
                 if method == "memo":
                     ok = ok and int(st.get("child_calls", -1)) == ref_calls
@@ -93,7 +98,7 @@ def newton_items(C, cases):
             for g in ref.r_groups[:2]:
                 tab = ref.group_table(g)
                 for gm in sorted(tab.keys())[:3]:
-                    it = dict(base, kind="newton_byvars", g=g)
+                    it = dict(base, kind=basis + "_byvars", g=g)
                     try:
                         bv = C.byvars_value(ne, g, dict(gm))[0]
                         it["ok"] = [int(x) % (1 << p) for x in bv] == tab[gm]
@@ -104,10 +109,10 @@ def newton_items(C, cases):
         rng = random.Random(cs["seed"])
         n = cs["n"]
         cls = R.random_formula(n, cs["m"], rng)
-        it = dict(kind="newton_e2e", seed=cs["seed"], chunks=cs["chunks"], a=cs["a"], u=cs["u"])
+        it = dict(kind=basis + "_e2e", seed=cs["seed"], chunks=cs["chunks"], a=cs["a"], u=cs["u"])
         try:
             got = C.count_e2e(n, cls, chunks=cs["chunks"], Lc=cs["Lc"], r=cs["r"], seed=cs["seed"], a=cs["a"],
-                              u=cs["u"], basis="newton")
+                              u=cs["u"], basis=basis)
             want = R.count_sat(n, cls)
             it.update(ok=int(got) == want, got=int(got), want=want)
         except Exception:  # noqa: BLE001
@@ -180,7 +185,9 @@ def verify(cand):
             it.update(ok=False, error=traceback.format_exc()[-400:])
         items.append(it)
     items += newton_items(C, cases)
+    items += newton_items(C, cases, basis="ldu")
     nk = ("newton_modes", "newton_paper", "newton_memo", "newton_dp", "newton_byvars", "newton_e2e")
+    lk = tuple("ldu" + k[len("newton"):] for k in nk)
     core = ("paper", "memo", "dp", "byvars", "e2e")       # the newton items only decide the newton flag
     flags = {
         "memo": all(i["ok"] for i in items if i["kind"] == "memo") and any(i["kind"] == "memo" for i in items),
@@ -189,9 +196,10 @@ def verify(cand):
         and any(i.get("chunks") for i in items),
         "leafvars": all(i["ok"] for i in items if i["kind"] == "byvars") and any(i["kind"] == "byvars" for i in items),
         "newton": all(i["ok"] for i in items if i["kind"] in nk) and all(any(i["kind"] == k for i in items) for k in nk),
+        "ldu": all(i["ok"] for i in items if i["kind"] in lk) and all(any(i["kind"] == k for i in items) for k in lk),
     }
     return {"ok": all(i["ok"] for i in items if i["kind"] in core), "implemented": True, "items": items, "flags": flags,
-            "counts": {k: sum(1 for i in items if i["kind"] == k) for k in ("paper", "memo", "dp", "byvars", "e2e") + nk}}
+            "counts": {k: sum(1 for i in items if i["kind"] == k) for k in ("paper", "memo", "dp", "byvars", "e2e") + nk + lk}}
 
 
 def score(cand, verified):

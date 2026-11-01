@@ -38,3 +38,17 @@ v2(b!) = b - (number of ones in the binary form of b). Weights then grow about t
 half as many modes per unit of weight, and the frozen model counts mode tuples with the constant cK = 1 instead of
 cK = 2 when the newton flag is on (appd_assembly_public.ck). The sums, the child tables and byvars_value need no
 change: they only read self.modes (dict P, y0, b, src, tgt, w, lin) and self.coef.
+
+## Round 6 (LDU): Cauchy LDU of the crossing block
+At a node t (i = v2(t), c = 2^(i+1), alpha = 2^(a+1)) the crossing entries of a packet are the pairs of slots
+(x, y) with the same bit i. Take one half h (slots with bit i = h) in the order x_k = c (k >> i) + (k mod 2^i)
++ h 2^i, k = 0 .. L/2 - 1, all L/2 positions whether occupied or not. On that block W_(x_k, x_l)(T) = G(T) K_kl
+with K_kl = 1/(T + x_k - x_l), a Cauchy matrix. Factor K = L diag(d) U over power series in z (Doolittle without
+pivoting: series_ldu). Then the crossing part of row k is G sum_(m <= k) L_km d_m (U X)_m, so mode m has the
+source form (U X)_m = sum_(l >= m) U_ml X_(x_l) (its coefficients are z-series) and, in row k >= m, the
+coefficient G L_km d_m. Closed forms (checked exactly): d_j = (1/T) prod_(m<j) -D^2/((T + D)(T - D)) with
+D = x_j - x_m, and L, U have entries in Z_(2)[[z]]. Hence v2(d_j) >= -i + 2b + 2 v2(b!) with b = j >> i, and with
+v2(G) >= a + 1 the weight of mode m is a + 1 - i + 2b + 2 v2(b!): twice the Newton growth. The frozen model uses
+cK = 1/2 when the ldu flag is on. Only the sharp weights exist for this basis. Because the source forms have series
+coefficients, every place that evaluates a form must multiply series (helpers lin_eval, src_mul, src_scale,
+src_zero in appd_core.py keep int-only forms on the exact old code path).

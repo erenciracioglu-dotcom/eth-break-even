@@ -1,4 +1,5 @@
 # Bulletin (latest first)
+- 2026-11-01 17:28:47 iter_appd 004 T17 attempt 1: ACCEPTED - third threshold 5,300 -> 2,670 (49.62% lower threshold)
 - 2026-11-01 02:47:45 iter_appd 003 T16 attempt 2: ACCEPTED - third threshold 5,404 -> 5,300 (1.92% lower threshold)
 - 2026-11-01 02:24:13 iter_appd 002 T16 attempt 1/3: REJECTED - no change to appd_params.py
 - 2026-11-01 01:29:13 iter_appd 001 T15 attempt 1: ACCEPTED - third threshold 201,458 -> 5,404 (97.32% lower threshold)

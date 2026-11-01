@@ -575,3 +575,47 @@ round 5 ends there.
   Newton implementation verifies every flag and scores third 2,670, occ3sat 10,993, ppsz 1,998, sharp3sat 652,
   brute 320; a deliberately wrong candidate (Newton forms with the power weights: right values, wrong weights)
   loses the newton flag on 18 checks.
+- T17 audit (head, 17:30): Qwen's change matches the specification; N_b is recomputed as the full product for each
+  b (quadratic in b, same values), the D.12 self-check uses bfun, count_e2e takes a, u and basis; appd_params passes
+  A.ck(flags) to its ranking replica. The agent met the stop condition within minutes, then spent the rest of the
+  hour on extra stress runs and was stopped at the 55-minute wall clock; the referee verified every flag including
+  newton and scored third 2,670, occ3sat 10,993, ppsz 1,998, sharp3sat 652, brute 320, equal to the head's own
+  Newton implementation.
+
+## Round 6: Cauchy LDU of the crossing block [appd-ldu]
+- Lemma [head proof, suggested by GPT-6 Astra]. Node t with i = v2(t) < u, c = 2^(i+1), alpha = 2^(a+1),
+  T = t + alpha z. For a packet whose pattern differs at coordinate i and a half h, order all L/2 slots with bit i = h
+  as x_k = c floor(k/2^i) + (k mod 2^i) + h 2^i and write b_k = floor(k/2^i), r_k = k mod 2^i. The crossing block is
+  W_(x_k, x_l)(T) = G(T) K_kl with K_kl = 1/(T + x_k - x_l), a Cauchy matrix (a_k = T + x_k, b_l = x_l), and
+  K = L diag(d) U with
+    d_j  = (1/T) prod_(m<j) -D_jm^2 / ((T + D_jm)(T - D_jm)),   D_jm = x_j - x_m,
+    L_kj = T/(T + x_k - x_j) prod_(m<j) [(x_k - x_m)/(x_j - x_m)] [(T + x_j - x_m)/(T + x_k - x_m)]   (k > j),
+    U_jl = T/(T + x_j - x_l) prod_(m<j) [(x_l - x_m)/(x_j - x_m)] [(T + x_m - x_j)/(T + x_m - x_l)]   (l > j).
+  Coefficientwise in z: L, U are in Z_(2)[[z]] and v2(d_j) >= -i + 2 b_j + 2 v2(b_j!).
+  Proof: v2(x_k - x_m) is < i when r_k != r_m and equals i + 1 + v2(b_k - b_m) when r_k = r_m, never i; so
+  v2(t + D) = min(i, v2(D)) for every difference D of the block, and v2(D) - min(i, v2(D)) = E(k, m) :=
+  [r_k = r_m] (1 + v2(b_k - b_m)). Hence v2(d_j(0)) = -i + 2 sum_(m<j) E(j, m) = -i + 2 sum_(b' < b_j) (1 + v2(b_j - b'))
+  = -i + 2 b_j + 2 v2(b_j!), and v2(L_kj(0)) = [v2(T) - min(i, v2(x_k - x_j))] + sum_(m<j) (E(k, m) - E(j, m)) >= 0:
+  for r_k = r_j the sum is v2(binom(b_k, b_j)) >= 0; for r_k != r_j the predecessors of j in class r_k include all
+  b' < b_j, giving b_j + v2(b_k!/(b_k - b_j)!) >= b_j + v2(b_j!). U is the same with k replaced by l. Every factor
+  (t + D) + alpha z has its constant term of valuation <= i < a + 1, so its inverse series has coefficients of
+  valuation >= -v2(t + D); the bounds at z = 0 therefore hold for every z-coefficient. QED.
+- Consequence: the crossing part of row k is G sum_(m<=k) L_km d_m (U X)_m, so mode m has the source form
+  (U X)_m = sum_(l>=m) U_ml X_(x_l) (2-adic integer z-series coefficients, reading only the source group's column
+  bits) and weight a + 1 - i + 2b + 2 v2(b!) with b = floor(m/2^i): the same multiplicities as the Newton tiles,
+  twice the growth, so cK = 1/2. The factorisation is of the full block (all L/2 positions); factoring only the
+  occupied sub-block loses integrality (a missing predecessor can make L non-integral), so sparse packets carry
+  modes for unoccupied positions. Asymptotically the packets are full (padding <= delta M), so this costs nothing
+  there; on the toys, whose packets are nearly empty, LDU can have more tuples than Newton at low precision. The
+  series-valued source forms enter the child networks of D.4.6 as series-valued packet tensors, which the recursion
+  already handles (see appd-twolevel).
+- Head checks: ldu_closed.py (closed forms equal exact Doolittle over Q[[z]] mod z^q and every pivot valuation equals
+  -i + 2b + 2 v2(b!), 76 blocks at a = 2..5, no mismatch); appd_toy.py basis = 'ldu' (md5 51d503b7): 71 node
+  instances at a = 2..4 (D.12, the weights and the integrality of L and U asserted coefficientwise; node values by
+  the three orders equal (D.8); 630 child networks and 519 by-variables leaves over the three bases), 63 end-to-end
+  exact counts at a = 2, 3 (u = 1, 2), all correct; power and Newton outputs byte-identical. Tuple counts for the
+  three weight rules on full tiles (ldu_partition.py): log N(LDU)/log N(Newton) = 0.720 at p = 4,000, falling
+  towards 1/sqrt 2.
+- referee_appd version 3: the newton items run a second time with basis = 'ldu' and sharp weights (same hidden
+  cases); they decide only the new flag ldu (cK = 1/2). The head's LDU implementation verifies every flag and scores
+  third 1,370, occ3sat 5,518, ppsz 1,044, sharp3sat 368, brute 197.

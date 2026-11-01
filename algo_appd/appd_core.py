@@ -69,6 +69,66 @@ def ser_inv(a, q):
     return inv
 
 
+def lin_eval(lin, bit, q, m):
+    """Value of a source form at column bits: an int when every coefficient is an int, else a series mod m."""
+    if all(isinstance(c, int) for c, _ in lin):
+        return sum(c * bit(w2) for c, w2 in lin)
+    out = [0] * q
+    for c, w2 in lin:
+        if bit(w2):
+            if isinstance(c, int):
+                out[0] = (out[0] + c) % m
+            else:
+                out = [(x + y) % m for x, y in zip(out, c)]
+    return out
+
+
+def src_mul(f, v, e, q, m):
+    """f * v^e for f, v ints or series mod m (the result stays an int while both are ints)."""
+    if isinstance(f, int) and isinstance(v, int):
+        return f * v ** e
+    fs = [f % m] + [0] * (q - 1) if isinstance(f, int) else f
+    vs = [v % m] + [0] * (q - 1) if isinstance(v, int) else v
+    for _ in range(e):
+        fs = ps_mul_mod(fs, vs, q, m)
+    return fs
+
+
+def src_scale(f, ser, q, m):
+    """f * ser for an int or series f."""
+    if isinstance(f, int):
+        return [(f * c) % m for c in ser]
+    return ps_mul_mod(f, ser, q, m)
+
+
+def src_zero(f):
+    return (f == 0) if isinstance(f, int) else not any(f)
+
+
+def series_ldu(K, q):
+    """K = L diag(d) U over Q[[z]] mod z^q (unit triangular L, U, no pivoting); entries are lists of q Fractions."""
+    n = len(K)
+    A = [[list(K[r][s]) for s in range(n)] for r in range(n)]
+    unit = [Fr(1)] + [Fr(0)] * (q - 1)
+    Lm = [[None] * n for _ in range(n)]
+    Um = [[None] * n for _ in range(n)]
+    d = []
+    for k in range(n):
+        piv = A[k][k]
+        assert piv[0] != 0, "zero pivot"
+        pinv = ser_inv(piv, q)
+        d.append(piv)
+        Lm[k][k] = Um[k][k] = unit
+        for r in range(k + 1, n):
+            Lm[r][k] = ser_mul(A[r][k], pinv, q)
+        for s in range(k + 1, n):
+            Um[k][s] = ser_mul(A[k][s], pinv, q)
+        for r in range(k + 1, n):
+            for s in range(k + 1, n):
+                A[r][s] = [x - y for x, y in zip(A[r][s], ser_mul(Lm[r][k], A[k][s], q))]
+    return Lm, d, Um
+
+
 def ps_mul_mod(a, b, q, m):
     c = [0] * q
     for i in range(q):

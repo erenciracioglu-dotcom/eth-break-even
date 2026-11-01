@@ -1,18 +1,20 @@
-"""FROZEN Appendix D assembly, referee_appd version 2 (2026-11-01, round 6: adds the newton flag).
+"""FROZEN Appendix D assembly, referee_appd version 3 (2026-11-01, round 6: newton and ldu flags).
 
 Cost exponent e (cost ~ 2^(e n), lam = log2 n, polynomial factors ignored) of the tensor-contraction algorithm
 of Appendix D (Theorem D.1) on 3-CNF with at most three occurrences per variable, with the head-audited steps of
 state/claims.md: appd-tight, appd-bernstein, appd-memo, appd-modedp, appd-chunks, appd-perclass, appd-leafvars,
-appd-labelfree, appd-newton. All wire counts are per n.
+appd-labelfree, appd-newton, appd-ldu. All wire counts are per n.
 
 params = {"levels": L in 1..3, "r": [r_0..r_{L-1}] groups per level, "u": [u_d] retained valuation levels
 (integers >= 2), "a": [a_d] packet coordinates (L_d = 2^a_d, integers), "delta": balance tolerance,
-"Lc": chunk size, and boolean flags memo, modedp, chunks, perclass, leafvars, labelfree, newton}.
-Flags memo, modedp, chunks, leafvars and newton count only when the verify gate confirmed the agent's code for
-them (see referee.py); perclass and labelfree are accounting facts (audited) and need no code.
+"Lc": chunk size, and boolean flags memo, modedp, chunks, perclass, leafvars, labelfree, newton, ldu}.
+Flags memo, modedp, chunks, leafvars, newton and ldu count only when the verify gate confirmed the agent's code
+for them (see referee.py); perclass and labelfree are accounting facts (audited) and need no code.
 newton (appd-newton): crossing entries expanded in binomial moments, source forms sum_j binom(j, b) X_(y0 + c j);
 the weight of mode b grows by v2(b!) >= b - log2(b + 1), so a class has about W/2 modes of weight <= W instead of W:
 the mode-tuple constant cK = 2 of the power basis becomes cK = 1 (ck() below).
+ldu (appd-ldu): the crossing block of each packet half is factored as a Cauchy matrix K = L D U over Z_(2)[[z]];
+mode m = (U X)_m has weight a + 1 - i + 2b + 2 v2(b!) with b = floor(m/2^i), twice the Newton growth: cK = 1/2.
 """
 import math
 
@@ -20,8 +22,8 @@ LN2 = math.log(2.0)
 TARGETS = {"third": 1.0 / 3.0, "occ3sat": math.log2(1.1199), "ppsz": math.log2(1.307031578),
            "sharp3sat": math.log2(1.637), "brute": 1.0}
 PRIMARY = "third"            # fair counting competitor for this class: 2^(n/3) (pathwidth DP)
-FLAGS = ("memo", "modedp", "chunks", "perclass", "leafvars", "labelfree", "newton")
-CODE_FLAGS = ("memo", "modedp", "chunks", "leafvars", "newton")
+FLAGS = ("memo", "modedp", "chunks", "perclass", "leafvars", "labelfree", "newton", "ldu")
+CODE_FLAGS = ("memo", "modedp", "chunks", "leafvars", "newton", "ldu")
 
 
 def eps_dp(r):
@@ -42,7 +44,9 @@ def tup(u, f, dm, cK=2.0):
 
 
 def ck(params):
-    """Mode-tuple constant: modes per unit weight per crossing class times 2 (power basis 2, Newton 1)."""
+    """Mode-tuple constant: modes per unit weight per crossing class times 2 (power 2, Newton 1, Cauchy LDU 1/2)."""
+    if params.get("ldu"):
+        return 0.5
     return 1.0 if params.get("newton") else 2.0
 
 
