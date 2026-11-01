@@ -1173,6 +1173,113 @@ def byvars_value(ne, g, gamma):
     return total, len(vars_), nsplit_max
 
 
+# ---- round 8 (appd-guarded): Astra's guarded Lagrange deformation
+# Virtual packet grid {0..Q-1}, Q = 2^a; real slots only in [H, Q - H), H = 2^(a - kappa); labels on the evaluated
+# levels 0..u-1 (u <= a - kappa); W~_xy(T) = l_y(x + T), the Lagrange basis polynomial of y on the grid evaluated at
+# x + T (degree Q - 1 instead of 2Q - 1); nodes t in [-H, H) with v2(t) < u; local coordinate T = t + alpha z with
+# alpha = 2Q as before. At a node the crossing block of a packet half is diag(row factors) * Cauchy * diag(odd units):
+# W~_xy(t + alpha z) = [2^-v P_Q(x + t + alpha z)] * 1/(t + alpha z + x - y) * [2^v / P_Q'(y)], v = Q - 1 - a.
+
+
+class GuardedPacking:
+    """Packing with guard slots: same interface as Packing (a, L, S, packets, where, row_sym, col_sym) plus
+    guarded = True, u, kappa, H and the deformation Wfrac(x, y), rowfactor(x, t, alpha, q), colunit(y)."""
+    guarded = True
+
+    def __init__(self, net, labels, a, u, kappa):
+        assert kappa >= 2 and 1 <= u <= a - kappa, "need kappa >= 2 and 1 <= u <= a - kappa"
+        self.a, self.L, self.u, self.kappa = a, 1 << a, u, kappa
+        Q = self.L
+        H = self.H = 1 << (a - kappa)
+        self.S = list(range(-H, H))
+        highs = list(range(H >> u, (Q - H) >> u))
+        by = {}
+        for w, (rv, cv) in enumerate(net.wires):
+            rl, cl = labels[rv], labels[cv]
+            pat = tuple((min(rl[i], cl[i]), max(rl[i], cl[i])) for i in range(u))
+            ori = tuple(0 if rl[i] <= cl[i] else 1 for i in range(u) if rl[i] != cl[i])
+            by.setdefault(pat, {}).setdefault(ori, []).append(w)
+        self.packets, self.where = [], {}
+        for pat, d in sorted(by.items()):
+            uneq = [i for i in range(u) if pat[i][0] != pat[i][1]]
+            eq = [i for i in range(u) if pat[i][0] == pat[i][1]]
+            ne_ = len(eq)
+            cap = (1 << ne_) * len(highs)
+            npk = max((len(ws) + cap - 1) // cap for ws in d.values())
+            for k in range(npk):
+                pkd = dict(pat=pat, wire_at={})
+                for ori, ws in sorted(d.items()):
+                    for c, w in enumerate(ws[k * cap:(k + 1) * cap]):
+                        s = 0
+                        for idx, i in enumerate(uneq):
+                            s |= ori[idx] << i
+                        ce, ch = c % (1 << ne_), c >> ne_
+                        for idx, i in enumerate(eq):
+                            s |= ((ce >> idx) & 1) << i
+                        s |= highs[ch] << u
+                        assert H <= s < Q - H and s not in pkd["wire_at"]
+                        pkd["wire_at"][s] = w
+                        self.where[w] = (len(self.packets), s)
+                self.packets.append(pkd)
+        for w, (rv, cv) in enumerate(net.wires):
+            P, s = self.where[w]
+            for i in range(u):
+                assert self.row_sym(P, s, i) == labels[rv][i]
+                assert self.col_sym(P, s, i) == labels[cv][i]
+        self.dens = {}
+        for y in range(Q):
+            dd = 1
+            for j in range(Q):
+                if j != y:
+                    dd *= (y - j)
+            self.dens[y] = dd
+        self.v = Q - 1 - a
+        assert all(v2(dd) == self.v for dd in self.dens.values())
+        self._wc, self._rc = {}, {}
+
+    def row_sym(self, P, x, i):
+        lo, hi = self.packets[P]["pat"][i]
+        return lo if lo == hi or not (x >> i) & 1 else hi
+
+    def col_sym(self, P, y, i):
+        lo, hi = self.packets[P]["pat"][i]
+        return lo if lo == hi else (hi if not (y >> i) & 1 else lo)
+
+    def Wfrac(self, x, y):
+        """W~_xy(T) = l_y(x + T) = prod_(j != y) (T + x - j) / P_Q'(y): Fraction coefficients, degree Q - 1."""
+        if (x, y) not in self._wc:
+            p = [1]
+            for j in range(self.L):
+                if j != y:
+                    p = poly_mul(p, [x - j, 1])
+            self._wc[(x, y)] = [Fr(c, self.dens[y]) for c in p]
+        return self._wc[(x, y)]
+
+    def rowfactor(self, x, t, alpha, q):
+        """2^-v prod_(j < Q) (t + alpha z + x - j) mod z^q (exact; coefficientwise divisible by 2^(a+1))."""
+        key = (x, t, q)
+        if key not in self._rc:
+            p = [1]
+            for j in range(self.L):
+                p = poly_mul(p, [x - j, 1])
+            self._rc[key] = [c / (1 << self.v) for c in taylor_at([Fr(c) for c in p], t, alpha, q)]
+        return self._rc[key]
+
+    def colunit(self, y):
+        """The odd unit 2^v / P_Q'(y)."""
+        return Fr(1 << self.v, self.dens[y])
+
+
+def guarded_multiplicities(pk, h):
+    """Tapered multiplicities on the guarded node grid: q_t = h (u - v2(t)) for t in [-H, H), t != 0, v2(t) < u."""
+    return {t: h * (pk.u - v2(t)) for t in pk.S if t and v2(t) < pk.u}
+
+
+def guarded_h(M, pk):
+    """Smallest h with sum_t q_t > M (Q - 1), the degree of F~."""
+    return M * (pk.L - 1) // sum((pk.H >> i) * (pk.u - i) for i in range(pk.u)) + 1
+
+
 IMPLEMENTED = True      # set to True once every function below works
 
 

@@ -1,4 +1,4 @@
-"""FROZEN gates of referee_appd version 4 (round 7). Usage: python appd_gates.py <candidate_dir> <verify|score> <out_json> [verified_flags_json]
+"""FROZEN gates of referee_appd version 5 (round 8). Usage: python appd_gates.py <candidate_dir> <verify|score> <out_json> [verified_flags_json]
 
 verify: the agent's appd_core.py against the frozen reference appd_ref.py on hidden cases (cases_appd.json):
   node   - node_value(method = paper, memo, dp) equals F(t + alpha z) mod (2^p, z^q) from the frozen direct
@@ -19,10 +19,15 @@ verify: the agent's appd_core.py against the frozen reference appd_ref.py on hid
            cases (ldu basis), its per-step block shapes and the shapes of every matmul call equal the
            reference shell structure and its max_enum equals the reference dp count; count_e2e(...,
            basis="ldu", method="mm") equals the brute-force count on the newton end-to-end cases.
+  guarded (version 5; decides only the guarded flag) - on hidden guarded cases (reference GuardedPacking with
+           virtual size 2^a, guards 2^(a - kappa), labels on u levels) NodeExpansion(..., sharp, ldu) has exactly
+           the reference modes, weights, series source forms and coefficient residues; node_value(method dp
+           and mm) equals (D.8) with the guarded deformation and the reference dp count; byvars on chunk
+           networks; count_e2e(..., guarded=True, kappa) equals the brute-force count.
   direct_taylor_mod and F_poly of the agent module are blocked while it runs.
   Verified flags: memo (every memo item), modedp (every dp item), chunks (every item on a chunk network and every
   chunk end-to-end count), leafvars (every byvars item), newton (every newton item), ldu (every ldu item),
-  shellmm (every mm item).
+  shellmm (every mm item), guarded (every gd item).
   With IMPLEMENTED = False
   nothing is tried and no code flag is verified (the gate still passes).
 score: break-even sizes from the agent's appd_params.choose_params(lam, target), re-scored here with the frozen
@@ -230,6 +235,85 @@ def mm_items(C, cases):
     return items
 
 
+GUARD_KINDS = ("gd_modes", "gd_dp", "gd_mm", "gd_byvars", "gd_e2e")
+
+
+def guarded_items(C, cases):
+    """Round 8 (guarded): on the hidden guarded cases the agent's NodeExpansion with the reference GuardedPacking has
+    exactly the reference modes (weights, series source forms with the odd units, coefficient residues with the row
+    factors); node_value(method dp and mm) equals (D.8) with the guarded deformation and the reference dp count;
+    byvars on chunk networks; count_e2e(..., guarded=True, kappa) equals the brute-force count."""
+    if not callable(getattr(C, "GuardedPacking", None)):
+        return [dict(kind=k, ok=False, error="appd_core has no GuardedPacking (round 8 not implemented)")
+                for k in GUARD_KINDS]
+    items = []
+    for cs in cases.get("guarded_node", []):
+        rng = random.Random(cs["seed"])
+        n_, cls, net, labels, pk = R.setup_g(rng, cs["n"], cs["m"], cs["a"], cs["u"], cs["kappa"], cs["r"],
+                                             chunks=cs["chunks"], Lc=cs["Lc"])
+        M = len(net.wires)
+        C._WIREMAP.update({k: v for k, v in R._WIREMAP.items() if k[0] == id(net)})
+        nodes = [s for s in pk.S if s and R.v2(s) < pk.u]
+        t = nodes[int(cs["tpick"] * len(nodes)) % len(nodes)]
+        p, q = cs["p"], cs["q"]
+        direct = R.direct_taylor_mod_g(net, pk, t, p, q)
+        ref = R.NodeExpansionG(net, pk, labels, t, p, q)
+        _, ref_enum, _ = ref.sum_dp()
+        base = dict(seed=cs["seed"], chunks=cs["chunks"], a=cs["a"], u=cs["u"], kappa=cs["kappa"], M=M, t=t, p=p, q=q,
+                    modes=len(ref.modes))
+        it = dict(base, kind="gd_modes")
+        ne = None
+        try:
+            ne = C.NodeExpansion(net, pk, labels, t, p, q, weights="sharp", basis="ldu")
+            mine, want = _mode_table(ne), _mode_table(ref)
+            it["ok"] = mine == want
+            if not it["ok"]:
+                it["diff"] = str(sorted(set(mine) ^ set(want)))[:200] or "same modes, different weights/forms/coefficients"
+        except Exception:  # noqa: BLE001
+            it.update(ok=False, error=traceback.format_exc()[-400:])
+        items.append(it)
+        for method in ("dp", "mm"):
+            it = dict(base, kind="gd_" + method)
+            try:
+                ser, st = C.node_value(net, pk, labels, t, p, q, weights="sharp", method=method, basis="ldu")
+                ok = [int(x) % (1 << p) for x in ser] == direct and int(st.get("max_enum", -1)) == ref_enum
+                it.update(ok=bool(ok), max_enum=[st.get("max_enum"), ref_enum])
+            except Exception:  # noqa: BLE001
+                it.update(ok=False, error=traceback.format_exc()[-400:])
+            items.append(it)
+        if cs["chunks"] and ne is not None:
+            for g in ref.r_groups[:2]:
+                tab = ref.group_table(g)
+                for gm in sorted(tab.keys())[:3]:
+                    it = dict(base, kind="gd_byvars", g=g)
+                    try:
+                        bv = C.byvars_value(ne, g, dict(gm))[0]
+                        it["ok"] = [int(x) % (1 << p) for x in bv] == tab[gm]
+                    except Exception:  # noqa: BLE001
+                        it.update(ok=False, error=traceback.format_exc()[-400:])
+                    items.append(it)
+    modes_bad = any(i["kind"] == "gd_modes" and not i["ok"] for i in items)
+    for cs in cases.get("guarded_e2e", []):
+        rng = random.Random(cs["seed"])
+        n = cs["n"]
+        cls = R.random_formula(n, cs["m"], rng)
+        it = dict(kind="gd_e2e", seed=cs["seed"], chunks=cs["chunks"], a=cs["a"], u=cs["u"], kappa=cs["kappa"],
+                  method=cs["method"])
+        if modes_bad:
+            it.update(ok=False, error="not run: the candidate's guarded modes differ from the reference")
+            items.append(it)
+            continue
+        try:
+            got = C.count_e2e(n, cls, chunks=cs["chunks"], Lc=cs["Lc"], r=cs["r"], seed=cs["seed"], a=cs["a"],
+                              u=cs["u"], basis="ldu", method=cs["method"], guarded=True, kappa=cs["kappa"])
+            want_c = R.count_sat(n, cls)
+            it.update(ok=int(got) == want_c, got=int(got), want=want_c)
+        except Exception:  # noqa: BLE001
+            it.update(ok=False, error=traceback.format_exc()[-400:])
+        items.append(it)
+    return items
+
+
 def verify(cand):
     sys.path.insert(0, cand)
     import appd_core as C  # noqa: E402
@@ -296,9 +380,11 @@ def verify(cand):
     items += newton_items(C, cases)
     items += newton_items(C, cases, basis="ldu")
     items += mm_items(C, cases)
+    items += guarded_items(C, cases)
     nk = ("newton_modes", "newton_paper", "newton_memo", "newton_dp", "newton_byvars", "newton_e2e")
     lk = tuple("ldu" + k[len("newton"):] for k in nk)
     mk = ("mm_matmul", "mm_node", "mm_e2e")
+    gk = GUARD_KINDS
     core = ("paper", "memo", "dp", "byvars", "e2e")       # the newton items only decide the newton flag
     flags = {
         "memo": all(i["ok"] for i in items if i["kind"] == "memo") and any(i["kind"] == "memo" for i in items),
@@ -309,9 +395,10 @@ def verify(cand):
         "newton": all(i["ok"] for i in items if i["kind"] in nk) and all(any(i["kind"] == k for i in items) for k in nk),
         "ldu": all(i["ok"] for i in items if i["kind"] in lk) and all(any(i["kind"] == k for i in items) for k in lk),
         "shellmm": all(i["ok"] for i in items if i["kind"] in mk) and all(any(i["kind"] == k for i in items) for k in mk),
+        "guarded": all(i["ok"] for i in items if i["kind"] in gk) and all(any(i["kind"] == k for i in items) for k in gk),
     }
     return {"ok": all(i["ok"] for i in items if i["kind"] in core), "implemented": True, "items": items, "flags": flags,
-            "counts": {k: sum(1 for i in items if i["kind"] == k) for k in ("paper", "memo", "dp", "byvars", "e2e") + nk + lk + mk}}
+            "counts": {k: sum(1 for i in items if i["kind"] == k) for k in ("paper", "memo", "dp", "byvars", "e2e") + nk + lk + mk + gk}}
 
 
 def score(cand, verified):

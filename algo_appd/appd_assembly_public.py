@@ -1,14 +1,15 @@
-"""FROZEN Appendix D assembly, referee_appd version 4 (2026-11-01, round 7: shellmm flag).
+"""FROZEN Appendix D assembly, referee_appd version 5 (2026-11-01, round 8: guarded flag).
 
 Cost exponent e (cost ~ 2^(e n), lam = log2 n, polynomial factors ignored) of the tensor-contraction algorithm
 of Appendix D (Theorem D.1) on 3-CNF with at most three occurrences per variable, with the head-audited steps of
 state/claims.md: appd-tight, appd-bernstein, appd-memo, appd-modedp, appd-chunks, appd-perclass, appd-leafvars,
-appd-labelfree, appd-newton, appd-ldu, appd-shellmm. All wire counts are per n.
+appd-labelfree, appd-newton, appd-ldu, appd-shellmm, appd-guarded. All wire counts are per n.
 
 params = {"levels": L in 1..3, "r": [r_0..r_{L-1}] groups per level, "u": [u_d] retained valuation levels
 (integers >= 2), "a": [a_d] packet coordinates (L_d = 2^a_d, integers), "delta": balance tolerance,
 "Lc": chunk size, and boolean flags memo, modedp, chunks, perclass, leafvars, labelfree, newton, ldu,
-shellmm}. Flags memo, modedp, chunks, leafvars, newton, ldu and shellmm count only when the verify gate confirmed the agent's code
+shellmm, guarded} plus, with guarded, "kappa": [kappa_d] (guard width H_d = 2^(a_d - kappa_d), 2 <= kappa_d <= 30).
+Flags memo, modedp, chunks, leafvars, newton, ldu, shellmm and guarded count only when the verify gate confirmed the agent's code
 for them (see referee.py); perclass and labelfree are accounting facts (audited) and need no code.
 newton (appd-newton): crossing entries expanded in binomial moments, source forms sum_j binom(j, b) X_(y0 + c j);
 the weight of mode b grows by v2(b!) >= b - log2(b + 1), so a class has about W/2 modes of weight <= W instead of W:
@@ -18,6 +19,10 @@ mode m = (U X)_m has weight a + 1 - i + 2b + 2 v2(b!) with b = floor(m/2^i), twi
 shellmm (appd-shellmm): every step of the group-by-group mode sum is a set of block matrix products, one per
 triple of exact weights (shells) of the index sets x (processed-later), y (processed-current), z (current-later);
 with Strassen on square blocks the mode fraction eps_dp(r) becomes eps_mm(r) (f_mm below, omega = log2 7).
+guarded (appd-guarded, GPT-6 Astra): packets are virtual grids of Q = 2^a slots with empty guards of H = Q/2^kappa
+slots at both ends and the deformation W~_xy(T) = l_y(x + T) (Lagrange basis on the grid, degree Q - 1 instead of
+2Q - 1); nodes in [-H, H). The LDU modes and weights are unchanged, the Hermite loss halves and the packets hold
+N = Q - 2H wires: K p scales by gamma_guard(a, kappa); headroom and inherited precision by need_bits, next_lp.
 """
 import math
 
@@ -25,8 +30,8 @@ LN2 = math.log(2.0)
 TARGETS = {"third": 1.0 / 3.0, "occ3sat": math.log2(1.1199), "ppsz": math.log2(1.307031578),
            "sharp3sat": math.log2(1.637), "brute": 1.0}
 PRIMARY = "third"            # fair counting competitor for this class: 2^(n/3) (pathwidth DP)
-FLAGS = ("memo", "modedp", "chunks", "perclass", "leafvars", "labelfree", "newton", "ldu", "shellmm")
-CODE_FLAGS = ("memo", "modedp", "chunks", "leafvars", "newton", "ldu", "shellmm")
+FLAGS = ("memo", "modedp", "chunks", "perclass", "leafvars", "labelfree", "newton", "ldu", "shellmm", "guarded")
+CODE_FLAGS = ("memo", "modedp", "chunks", "leafvars", "newton", "ldu", "shellmm", "guarded")
 
 
 def eps_dp(r):
@@ -64,6 +69,30 @@ def eps_mode(r, fl):
     return eps_mm(r) if fl.get("shellmm") else eps_dp(r)
 
 
+def gamma_guard(a, kappa):
+    """appd-guarded: ratio of K p (modes times precision) of the guarded Lagrange deformation against the paper's
+    Cauchy deformation at packet size Q = 2^a and guards H = Q/2^kappa: (Q/N)(Q - 1)/(2Q - 1), N = Q - 2H."""
+    return (1.0 / (1.0 - 2.0 ** (1 - kappa))) * (1.0 - 2.0 ** -a) / (2.0 - 2.0 ** -a)
+
+
+def need_bits(lp_in, M, a, u, kappa=None):
+    """log2 of the headroom 2^(a - u + 1) a level needs. Paper (appd-tight item 2): (p_in + 4M(a + 1))(u - 1)/(4M).
+    Guarded: h' ~ 2^(kappa-1) M/(u - 1) and D'_t = 2^(a - kappa - i), so the slack 4 h' D' at the top level is
+    2M 2^(a-u+1)/(u - 1) and the evaluation loss is below 2^(kappa+1) M (a + 1): (p_in + 2^(kappa+1) M (a+1))(u-1)/(2M)."""
+    if kappa is None:
+        return lse2(lp_in, math.log2(4 * M * (a + 1))) + math.log2(u - 1) - math.log2(4 * M)
+    return lse2(lp_in, math.log2(2.0 ** (kappa + 1) * M * (a + 1))) + math.log2(u - 1) - math.log2(2 * M)
+
+
+def next_lp(lp_in, M, a, u, kappa=None):
+    """log2(precision of the worst node (i = 0) / n), which the children of this level inherit: 6 h 2^a for the
+    paper's deformation, 6 h' H = 3 h 2^a for the guarded one (h = M/(u - 1)), plus p_in and the evaluation loss."""
+    h = M / (u - 1)
+    if kappa is None:
+        return lse2(math.log2(6 * h) + a, lp_in, math.log2(4 * M * (a + 1)))
+    return lse2(math.log2(3 * h) + a, lp_in, math.log2(2.0 ** (kappa + 1) * M * (a + 1)))
+
+
 def tup(u, f, dm, cK=2.0):
     """log2(#mode tuples) per unit M/sqrt(u): K = cK (1 + dm) f M / D per weight, p_t = 6 h D, h = M/(u - 1)."""
     return (2 * math.pi / LN2) * math.sqrt((u / (u - 1.0)) * cK * (1 + dm) * f)
@@ -99,6 +128,16 @@ def exponent_of(params, lam):
         return _bad(f"malformed params: {exc}")
     if not 1 <= L <= 3 or not (len(r) == len(u) == len(a) == L):
         return _bad("levels must be 1..3 with one r, u, a per level")
+    kap = [None] * L
+    if fl["guarded"]:
+        try:
+            kap = [int(x) for x in params["kappa"]]
+        except Exception:  # noqa: BLE001
+            return _bad("guarded needs an integer kappa per level")
+        if len(kap) != L or not all(2 <= k <= 30 for k in kap):
+            return _bad("kappa must have one value in [2, 30] per level")
+        if not fl["ldu"]:
+            return _bad("guarded needs ldu (its modes are the Cauchy LDU modes)")
     if lam < 64:
         return _bad("lam below 64")
     if not 1e-4 <= delta <= 0.25:
@@ -116,6 +155,8 @@ def exponent_of(params, lam):
             return _bad("r outside [2, 4096]")
         if not 2 <= u[d] < a[d] <= 10 ** 7:
             return _bad("need 2 <= u < a <= 1e7")
+        if kap[d] is not None and u[d] > a[d] - kap[d]:
+            return _bad("guards need u <= a - kappa")
     M = [(1.0 + 1.0 / Lc) if fl["chunks"] else 3.0]
     for d in range(L):
         M.append(M[-1] * 2 * (1 + delta) / r[d])
@@ -123,12 +164,11 @@ def exponent_of(params, lam):
     # precision headroom (appd-tight item 2): (p_in + 4 M (a + 1)) / 2^(a - u + 1) <= 4 h, h = M/(u - 1)
     lp_in = 0.0                                   # root: P0 = n + 1, i.e. log2(p_in / n) = 0
     for d in range(L):
-        need = lse2(lp_in, math.log2(4 * M[d] * (a[d] + 1))) + math.log2(u[d] - 1) - math.log2(4 * M[d])
+        need = need_bits(lp_in, M[d], a[d], u[d], kap[d])
         if need > a[d] - u[d] + 1:
             return _bad(f"precision headroom at depth {d}: need a - u + 1 >= {need:.2f}")
-        h = M[d] / (u[d] - 1)
         # this call's worst-node precision (i = 0) is what its children inherit
-        lp_in = lse2(math.log2(6 * h) + a[d], lp_in, math.log2(4 * M[d] * (a[d] + 1)))
+        lp_in = next_lp(lp_in, M[d], a[d], u[d], kap[d])
     # labels (appd-bernstein, appd-perclass, appd-labelfree)
     for d in range(L):
         lab = u[d] if fl["labelfree"] else a[d]
@@ -153,9 +193,10 @@ def exponent_of(params, lam):
     worst, cum, terms = 0.0, 0.0, []
     for d in range(L):
         x = M[d] / math.sqrt(u[d])
-        arith = tup(u[d], eps_mode(r[d], fl), dm, cK) * x
+        cKd = cK * (gamma_guard(a[d], kap[d]) if kap[d] else 1.0)
+        arith = tup(u[d], eps_mode(r[d], fl), dm, cKd) * x
         if fl["memo"]:
-            child = tup(u[d], f_grp(r[d]), dm, cK) * x
+            child = tup(u[d], f_grp(r[d]), dm, cKd) * x
             worst = max(worst, cum + arith)
             terms.append(dict(arith=cum + arith, child=child))
             cum += child

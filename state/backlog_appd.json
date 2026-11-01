@@ -126,7 +126,37 @@
   "after": [
    "T18"
   ],
-  "status": "running",
+  "status": "done",
+  "priority": 40,
+  "max_attempts": 3,
+  "steps": 70,
+  "attempts": 1,
+  "result": "third threshold 1,370 -> 1,280 (6.57% lower threshold)",
+  "done_iter": 6
+ },
+ {
+  "id": "T21",
+  "title": "Guarded Lagrange deformation (guarded flag, kappa per level)",
+  "kind": "score",
+  "files": [
+   "appd_core.py",
+   "appd_params.py"
+  ],
+  "spec": "Add the guarded Lagrange deformation (appd-guarded; NOTES.md, section 'Round 8', has the math) to appd_core.py and appd_params.py. GuardedPacking, guarded_multiplicities and guarded_h are already in appd_core.py (head code just above IMPLEMENTED; do not change them). Everything that exists must keep working exactly as now.\n\n1. NodeExpansion.__init__: let guarded = getattr(pk, \"guarded\", False); for a guarded packing assert basis == \"ldu\" and weights == \"sharp\". (a) For a guarded packing build self.Wser only for pairs of real slots: for every packet P and every x, y in pkd[\"wire_at\"], self.Wser[(P, x, y)] = taylor_at(pk.Wfrac(x, y), t, self.alpha, q); keep the old loop for ordinary packings. (b) In the LDU branch do not build Cpoly or G for a guarded packing (its pk.S is the node grid, not the set of differences). Instead, for the source forms use the coefficients [c * pk.colunit(xk[k]) for c in Um[m][k]] (and assert their integrality instead of Um's), and for the coefficient of mode m in row k use the row factor pk.rowfactor(xk[k], t, self.alpha, q) in place of G: cc = ser_mul(ser_mul(R_k, d[m], q), Lm[k][m], q). Everything else (the positions xk over the full virtual half, the weights a + 1 - i + 2b + 2 v2(b!), the weight asserts, the D.12 check) stays as it is.\n2. direct_taylor_mod: for a guarded packing use taylor_at(pk.Wfrac(x, y), t, alpha, q) instead of the Wpoly / Cp0 series.\n3. count_e2e: new last parameters guarded=False, kappa=2. With guarded=True the labels have u coordinates (tuple(rng.randrange(r) for _ in range(u))), pk = GuardedPacking(net, labels, a, u, kappa) and qm = guarded_multiplicities(pk, guarded_h(M, pk)); the rest (precision p + loss_bits(qm, a, t) per node, NodeExpansion with weights \"sharp\" and the given basis, sum_dp or sum_mm by method, recover(data, qm, a), the 2^unused factor) is unchanged.\n4. appd_params.py: add module constants GUARD_KAPPA = 10 and _KAPPA = None. In choose_params add guarded=False to the flags and guarded=True to the USE_CODE_FLAGS update, then (after those lines, with 'global _KAPPA') set _KAPPA = GUARD_KAPPA if flags[\"guarded\"] else None. Use the public assembly's helpers with kappa = _KAPPA wherever precision is computed: in min_a start from a = max(a, u + (_KAPPA or 0)) and loop while A.need_bits(lp_in, M, a, u, _KAPPA) > a - u + 1; replace every inherited-precision update (the A.lse2(math.log2(6 * ...) + a, lp, math.log2(4 * M * (a + 1))) expressions in rank_e, make and build) by A.next_lp(lp, M, a, u, _KAPPA) with that level's M, a and u; in rank_e multiply cK by A.gamma_guard(ad, _KAPPA) when _KAPPA is set (for both the arithmetic and the child term); in make add kappa=[_KAPPA] * levels to the returned params when _KAPPA is set.\nThe referee checks, with its own GuardedPacking objects on hidden cases, that NodeExpansion has exactly the reference modes, source forms and coefficients, that node_value (methods dp and mm) equals the direct evaluation, the by-variables leaves on chunk networks, and exact end-to-end counts with guarded=True; then it scores with the guarded flag (kappa from your params).",
+  "stop": "smoke_appd.py prints SMOKE OK, then NEWTON OK, then LDU OK, then MM OK, then GUARDED OK",
+  "needs_flags": [
+   "memo",
+   "modedp",
+   "chunks",
+   "newton",
+   "ldu",
+   "shellmm",
+   "guarded"
+  ],
+  "after": [
+   "T20"
+  ],
+  "status": "open",
   "priority": 40,
   "max_attempts": 3,
   "steps": 70

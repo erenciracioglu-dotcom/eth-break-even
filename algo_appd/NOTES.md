@@ -70,3 +70,20 @@ shell then costs 2^(log N_x + log N_z + (omega - 2) log N_y) (y the smallest ind
 eps_mm(r) = max_k 2[(k-1)(r-k) + (k-1) + (r-k) - (1 - (omega - 2)^2) min(k-1, (k-1)(r-k), r-k)] / r^2 with
 omega = log2(7) (appd_assembly_public.eps_mm, about 7 percent below eps_dp at r = 7). The frozen model uses it
 when the shellmm flag is verified.
+
+
+## Round 8: the guarded Lagrange deformation (appd-guarded)
+Proposed by GPT-6 Astra, checked by the head. A packet is a virtual grid of Q = 2^a slots; real wires use only
+the central slots H <= x < Q - H with H = Q/2^kappa (guards), and labels live on the evaluated levels 0..u-1
+(u <= a - kappa). The deformation is W~_xy(T) = l_y(x + T), where l_y is the Lagrange basis polynomial of y on the
+grid {0..Q-1}: W~(0) = I, every entry has degree Q - 1 (the paper's Cauchy deformation has 2Q - 1), and at a node
+t in [-H, H) the matrix W~(t) is the shift x -> x + t (x + t stays on the grid thanks to the guards), so nodes with
+v2(t) = i < u are local exactly as before. Near a node, T = t + alpha z with alpha = 2Q as before, and a crossing
+entry factors as W~_xy = R_x(z) * 1/(t + alpha z + x - y) * c_y with the row factor
+R_x = 2^-v P_Q(x + t + alpha z) (coefficientwise divisible by 2^(a+1), v = Q - 1 - a) and the odd unit
+c_y = 2^v / P_Q'(y). So the Cauchy LDU of the full virtual half works unchanged: the mode coefficients become
+R_k d_m L_km (instead of G d_m L_km) and the source forms get the units, (U diag(c) X)_m; the mode weights stay
+a + 1 - i + 2b + 2 v2(b!). The node grid is [-H, H) (complete residue systems at every level), multiplicities
+q_t = h (u - v2(t)) with h = floor(M (Q - 1) / sum_(i<u) (H >> i)(u - i)) + 1, and the Hermite loss is at most
+6 h H / 2^i: about half of the paper's, because the degree halved. GuardedPacking (packing, Wfrac, rowfactor,
+colunit), guarded_multiplicities and guarded_h are given in appd_core.py.

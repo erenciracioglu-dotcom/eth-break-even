@@ -11,8 +11,10 @@ a + 1 - i + 2b + 2 v2(b!) with b = m >> i, series source forms), node values, by
 MM checks (round 7): matmul against a schoolbook product (and at most 7 * 7 * 7 * 8 ring products at 16 x 16 x 16),
 node_value(..., method="mm") against direct_taylor_mod, its block shapes against the shapes of the matmul calls,
 its max_enum against method "dp", and count_e2e(..., basis="ldu", method="mm").
+GUARDED checks (round 8): GuardedPacking with node_value(..., weights="sharp", basis="ldu", method paper / dp / mm)
+against direct_taylor_mod on the same guarded packing, and count_e2e(..., basis="ldu", guarded=True, kappa).
 Prints SMOKE OK or SMOKE FAIL (core and parameters), then NEWTON OK or NEWTON FAIL, then LDU OK or LDU FAIL,
-then MM OK or MM FAIL."""
+then MM OK or MM FAIL, then GUARDED OK or GUARDED FAIL."""
 import math
 import random
 import time
@@ -302,6 +304,61 @@ def mm_checks():
     return ok_all
 
 
+def guarded_checks():
+    ok_all = True
+    pick = random.Random(23)
+    done = 0
+    for k in range(80):
+        if done >= 8:
+            break
+        seed, chunks = 900 + k, k % 2 == 1
+        a, kappa, u = pick.choice([(3, 2, 1), (4, 2, 1), (4, 2, 2), (5, 3, 2)])
+        rng = random.Random(seed)
+        n = pick.randint(4, 6)
+        cls = C.random_formula(n, pick.randint(3, 4), rng)
+        net = C.chunk_net_mapped(n, cls, C.make_units(n, cls, 2, rng)) if chunks else C.formula_net(n, cls)
+        labels = [tuple(rng.randrange(3) for _ in range(u)) for _ in net.verts]
+        try:
+            pk = C.GuardedPacking(net, labels, a, u, kappa)
+        except AssertionError:
+            continue
+        M = len(net.wires)
+        if M < 2 or M > 6:
+            continue
+        nodes = [s for s in pk.S if s and C.v2(s) < u]
+        t, p, q = pick.choice(nodes), pick.choice([8, 10, 12]), pick.choice([1, 2])
+        done += 1
+        try:
+            direct = C.direct_taylor_mod(net, pk, t, p, q)
+        except Exception as exc:  # noqa: BLE001
+            print(f"guarded case {seed}: direct_taylor_mod failed: {repr(exc)[:200]} FAIL")
+            ok_all = False
+            continue
+        line = []
+        for method in ("paper", "dp", "mm"):
+            try:
+                ser, st = C.node_value(net, pk, labels, t, p, q, weights="sharp", method=method, basis="ldu")
+                good = [int(x) % (1 << p) for x in ser] == direct
+            except Exception as exc:  # noqa: BLE001
+                good = False
+                line.append(repr(exc)[:120])
+            line.append(f"{method}={'ok' if good else 'FAIL'}")
+            ok_all &= good
+        print(f"guarded case {seed}: a={a} kappa={kappa} u={u} chunks={chunks} M={M} t={t} p={p} q={q} " + " ".join(line))
+    for k, (a, kappa, u) in enumerate([(3, 2, 1), (4, 2, 1), (4, 3, 1), (4, 2, 2)]):
+        seed, n = 950 + k, 2
+        cls = C.random_formula(n, 1, random.Random(seed))
+        try:
+            got = C.count_e2e(n, cls, chunks=k % 2 == 1, Lc=2, r=3, seed=seed, a=a, u=u, basis="ldu", guarded=True,
+                              kappa=kappa)
+        except Exception as exc:  # noqa: BLE001
+            got = repr(exc)[:160]
+        want = C.count_sat(n, cls)
+        print(f"guarded count_e2e seed {seed} a={a} kappa={kappa} u={u}: got {got} want {want} {'ok' if got == want else 'FAIL'}")
+        ok_all &= got == want
+    return ok_all
+
+
 def param_checks():
     ok_all = True
     for lam in (1350, 2700, 5300):
@@ -325,3 +382,5 @@ if __name__ == "__main__":
     print("LDU OK" if lw else "LDU FAIL")
     mw = mm_checks() if C.IMPLEMENTED else False
     print("MM OK" if mw else "MM FAIL")
+    gw = guarded_checks() if C.IMPLEMENTED else False
+    print("GUARDED OK" if gw else "GUARDED FAIL")

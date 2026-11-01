@@ -1371,3 +1371,263 @@ def _sum_mm(self):
 
 NodeExpansion.mm_shapes = _mm_shapes
 NodeExpansion.sum_mm = _sum_mm
+
+
+# ---- round 8 (appd-guarded): Astra's guarded Lagrange deformation
+# Virtual packet grid {0..Q-1}, Q = 2^a; real slots only in [H, Q - H), H = 2^(a - kappa); labels on the evaluated
+# levels 0..u-1 (u <= a - kappa); W~_xy(T) = l_y(x + T), the Lagrange basis polynomial of y on the grid evaluated at
+# x + T (degree Q - 1 instead of 2Q - 1); nodes t in [-H, H) with v2(t) < u; local coordinate T = t + alpha z with
+# alpha = 2Q as before. At a node the crossing block of a packet half is diag(row factors) * Cauchy * diag(odd units):
+# W~_xy(t + alpha z) = [2^-v P_Q(x + t + alpha z)] * 1/(t + alpha z + x - y) * [2^v / P_Q'(y)], v = Q - 1 - a.
+
+
+class GuardedPacking:
+    """Packing with guard slots: same interface as Packing (a, L, S, packets, where, row_sym, col_sym) plus
+    guarded = True, u, kappa, H and the deformation Wfrac(x, y), rowfactor(x, t, alpha, q), colunit(y)."""
+    guarded = True
+
+    def __init__(self, net, labels, a, u, kappa):
+        assert kappa >= 2 and 1 <= u <= a - kappa, "need kappa >= 2 and 1 <= u <= a - kappa"
+        self.a, self.L, self.u, self.kappa = a, 1 << a, u, kappa
+        Q = self.L
+        H = self.H = 1 << (a - kappa)
+        self.S = list(range(-H, H))
+        highs = list(range(H >> u, (Q - H) >> u))
+        by = {}
+        for w, (rv, cv) in enumerate(net.wires):
+            rl, cl = labels[rv], labels[cv]
+            pat = tuple((min(rl[i], cl[i]), max(rl[i], cl[i])) for i in range(u))
+            ori = tuple(0 if rl[i] <= cl[i] else 1 for i in range(u) if rl[i] != cl[i])
+            by.setdefault(pat, {}).setdefault(ori, []).append(w)
+        self.packets, self.where = [], {}
+        for pat, d in sorted(by.items()):
+            uneq = [i for i in range(u) if pat[i][0] != pat[i][1]]
+            eq = [i for i in range(u) if pat[i][0] == pat[i][1]]
+            ne_ = len(eq)
+            cap = (1 << ne_) * len(highs)
+            npk = max((len(ws) + cap - 1) // cap for ws in d.values())
+            for k in range(npk):
+                pkd = dict(pat=pat, wire_at={})
+                for ori, ws in sorted(d.items()):
+                    for c, w in enumerate(ws[k * cap:(k + 1) * cap]):
+                        s = 0
+                        for idx, i in enumerate(uneq):
+                            s |= ori[idx] << i
+                        ce, ch = c % (1 << ne_), c >> ne_
+                        for idx, i in enumerate(eq):
+                            s |= ((ce >> idx) & 1) << i
+                        s |= highs[ch] << u
+                        assert H <= s < Q - H and s not in pkd["wire_at"]
+                        pkd["wire_at"][s] = w
+                        self.where[w] = (len(self.packets), s)
+                self.packets.append(pkd)
+        for w, (rv, cv) in enumerate(net.wires):
+            P, s = self.where[w]
+            for i in range(u):
+                assert self.row_sym(P, s, i) == labels[rv][i]
+                assert self.col_sym(P, s, i) == labels[cv][i]
+        self.dens = {}
+        for y in range(Q):
+            dd = 1
+            for j in range(Q):
+                if j != y:
+                    dd *= (y - j)
+            self.dens[y] = dd
+        self.v = Q - 1 - a
+        assert all(v2(dd) == self.v for dd in self.dens.values())
+        self._wc, self._rc = {}, {}
+
+    def row_sym(self, P, x, i):
+        lo, hi = self.packets[P]["pat"][i]
+        return lo if lo == hi or not (x >> i) & 1 else hi
+
+    def col_sym(self, P, y, i):
+        lo, hi = self.packets[P]["pat"][i]
+        return lo if lo == hi else (hi if not (y >> i) & 1 else lo)
+
+    def Wfrac(self, x, y):
+        """W~_xy(T) = l_y(x + T) = prod_(j != y) (T + x - j) / P_Q'(y): Fraction coefficients, degree Q - 1."""
+        if (x, y) not in self._wc:
+            p = [1]
+            for j in range(self.L):
+                if j != y:
+                    p = poly_mul(p, [x - j, 1])
+            self._wc[(x, y)] = [Fr(c, self.dens[y]) for c in p]
+        return self._wc[(x, y)]
+
+    def rowfactor(self, x, t, alpha, q):
+        """2^-v prod_(j < Q) (t + alpha z + x - j) mod z^q (exact; coefficientwise divisible by 2^(a+1))."""
+        key = (x, t, q)
+        if key not in self._rc:
+            p = [1]
+            for j in range(self.L):
+                p = poly_mul(p, [x - j, 1])
+            self._rc[key] = [c / (1 << self.v) for c in taylor_at([Fr(c) for c in p], t, alpha, q)]
+        return self._rc[key]
+
+    def colunit(self, y):
+        """The odd unit 2^v / P_Q'(y)."""
+        return Fr(1 << self.v, self.dens[y])
+
+
+def guarded_multiplicities(pk, h):
+    """Tapered multiplicities on the guarded node grid: q_t = h (u - v2(t)) for t in [-H, H), t != 0, v2(t) < u."""
+    return {t: h * (pk.u - v2(t)) for t in pk.S if t and v2(t) < pk.u}
+
+
+def guarded_h(M, pk):
+    """Smallest h with sum_t q_t > M (Q - 1), the degree of F~."""
+    return M * (pk.L - 1) // sum((pk.H >> i) * (pk.u - i) for i in range(pk.u)) + 1
+
+
+def setup_g(rng, n, m, a, u, kappa, r, chunks=False, Lc=2):
+    cls = random_formula(n, m, rng)
+    net = chunk_net_mapped(n, cls, make_units(n, cls, Lc, rng)) if chunks else formula_net(n, cls)
+    labels = [tuple(rng.randrange(r) for _ in range(u)) for _ in net.verts]
+    return n, cls, net, labels, GuardedPacking(net, labels, a, u, kappa)
+
+
+def direct_taylor_mod_g(net, pk, t, p, q):
+    """F~(t + alpha z) mod (2^p, z^q) straight from (D.8) with the guarded deformation."""
+    m, alpha, M = 1 << p, 2 ** (pk.a + 1), len(net.wires)
+    Wres = {}
+    for P, pkd in enumerate(pk.packets):
+        for x in pkd["wire_at"]:
+            for y in pkd["wire_at"]:
+                ser = taylor_at(pk.Wfrac(x, y), t, alpha, q)
+                assert all(v2(c) >= 0 for c in ser), "entry not 2-adically integral"
+                Wres[(P, x, y)] = [red(c, p) for c in ser]
+    tot = [0] * q
+    for xx in range(1 << (2 * M)):
+        X = [(xx >> w) & 1 for w in range(M)]
+        Y = [(xx >> (M + w)) & 1 for w in range(M)]
+        tv = 1
+        for vtx in net.verts:
+            tv *= vtx["table"].get(tuple(Y[w] if e == "r" else X[w] for w, e in vtx["ports"]), 0)
+            if tv == 0:
+                break
+        if tv == 0:
+            continue
+        ser = [tv % m] + [0] * (q - 1)
+        for w in range(M):
+            P, x = pk.where[w]
+            form = [0] * q
+            for y, w2 in pk.packets[P]["wire_at"].items():
+                if X[w2]:
+                    form = ps_add_mod(form, Wres[(P, x, y)], m)
+            f = form if Y[w] else [(1 - form[0]) % m] + [(-c) % m for c in form[1:]]
+            ser = ps_mul_mod(ser, f, q, m)
+        tot = ps_add_mod(tot, ser, m)
+    return tot
+
+
+class NodeExpansionG(NodeExpansion):
+    """NodeExpansion for the guarded deformation (LDU basis, sharp weights); the sums are inherited."""
+
+    def __init__(self, net, pk, labels, t, p, q, weights="sharp", basis="ldu"):
+        assert basis == "ldu" and weights == "sharp"
+        self.basis = basis
+        self.net, self.pk, self.t, self.p, self.q = net, pk, t, p, q
+        self.m = 1 << p
+        a = pk.a
+        self.alpha = 2 ** (a + 1)
+        i = self.i = v2(t)
+        assert t and -pk.H <= t < pk.H and i < pk.u
+        self.grp = [labels[v][i] for v in range(len(net.verts))]
+        M = len(net.wires)
+        self.Wser = {}
+        for P, pkd in enumerate(pk.packets):
+            for x in pkd["wire_at"]:
+                for y in pkd["wire_at"]:
+                    s = taylor_at(pk.Wfrac(x, y), t, self.alpha, q)
+                    assert s[0] == (1 if y == x + t else 0), "not a shift at the node"
+                    self.Wser[(P, x, y)] = s
+        self.rowg = {w: self.grp[net.wires[w][0]] for w in range(M)}
+        self.colg = {w: self.grp[net.wires[w][1]] for w in range(M)}
+        self.modes, self.coef, self.local = [], {}, {}
+        for w in range(M):
+            P, x = pk.where[w]
+            self.local[w] = []
+            for y, w2 in pk.packets[P]["wire_at"].items():
+                if self.colg[w2] == self.rowg[w]:
+                    self.local[w].append((w2, [red(c, p) for c in self.Wser[(P, x, y)]]))
+        step = 1 << (i + 1)
+        half = 1 << i
+        n = pk.L // 2
+        for P, pkd in enumerate(pk.packets):
+            lo, hi = pkd["pat"][i]
+            if lo == hi:
+                continue
+            for h in (0, 1):
+                pos = [step * (k >> i) + (k & (half - 1)) + h * half for k in range(n)]
+                src = pk.col_sym(P, pos[0], i)
+                tgt = hi if src == lo else lo
+                occ = [(k, pkd["wire_at"][pos[k]]) for k in range(n) if pos[k] in pkd["wire_at"]]
+                rows = [(k, w) for k, w in occ if pk.row_sym(P, pos[k], i) == tgt]
+                if not occ or not rows:
+                    continue
+                K = [[ser_inv(([Fr(t + pos[r_] - pos[s_]), Fr(self.alpha)] + [Fr(0)] * q)[:q], q) for s_ in range(n)]
+                     for r_ in range(n)]
+                Lm, d, Um = series_ldu(K, q)
+                for mm in range(n):
+                    b = mm >> i
+                    wgt = a + 1 - i + 2 * b + 2 * v2fact(b)
+                    if wgt >= p:
+                        break
+                    lin = []
+                    for k, w2 in occ:
+                        if k >= mm:
+                            cs = [c * pk.colunit(pos[k]) for c in Um[mm][k]]
+                            assert all(v2(c) >= 0 for c in cs), "U * unit not 2-adically integral"
+                            cser = tuple(red(c, p) for c in cs)
+                            if any(cser):
+                                lin.append((cser, w2))
+                    if not lin:
+                        continue
+                    kk = len(self.modes)
+                    self.modes.append(dict(P=P, y0=h, b=mm, src=src, tgt=tgt, w=wgt, lin=lin))
+                    for k, wr in rows:
+                        if k < mm:
+                            continue
+                        Rk = pk.rowfactor(pos[k], t, self.alpha, q)
+                        assert all(v2(c) >= a + 1 for c in Rk if c), "row factor below 2^(a+1)"
+                        assert all(v2(c) >= 0 for c in Lm[k][mm]), "L not 2-adically integral"
+                        c = ser_mul(ser_mul(Rk, d[mm], q), Lm[k][mm], q)
+                        assert all(v2(cc) >= wgt for cc in c), ("guarded weight", mm, wgt)
+                        self.coef[(wr, kk)] = [red(cc, p) for cc in c]
+        for P, pkd in enumerate(pk.packets):             # (D.12) for every crossing entry
+            for x, wr in pkd["wire_at"].items():
+                for y, wc in pkd["wire_at"].items():
+                    if self.colg[wc] == self.rowg[wr]:
+                        continue
+                    acc = [0] * q
+                    for k, md in enumerate(self.modes):
+                        if md["P"] == P and (wr, k) in self.coef:
+                            cy = dict((w2, c) for c, w2 in md["lin"]).get(wc)
+                            if cy is not None:
+                                acc = ps_add_mod(acc, ps_mul_mod(list(cy), self.coef[(wr, k)], q, self.m), self.m)
+                    assert acc == [red(c, p) for c in self.Wser[(P, x, y)]], ("D.12 failed", P, x, y)
+        self.r_groups = sorted(set(self.grp))
+        self.tg = {g: [k for k, md in enumerate(self.modes) if md["tgt"] == g] for g in self.r_groups}
+        self.sg = {g: [k for k, md in enumerate(self.modes) if md["src"] == g] for g in self.r_groups}
+        self.inc = {g: sorted(set(self.tg[g]) | set(self.sg[g])) for g in self.r_groups}
+        self.child_calls = 0
+
+
+def count_e2e_g(n, clauses, chunks=True, Lc=2, r=3, seed=0, a=3, u=1, kappa=2, method="dp"):
+    """Exact #F through the guarded deformation (reference)."""
+    rng = random.Random(seed)
+    net = chunk_net_mapped(n, clauses, make_units(n, clauses, Lc, rng)) if chunks else formula_net(n, clauses)
+    labels = [tuple(rng.randrange(r) for _ in range(u)) for _ in net.verts]
+    pk = GuardedPacking(net, labels, a, u, kappa)
+    M = len(net.wires)
+    qm = guarded_multiplicities(pk, guarded_h(M, pk))
+    p = n + 1
+    data = {}
+    for t, qt in sorted(qm.items()):
+        Pt = p + loss_bits(qm, a, t)
+        ne = NodeExpansionG(net, pk, labels, t, Pt, qt)
+        ser = ne.sum_mm()[0] if method == "mm" else ne.sum_dp()[0]
+        data[t] = ser
+    got = red(recover(data, qm, a), p)
+    return (got * pow(2, net.unused, 1 << p)) % (1 << p)
