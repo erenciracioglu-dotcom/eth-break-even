@@ -815,3 +815,52 @@ round 5 ends there.
   sharp3sat 347 -> 204, brute 187 -> 126 (-46% against 2^(n/3)), exactly the what-if at kappa = 10 and the head's dry
   run. At clause density 4.26 (the round-7 tree model with round 8's steps, whatif_dens_v5.py, kappa = 10): 25,946
   against 1.307^n, 7,689 against 1.637^n and 3,911 against 2^n (round 7: 51,728 / 15,295 / 7,755).
+
+## Round 9 (2 November, night): Astra's precision reset and multiplicity balancing checked; a better search [T22]
+- Context: asked once more, Fable found nothing new; GPT-6 Astra proposed two changes to the interfaces between
+  recursive calls (note "Precision reset and multiplicity-sensitive label balancing", 1 November): (a) recover each
+  child's high input precision from many low-precision contractions by CRT, (b) charge the parallel multiplicity
+  instead of the maximum degree in the label balance of the bipartite children.
+- appd-reset [head check of Astra's construction; model only, no code]: fix the canonical integer lifts of a child's
+  entries at its input precision P (the creation-time representatives of D.4.1, never re-evaluated modulo q), reduce
+  their coordinates modulo small odd primes q, contract each reduced network with the same 2-adic algorithm at a
+  precision B_q with 2^(B_q - 1) > H_q = 2^M C^(nu - 1) (d (q - 1))^nu, lift centered (exact integer Z_q), and
+  recombine by CRT until prod q > 2 H_P, H_P = 2^M C^(nu - 1) (d (2^P - 1))^nu. Exact, because reduction modulo q is
+  a ring map of Z[U, V]/(f, V^l) and the contraction is a polynomial in the entries; polynomially many calls. In the
+  model a child then inherits log2(B_q / n) ~ log2(M_child) + 16 (nu <= 2M, d = 4 lam, log2 C <= (4 lam - 1)
+  log2(4 lam)) instead of a + log2(3h), so a_d ~ u_d + 23 at every depth. Astra's program rerun by the head (cloud): 18 CRT
+  cases (1,494 recovery contractions) and 6 digit-polynomial cases (1,492), 16,384 packet-multiplicity labelings,
+  no failure, every oracle precision as reported.
+- appd-multbal [head check of Astra's lemma; model only]: in a bipartite child (old vertices against packet
+  vertices) label the old side first: Bernstein for the per-label degree mass (summands <= Delta_L) and a k-collision
+  cap on distinct neighbours of one label; then the packet side, with pair loads X_ab = sum_v N_v(a) 1{l(v) = b},
+  summands N_v(a) < mu k, variance <= mu k (1 + eps) T: pair loads <= (1 + delta) M/S^2 under Astra's (L) and (R).
+  Packet patterns fix the other endpoint's label, so the multiplicity of the next child is below mu k; mu_1 <= 63 Lc
+  (the root unit degree, no cap at the root).
+- What-if (r9/model9.py: the frozen v5 model re-implemented, equal to the assembly on the current certificate and
+  on four new ones; r9/search9.py: greedy largest u per level with caps, shapes r_0 <= 12, r_1 <= 24, r_2 <= 64,
+  delta 3e-4 to 1e-2, Lc = 2^6 to 2^20, k in 4..12; run on 22 cores): the current model gives 661 / 2,600 / 508 /
+  190 / 117 (third / occ3sat / ppsz / sharp3sat / brute); with reset, multbal or both the same, except 189 against
+  1.637^n with both. Reason: the binding constraints are all at the root. Its arithmetic needs u_0 ~ 108 at
+  r_0 = 7, and then the root's chunk label balance (log2(8192 Lc^2) + 2 log2(1/delta) + log2(ln(172 Lc) + lnD),
+  about 54 bits) and its padding (a_0 = u_0 + 23) fix lam; the children have slack, which is what the two steps
+  enlarge. Even with 20 bits less root slack the break-even only moves to 654 (then the root padding binds), again
+  equal with and without the two steps. Not adopted; the next levers are at the root (its balancing constant and,
+  above all, the arithmetic constant cK gamma eps_mm: 1% less moves the 2^(n/3) break-even by about 6).
+- The what-if also showed that Qwen's search missed the optimum of the current model: it tried only Lc = 2^12 and
+  2^20 and pre-ranked shapes by the padding budget alone, which ignores the root balance (so Lc = 2^20 always won
+  the pre-rank). T22: est_u also respects the assembly's balance test at each depth, a finer Lc and delta grid,
+  20 refined candidates; no new math, referee v5 unchanged.
+- Head dry run of the T22 search (r9/head_t22, the referee's own score gate): 663 / 2,600 / 508 / 190 / 114, 2.3 s per
+  choose_params call.
+- T22 (iter_appd 008, attempt 1, 00:27 to 00:33, 21 requests; check_t22.py printed T22 OK): accepted at 00:39, every
+  hidden check passed (verify 187 s, all eight code flags verified), third threshold 686 -> 663; score gate 74 calls,
+  2.5 s each.
+- T22 audit (git diff -w 177fedd HEAD -- algo_appd): exactly spec items 1-3. appd_params.py only: the finer DELTAS,
+  LCS and TOPK = 20; est_u renamed est_u_pad; bal_u copies the frozen balance test (root chunk slack, degree 2^(a_prev
+  + 1) below) with the fixed-point start and a step-down; est_u is the minimum of the two; d, a_prev and Lc are
+  threaded into rank_e, build and full_ok; a docstring paragraph. No other change (one unused local in bal_u).
+- Round 9 summary: no new step adopted (Astra's two steps hold but do not bind); the better search gives 686 -> 663
+  against 2^(n/3), 531 -> 508 against 1.307^n, 204 -> 190 against 1.637^n and 126 -> 114 against 2^n, 2,600 against
+  1.1199^n unchanged, exactly the head's dry run. At clause density 4.26 the T22 search keeps 25,946 / 7,689 / 3,911
+  (whatif_dens_v6.py: the optimum there already uses Lc = 2^20).
