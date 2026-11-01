@@ -308,8 +308,10 @@ already bipartite (no subdivision): M <= 3n wires. Exponents are compared as in 
 (polynomial factors ignored); memory may be exponential.
 
 - appd-tight [accounting of the paper's own algorithm]:
-  1. Multiplicities q_t = h max(0, u - i) with h = ceil(M(2L - 1) / (L(2u - 2 + 2^(1-u)))) ~ M/(u - 1)
+  1. Multiplicities q_t = h max(0, u - i) with h = floor(M(2L - 1) / (L(2u - 2 + 2^(1-u)))) + 1 ~ M/(u - 1)
      already give sum_t q_t > M(2L - 1) (the paper takes h = ceil(3M/u) and counts odd points only).
+     [Corrected 2026-11-01 after the GPT review: the earlier text said ceil(...), which gives only >=; the
+     toy and the referee code always used floor(...) + 1.]
   2. Precision: -v2(E_t(0)) = h D_t sum_j (j/2^j) min(j, u - i) <= 6 h D_t (only 2 h D_t at i = u - 1).
      The evaluation loss (q_t - 1)(a + 1 - i) and the inherited precision fit under that slack once
      2^(a-u+1) >= (p_in + 4M(a+1))(u - 1)/(4M): a - u ~ 2 log2 u at the root, a_d - a_(d-1) - u_d ~
@@ -481,7 +483,8 @@ Cost model (appd_model2.py), log2 n break-even vs 2^n / 1.637^n / 1.307^n / 1.11
   55-minute wall; the referee scored the files it left.
 
 ## Appendix D: levers examined after round 5 and set aside (head, 2026-11-01 02:00)
-Where the exponent sits: at every used node level K p_t = 2 (1 + delta) f M^2 / (u - 1) (independent of i), so a
+Where the exponent sits: at every used node level K p_t / 6 = 2 (1 + delta) f M^2 / (u - 1) (independent of i;
+corrected from 'K p_t = ...' after the GPT review, the model code was right), so a
 call costs about (2 pi / ln 2) sqrt(2 (1 + delta) f / (u - 1)) M bits, and u is capped by the label budget,
 about log2 M / (2 log2 r) (Bernstein over the r^(2u) wire types) or log2 M / log2(r(r + 1)) (padding). The binding
 term is the root's mode sum (Qwen's T16 analysis finds the same). Ideas checked and not pursued:
@@ -519,3 +522,21 @@ round 5 ends there.
   2^n 579 -> 572. Attempt 1 explored for the full 55 minutes without editing the file (rejected: no change);
   attempt 2 finished in 21 minutes with the original task text (the sharpened text prepared for a third attempt was
   not needed). The loop then found the backlog empty, stopped the Strata server it had started and exited.
+
+## External review notes (GPT-6 Astra, 2026-11-01 15:30) and the head's checks
+- Two documentation errors [ACCEPTED, fixed above]: the multiplicity must be floor(d/S) + 1 (the code always was),
+  and the 'where the exponent sits' line meant K p_t / 6.
+- The best scores use two recursion levels, which no gate executes [ACCEPTED]: head audit T19 planned.
+- Newton (binomial) moments [checked by the head 15:45, work in progress]: G/(A - c j) = sum_(b<=j)
+  [G c^b b! / prod_(l<=b)(A - c l)] binom(j, b) with c = 2^(i+1), A = T - y0 + x, so the source forms become
+  sum_j binom(j, b) X_(y0+cj) and the coefficient of mode b has valuation >= a + 1 - i + b + v2(b!) (worst rows
+  v2(A) = i; every factor l c / (A - c l) has valuation >= v2(l) + 1). Exact checks (gpt_checks.py): identity and
+  bound coefficientwise mod z^q in 2,038 cases at a = 3..6, no failure; the extra valuation over the power rule
+  is >= v2(b!) as predicted.
+- Cauchy LDU of the crossing block [checked by the head 15:45, work in progress]: K_kl = 1/(T + x_k - x_l),
+  x_k = 2^(i+1) floor(k/2^i) + (k mod 2^i). Closed-form pivots give v2(d_k) >= 2b + 2 v2(b!) - i (b = floor(k/2^i))
+  before the factor G of valuation >= a + 1; in 570 exact factorisations (a = 3..6, z in {0, 1, 3, 5}) no pivot
+  vanished, L and U were 2-adically integral and the diagonal bound held.
+- What-if in the cost model (appd_model4, weight step s acts like cK = 2/s): break-even vs 2^(n/3) / 1.307^n /
+  1.1199^n / 1.637^n: power basis 5,405 / 4,033 / 23,062 / 1,226; Newton (s = 2) 2,719 / 2,033 / 11,550 / 656;
+  LDU (s = 4) 1,383 / 1,052 / 5,793 / 371. Not yet scored by a referee.
