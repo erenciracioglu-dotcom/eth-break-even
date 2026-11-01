@@ -509,3 +509,13 @@ term is the root's mode sum (Qwen's T16 analysis finds the same). Ideas checked 
   remain, about the edge-bit count already charged.
 Conclusion: after T16's parameter search, no further head step with a sound and checkable gain is in sight;
 round 5 ends there.
+
+- iter_appd 003, T16 attempt 2 [ACCEPTED 02:47, head audit 03:30]: a deterministic search (imports math and the
+  public assembly only): shapes pre-ranked with an analytic replica of the model, the ten best refined with the
+  real model (bisection on u_0, the other u_d maximised per level, a_d = min_a), 0.50 s per call. Best for 2^(n/3):
+  two levels, r = (7, 10), u = (907, 642), a = (926, 1569), delta = 1e-4, Lc = 2^20 (delta and Lc sit at the edges of
+  the model's allowed ranges; going further changes only the factors (1 + 2 delta) and 1 + 1/Lc, below 1%).
+  Break-evens: 2^(n/3) 5,404 -> 5,300, 1.1199^n 23,056 -> 21,942, 1.307^n 4,032 -> 3,958, 1.637^n 1,213 -> 1,212,
+  2^n 579 -> 572. Attempt 1 explored for the full 55 minutes without editing the file (rejected: no change);
+  attempt 2 finished in 21 minutes with the original task text (the sharpened text prepared for a third attempt was
+  not needed). The loop then found the backlog empty, stopped the Strata server it had started and exited.
