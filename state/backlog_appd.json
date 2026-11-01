@@ -156,9 +156,38 @@
   "after": [
    "T20"
   ],
-  "status": "running",
+  "status": "done",
   "priority": 40,
   "max_attempts": 3,
-  "steps": 70
+  "steps": 70,
+  "attempts": 1,
+  "result": "third threshold 1,280 -> 686 (46.41% lower threshold)",
+  "done_iter": 7
+ },
+ {
+  "id": "T22",
+  "title": "Better parameter search: balance-aware est_u, finer Lc and delta grid",
+  "kind": "score",
+  "files": [
+   "appd_params.py"
+  ],
+  "spec": "Improve the parameter search in appd_params.py (NOTES.md, section 'Round 9'). Do not change appd_core.py; everything that exists must keep working exactly as now.\n1. Set DELTAS = (1e-4, 3e-4, 1e-3, 2e-3, 3e-3, 5e-3, 1e-2, 3e-2), LCS = (64, 256, 1024, 4096, 1 << 20) and TOPK = 20.\n2. Rename the current est_u to est_u_pad (body unchanged). Add bal_u(rd, Md, delta, lam, d, a_prev, Lc): the largest integer u >= 2 that passes the frozen assembly's label-balance test at depth d. Copy the test from appd_assembly_public.exponent_of, section 'labels': lD = 2 u log2(rd), logM = lam + log2(Md), lnD = max(lD ln 2, 1); at d = 0 slack = log2(8192 Lc^2) + 2 log2(1/delta) + log2(ln(172 Lc) + lnD); at d >= 1 slack = log2(8) + a_prev + 1 + 2 log2(1/delta) + log2(lnD); the test passes if logM - lD >= slack (start from u = int(logM / (2 log2 rd)) and iterate u = int((logM - slack(u)) / (2 log2 rd)) a few times, then step down until the test passes). Define est_u(rd, Md, delta, lam, lp_in, d=0, a_prev=0, Lc=1 << 20) = min(est_u_pad(rd, Md, delta, lam, lp_in), bal_u(rd, Md, delta, lam, d, a_prev, Lc)).\n3. Pass the depth d, the previous level's a (0 at the root) and Lc to every est_u call: in rank_e (keep a_prev = ad after each level), in build (the loop that sets the initial u, a_prev = ad after each level) and in full_ok inside build (a_prev = min_a(u0, 0.0, M[0]) after the root, then ad after each level).\ncheck_t22.py runs choose_params(670, 'third') and checks that the frozen assembly gives a valid certificate with e < 1/3 (the current search needs 686). The referee re-scores every target with its frozen assembly.",
+  "stop": "check_t22.py prints T22 OK",
+  "needs_flags": [
+   "memo",
+   "modedp",
+   "chunks",
+   "newton",
+   "ldu",
+   "shellmm",
+   "guarded"
+  ],
+  "after": [
+   "T21"
+  ],
+  "status": "open",
+  "priority": 40,
+  "max_attempts": 3,
+  "steps": 40
  }
 ]

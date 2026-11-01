@@ -87,3 +87,13 @@ a + 1 - i + 2b + 2 v2(b!). The node grid is [-H, H) (complete residue systems at
 q_t = h (u - v2(t)) with h = floor(M (Q - 1) / sum_(i<u) (H >> i)(u - i)) + 1, and the Hermite loss is at most
 6 h H / 2^i: about half of the paper's, because the degree halved. GuardedPacking (packing, Wfrac, rowfactor,
 colunit), guarded_multiplicities and guarded_h are given in appd_core.py.
+
+## Round 9 (T22): a better parameter search (no new math, referee unchanged)
+The frozen assembly's label-balance test (appd-bernstein, appd-chunks) often binds before the padding budget.
+In exponent_of, section 'labels': lD = 2 u log2(r_d), logM = lam + log2(M_d), lnD = max(lD ln 2, 1); at the root
+(chunks) slack = log2(8192 Lc^2) + 2 log2(1/delta) + log2(ln(172 Lc) + lnD); below the root
+slack = log2(8) + a_(d-1) + 1 + 2 log2(1/delta) + log2(lnD); the test passes if logM - lD >= slack.
+est_u (and so rank_e) looks only at the padding budget, so the pre-rank always prefers the chunk size Lc = 2^20
+and never refines the smaller chunk sizes, where the root balance leaves room for a larger u_0. With est_u = the
+smaller of the padding budget and the balance test, a finer Lc and delta grid and 20 refined candidates, the frozen
+model gives about 663 against 2^(n/3) (head dry run; the current search needs 686).
