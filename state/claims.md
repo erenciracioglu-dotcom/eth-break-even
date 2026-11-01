@@ -743,3 +743,75 @@ round 5 ends there.
   Strassen, T20); the other columns fell by 5 to 7%. With the best known matrix multiplication exponent the model
   would give about 1,180 (not implementable). The other levers in the three reviews are below 2% each or already in
   the model; a further halving needs a different deformation (the open question above).
+
+## Round 8 (1 November, night): the guarded Lagrange deformation [appd-guarded, T21]
+- Context: asked about Fable's open question (a better deformation than Cauchy), GPT-6 Astra proposed changing the
+  global deformation while keeping the Cauchy crossing blocks: the Smith-invariant remark of round 7 fixes the mode
+  weights of a given block, not the degree of the deformation, and the degree sets the Hermite precision.
+- appd-guarded [head proof sketch of Astra's construction]. A packet is a virtual grid {0..Q-1}, Q = 2^a; real ports
+  sit only on the central slots H <= x < Q - H, H = Q/2^kappa (kappa >= 2); labels live on the evaluated levels
+  0..u-1 with u <= a - kappa, so H is a multiple of 2^u. Deformation W~_xy(T) = l_y(x + T), l_y the Lagrange basis
+  polynomial of y on the grid.
+  1. W~(0) = I and every entry has degree Q - 1, so F~(T) has degree <= M(Q - 1) instead of M(2Q - 1).
+  2. Locality: for t in [-H, H) and a real row x, x + t is on the grid, so W~(t) is the shift x -> x + t; with
+     i = v2(t) < u the two slots differ in bit i and the packet's orientation convention puts both ports in one
+     group; a row whose shift lands on a guard or an empty slot has no real column at t.
+  3. Integrality at T = t + alpha z, alpha = 2Q: every P_Q'(y) = +-y!(Q-1-y)! has valuation v = Q - 1 - a (row
+     Q - 1 of Pascal's triangle is odd); with j = x + t the factor m = j of l_y(j + alpha z) is alpha z and the
+     others have content 2^v2(j - m), so an off-shift entry has content >= 2^(a + 1 - v2(j - y)) (as the Cauchy
+     entry) and the shift entry is 1 + O(2^(a+1-v2)).
+  4. Modes: W~_xy = R_x K_xy c_y with the round-6 Cauchy kernel K_xy = 1/(t + alpha z + x - y), the row factor
+     R_x = 2^-v P_Q(x + t + alpha z) (content >= 2^(a+1)) and the odd unit c_y = 2^v/P_Q'(y). The full-virtual-half
+     LDU of K is unchanged (alpha is still 2Q), so the modes (U diag(c) X)_m with coefficients R_k d_m L_km have the
+     round-6 weights a + 1 - i + 2b + 2 v2(b!), and the round-7 finite bound applies to every full chain.
+  5. Recovery: the node grid [-H, H) has H/2^i nodes at level i, complete residue systems; with q_t = h(u - i) and
+     h = floor(M(Q - 1)/sum_i (H >> i)(u - i)) + 1 the total multiplicity exceeds deg F~, and Lemma D.5's argument
+     with Q replaced by H gives -v2(E_t(0)) <= 6 h H/2^i (hermite_loss.py: max ratio 0.992 for H <= 2^12, all u).
+     As h ~ (Q/H) M/(2(u - 1)), the main loss is about 3MQ/((u - 1) 2^i): half of the paper's 6MQ/((u - 1) 2^i).
+  6. Packing: [H, Q - H) is a union of whole periods of the low u bits, so every orientation class of a pattern with
+     a' unequal coordinates gets N/2^a' slots, N = Q - 2H; padding and balance hold with capacity N <= Q, and child
+     packet vertices have 2N <= 2Q ports.
+  Cost per level: K p scales by gamma = (Q/N)(Q - 1)/(2Q - 1) -> 1/(2(1 - 2^(1-kappa))) (0.501 at kappa = 10); the
+  multiplicity grows by about 2^(kappa-1), so the headroom needs 2^(a-u+1) >= (p_in + 2^(kappa+1) M (a+1))(u - 1)/(2M)
+  (about kappa more bits of a at the root, 1 below it) and the children inherit 3h 2^a instead of 6h 2^a.
+- Head checks: Astra's program reproduced (27 tensor contractions through 108 Taylor jets with exact recovery mod 2^9;
+  8 full-block LDUs, 9,472 coefficients, 656 crossing entries). guarded.py on appd_toy (cloud, seeds 1-5): 75 node
+  instances at a = 3, 4, 5, kappa = 2, 3, u = 1, 2 (up to 17 modes): the shift at every node, integrality, row
+  factors >= 2^(a+1), the weights and (D.12) asserted, node values by paper / memo / dp / shell-mm equal (D.8)
+  with the new deformation, 212 child networks of D.4.6 and 93 by-variables leaves equal the tables; 41 end-to-end
+  exact counts (29 with wires), and the guarded recovery used 26 to 49% less precision than the paper's on the
+  same formulas (e.g. 110 against 214 bits).
+- What-if (whatif_guard.py: frozen v4 model, Qwen's T20 search with the guarded formulas): kappa 3: 883 / 3,438 /
+  680 / 261 / 145; 4: 769; 6: 705; 8: 690 / 2,611 / 539 / 232 / 126; 10: 686 / 2,600 / 531 / 204 / 126; 12: 682;
+  14: 686 (third / occ3sat / ppsz / sharp3sat / brute; before 1,280 / 5,137 / 977 / 347 / 187).
+- referee_appd version 5: flag guarded with kappa per level (needs ldu; u <= a - kappa); gamma_guard, need_bits and
+  next_lp in the assembly. Hidden cases v3: 21 guarded node cases (a = 3..5, kappa = 2, 3, u = 1, 2, at least two
+  modes) and 8 guarded end-to-end cases. Items: the agent's NodeExpansion with the reference GuardedPacking has the
+  reference modes, series source forms and coefficient residues; node_value (dp, mm) equals (D.8) with the guarded
+  deformation and the reference dp count; byvars on chunk networks; count_e2e(guarded=True) exact. Dry runs: the
+  head's solution verifies every flag (verify 143 s) and scores 686 / 2,600 / 531 / 204 / 126 (= the what-if at
+  kappa = 10); the round-7 code keeps its flags and scores with guarded off; a single row factor for all rows and
+  missing column units both fail guarded.
+- T21 (iter_appd 007, attempt 1, 22:07 to 22:49, 38 requests): Qwen's smoke test printed all five OK lines at about
+  22:21; it then kept running its own extra scratch tests (no fault found; some of its larger scratch cases ran out of
+  memory in the existing tuple enumeration), so the head stopped the agent at 22:49 instead of waiting for the
+  55-minute cap, and the loop ran the referee as usual. Referee: accepted at 22:53, every hidden check passed (verify
+  179 s, among them 21 gd_modes, 21 gd_dp, 21 gd_mm, 42 gd_byvars and 8 gd_e2e items; all eight code flags verified).
+- T21 audit (git diff -w 9d1006a HEAD -- algo_appd): exactly spec items 1-4. appd_core.py: NodeExpansion reads
+  pk.guarded and asserts the LDU basis with the sharp weights for a guarded packing; it builds the W~ series from
+  pk.Wfrac only for pairs of real slots; in the LDU branch it skips Cpoly and G, multiplies the U coefficients by
+  pk.colunit(xk[k]) (integrality asserted on the product) and uses the row factor pk.rowfactor(xk[k], t, alpha, q) in
+  place of G for the coefficient of mode m in row k; positions, weights, weight asserts and the (D.12) check are
+  unchanged. direct_taylor_mod uses pk.Wfrac for a guarded packing. count_e2e(..., guarded=False, kappa=2) takes
+  labels of u coordinates, GuardedPacking and guarded_multiplicities(pk, guarded_h(M, pk)); precision, node expansion,
+  summation, recovery and the 2^unused factor are unchanged. appd_params.py: GUARD_KAPPA = 10 and _KAPPA (set in
+  choose_params from the guarded flag); min_a starts at u + kappa and tests A.need_bits; every inherited precision
+  (rank_e, make, build, full_ok) is A.next_lp; rank_e scales cK by A.gamma_guard for both the arithmetic and the child
+  term; make adds kappa per level. One change beyond the spec, and a needed one: the fallback of choose_params now
+  comes from make([2], [2], 1e-4, 4096, flags) instead of a fixed dict with a = 3, which would break u <= a - kappa
+  under the guarded flag. GuardedPacking and the head helpers are untouched; no other file changed.
+- Round 8 summary: GPT-6 Astra's guarded Lagrange deformation, proved and checked by the head, implemented by Qwen in
+  one attempt and verified by referee_appd version 5: third 1,280 -> 686, occ3sat 5,137 -> 2,600, ppsz 977 -> 531,
+  sharp3sat 347 -> 204, brute 187 -> 126 (-46% against 2^(n/3)), exactly the what-if at kappa = 10 and the head's dry
+  run. At clause density 4.26 (the round-7 tree model with round 8's steps, whatif_dens_v5.py, kappa = 10): 25,946
+  against 1.307^n, 7,689 against 1.637^n and 3,911 against 2^n (round 7: 51,728 / 15,295 / 7,755).
