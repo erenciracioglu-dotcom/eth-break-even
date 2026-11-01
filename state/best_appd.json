@@ -1,9 +1,9 @@
 {
- "third": 686,
+ "third": 663,
  "occ3sat": 2600,
- "ppsz": 531,
- "sharp3sat": 204,
- "brute": 126,
+ "ppsz": 508,
+ "sharp3sat": 190,
+ "brute": 114,
  "verified_flags": {
   "memo": true,
   "modedp": true,
@@ -22,17 +22,17 @@
    8
   ],
   "u": [
-   108,
-   93,
-   71
+   107,
+   88,
+   67
   ],
   "a": [
-   131,
-   226,
-   298
+   130,
+   220,
+   288
   ],
-  "delta": 0.003,
-  "Lc": 1048576,
+  "delta": 0.001,
+  "Lc": 1024,
   "perclass": true,
   "labelfree": true,
   "memo": true,
@@ -49,7 +49,7 @@
    10
   ]
  },
- "iter": 7,
- "task": "T21",
- "updated": "2026-11-01 22:53:24"
+ "iter": 8,
+ "task": "T22",
+ "updated": "2026-11-02 00:39:15"
 }

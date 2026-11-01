@@ -9,6 +9,11 @@ halves the mode-tuple constant cK in the replica (A.ck) and in the frozen assemb
 cheap analytic replica of the assembly (closed-form greedy u from the padding budget + min_a), then the top
 candidates are refined with the real model: bisection on u_0, and inside every trial a bisection that maximises
 each remaining u_d. min_a is kept for a_d.
+
+Search (attempt 3, round 9 / T22): est_u is now the smaller of the padding budget (est_u_pad) and the frozen
+assembly's label-balance test (bal_u), which often binds first; the depth d, the previous level's a (0 at the
+root) and Lc are threaded into every est_u call, and the grids are finer: 8 deltas down to 1e-4, 5 chunk sizes
+from 64 to 2^20 and TOPK = 20 refined candidates.
 """
 import math
 import appd_assembly_public as A
@@ -25,9 +30,9 @@ R1 = (2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 64, 96, 12
 R2 = (2, 3, 4, 5, 6, 7, 8, 10, 12, 16, 24, 32, 64, 128)
 R1_RANK = R1[:10]          # cheap pre-rank grid for level 1 of a 3-level shape
 R2_RANK = R2[:10]          # cheap pre-rank grid for level 2
-DELTAS = (1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2)
-LCS = (4096, 1 << 20)
-TOPK = 10                  # candidates refined with the real assembly
+DELTAS = (1e-4, 3e-4, 1e-3, 2e-3, 3e-3, 5e-3, 1e-2, 3e-2)
+LCS = (64, 256, 1024, 4096, 1 << 20)
+TOPK = 20                  # candidates refined with the real assembly
 UPMAX = 2 * 10 ** 6        # u_d < a_d <= 1e7
 
 
@@ -47,7 +52,7 @@ def _M(r, delta, Lc, chunks):
     return M
 
 
-def est_u(rd, Md, delta, lam, lp_in):
+def est_u_pad(rd, Md, delta, lam, lp_in):
     """Closed-form greedy largest u_d allowed by the padding budget at depth d (a_d = min_a)."""
     P = math.log2(rd * (rd + 1) / 2.0)
     u = int((lam + math.log2(Md) + math.log2(delta)) / (P + 1.0))
@@ -64,15 +69,59 @@ def est_u(rd, Md, delta, lam, lp_in):
     return max(2, u)
 
 
+def bal_u(rd, Md, delta, lam, d, a_prev, Lc):
+    """Largest integer u >= 2 that passes the frozen assembly's label-balance test (exponent_of, section
+    'labels') at depth d: logM - lD >= slack with lD = 2 u log2(rd), logM = lam + log2(Md),
+    lnD = max(lD ln2, 1); slack = log2(8192 Lc^2) + 2 log2(1/delta) + log2(ln(172 Lc) + lnD) at d = 0 and
+    log2(8) + a_prev + 1 + 2 log2(1/delta) + log2(lnD) at d >= 1."""
+    lr = math.log2(rd)
+    two_lr = 2.0 * lr
+    logM = lam + math.log2(Md)
+    inv = 2.0 * math.log2(1.0 / delta)
+    if d == 0:
+        base = math.log2(8192.0 * Lc * Lc) + inv
+        c1 = math.log(172.0 * Lc)
+    else:
+        base = math.log2(8.0) + a_prev + 1.0 + inv
+        c1 = None
+
+    def slack(u):
+        lnD = max(2.0 * u * lr * LN2, 1.0)
+        return base + (math.log2(c1 + lnD) if d == 0 else math.log2(lnD))
+
+    def passes(u):
+        lD = 2.0 * u * lr
+        lnD = max(lD * LN2, 1.0)
+        return logM - lD >= slack(u)
+
+    u = max(2, int(logM / two_lr))
+    for _ in range(6):
+        nu = int((logM - slack(u)) / two_lr)
+        if nu >= u:
+            break
+        if nu < 2:
+            return 2
+        u = nu
+    while u > 2 and not passes(u):
+        u -= 1
+    return max(2, u)
+
+
+def est_u(rd, Md, delta, lam, lp_in, d=0, a_prev=0, Lc=1 << 20):
+    """Closed-form greedy largest u_d: the smaller of the padding budget and the label-balance test."""
+    return min(est_u_pad(rd, Md, delta, lam, lp_in), bal_u(rd, Md, delta, lam, d, a_prev, Lc))
+
+
 def rank_e(r, delta, Lc, lam, leafvars, cK=2.0, shellmm=False):
     """Analytic replica: greedy u_d from the padding budget, a_d = min_a, cost exponent of the assembly."""
     L = len(r)
     M = _M(r, delta, Lc, True)
     dm = 2 * delta
-    u, lp_in, cum, worst = [], 0.0, 0.0, 0.0
+    u, lp_in, cum, worst, a_prev = [], 0.0, 0.0, 0.0, 0
     for d in range(L):
-        ud = est_u(r[d], M[d], delta, lam, lp_in)
+        ud = est_u(r[d], M[d], delta, lam, lp_in, d, a_prev, Lc)
         ad = min_a(ud, lp_in, M[d])
+        a_prev = ad
         u.append(ud)
         cKd = cK * (A.gamma_guard(ad, _KAPPA) if _KAPPA is not None else 1.0)
         x = M[d] / math.sqrt(ud)
@@ -130,9 +179,11 @@ def build(r, delta, Lc, flags, lam, ustart=None):
         return lo
 
     lp, u = 0.0, list(ustart) if ustart else [2] * L
+    a_prev = 0
     for d in range(L):
-        u[d] = min(u[d], est_u(r[d], M[d], delta, lam, lp))
+        u[d] = min(u[d], est_u(r[d], M[d], delta, lam, lp, d, a_prev, Lc))
         ad = min_a(u[d], lp, M[d])
+        a_prev = ad
         lp = A.next_lp(lp, M[d], ad, u[d], _KAPPA)
     for d in range(L):
         m = max_up(u, d, UPMAX)
@@ -143,10 +194,12 @@ def build(r, delta, Lc, flags, lam, ustart=None):
     def full_ok(u0):
         uu = list(u)
         uu[0] = u0
-        lp = A.next_lp(0.0, M[0], min_a(u0, 0.0, M[0]), u0, _KAPPA)
+        a_prev = min_a(u0, 0.0, M[0])
+        lp = A.next_lp(0.0, M[0], a_prev, u0, _KAPPA)
         for d in range(1, L):
-            uu[d] = min(max(2, est_u(r[d], M[d], delta, lam, lp)), UPMAX)
+            uu[d] = min(max(2, est_u(r[d], M[d], delta, lam, lp, d, a_prev, Lc)), UPMAX)
             ad = min_a(uu[d], lp, M[d])
+            a_prev = ad
             lp = A.next_lp(lp, M[d], ad, uu[d], _KAPPA)
         for d in range(1, L):
             m = max_up(uu, d, UPMAX)
