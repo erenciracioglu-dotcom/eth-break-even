@@ -16,6 +16,9 @@ import appd_assembly_public as A
 USE_CODE_FLAGS = True
 LN2 = math.log(2.0)
 
+GUARD_KAPPA = 10           # appd-guarded: guard width H_d = 2^(a_d - GUARD_KAPPA) used by the frozen model
+_KAPPA = None              # set by choose_params (None = the paper's Cauchy deformation)
+
 # r grids: r_0 small (the root group count sets M_d / sqrt(u_d) everywhere), r_1 and r_2 wide and geometric
 R0 = (4, 5, 6, 7, 8, 9, 10, 12, 16)
 R1 = (2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 64, 96, 128, 192, 256, 384, 512)
@@ -31,7 +34,8 @@ UPMAX = 2 * 10 ** 6        # u_d < a_d <= 1e7
 def min_a(u, lp_in, M):
     """Smallest a with (2^lp_in + 4 M (a + 1)) (u - 1) / (4 M) <= 2^(a - u + 1) (the assembly's headroom test)."""
     a = max(u + 1, int(u - 1 + lp_in + math.log2(u - 1) - math.log2(4 * M)))
-    while A.lse2(lp_in, math.log2(4 * M * (a + 1))) + math.log2(u - 1) - math.log2(4 * M) > a - u + 1:
+    a = max(a, u + (_KAPPA or 0))
+    while A.need_bits(lp_in, M, a, u, _KAPPA) > a - u + 1:
         a += 1
     return a
 
@@ -70,13 +74,13 @@ def rank_e(r, delta, Lc, lam, leafvars, cK=2.0, shellmm=False):
         ud = est_u(r[d], M[d], delta, lam, lp_in)
         ad = min_a(ud, lp_in, M[d])
         u.append(ud)
+        cKd = cK * (A.gamma_guard(ad, _KAPPA) if _KAPPA is not None else 1.0)
         x = M[d] / math.sqrt(ud)
-        ar = A.tup(ud, A.eps_mode(r[d], {"modedp": True, "shellmm": shellmm}), dm, cK) * x
-        ch = A.tup(ud, A.f_grp(r[d]), dm, cK) * x
+        ar = A.tup(ud, A.eps_mode(r[d], {"modedp": True, "shellmm": shellmm}), dm, cKd) * x
+        ch = A.tup(ud, A.f_grp(r[d]), dm, cKd) * x
         worst = max(worst, cum + ar)
         cum += ch
-        h = M[d] / (ud - 1)
-        lp_in = A.lse2(math.log2(6 * h) + ad, lp_in, math.log2(4 * M[d] * (ad + 1)))
+        lp_in = A.next_lp(lp_in, M[d], ad, ud, _KAPPA)
     leaf = M[L]
     if leafvars:
         leaf = min(leaf, (1 + delta) * (1 + M[0] / 2) / r[0])
@@ -90,9 +94,11 @@ def make(u, r, delta, Lc, flags):
     a, lp_in = [], 0.0
     for d in range(L):
         a.append(min_a(u[d], lp_in, M[d]))
-        h = M[d] / (u[d] - 1)
-        lp_in = A.lse2(math.log2(6 * h) + a[d], lp_in, math.log2(4 * M[d] * (a[d] + 1)))
-    return dict(levels=L, r=list(r), u=list(u), a=a, delta=delta, Lc=Lc, **flags)
+        lp_in = A.next_lp(lp_in, M[d], a[d], u[d], _KAPPA)
+    p = dict(levels=L, r=list(r), u=list(u), a=a, delta=delta, Lc=Lc, **flags)
+    if _KAPPA is not None:
+        p["kappa"] = [_KAPPA] * L
+    return p
 
 
 def build(r, delta, Lc, flags, lam, ustart=None):
@@ -126,8 +132,8 @@ def build(r, delta, Lc, flags, lam, ustart=None):
     lp, u = 0.0, list(ustart) if ustart else [2] * L
     for d in range(L):
         u[d] = min(u[d], est_u(r[d], M[d], delta, lam, lp))
-        lp = A.lse2(math.log2(6 * (M[d] / (u[d] - 1))) + min_a(u[d], lp, M[d]), lp,
-                    math.log2(4 * M[d] * (min_a(u[d], lp, M[d]) + 1)))
+        ad = min_a(u[d], lp, M[d])
+        lp = A.next_lp(lp, M[d], ad, u[d], _KAPPA)
     for d in range(L):
         m = max_up(u, d, UPMAX)
         if m is None:
@@ -137,12 +143,11 @@ def build(r, delta, Lc, flags, lam, ustart=None):
     def full_ok(u0):
         uu = list(u)
         uu[0] = u0
-        lp = A.lse2(math.log2(6 * (M[0] / (u0 - 1))) + min_a(u0, 0.0, M[0]), 0.0,
-                    math.log2(4 * M[0] * (min_a(u0, 0.0, M[0]) + 1)))
+        lp = A.next_lp(0.0, M[0], min_a(u0, 0.0, M[0]), u0, _KAPPA)
         for d in range(1, L):
             uu[d] = min(max(2, est_u(r[d], M[d], delta, lam, lp)), UPMAX)
             ad = min_a(uu[d], lp, M[d])
-            lp = A.lse2(math.log2(6 * (M[d] / (uu[d] - 1))) + ad, lp, math.log2(4 * M[d] * (ad + 1)))
+            lp = A.next_lp(lp, M[d], ad, uu[d], _KAPPA)
         for d in range(1, L):
             m = max_up(uu, d, UPMAX)
             if m is None:
@@ -181,10 +186,12 @@ def build(r, delta, Lc, flags, lam, ustart=None):
 
 
 def choose_params(lam, target="third"):
+    global _KAPPA
     flags = dict(perclass=True, labelfree=True, memo=False, modedp=False, chunks=False, leafvars=False,
-                 newton=False, ldu=False, shellmm=False)
+                 newton=False, ldu=False, shellmm=False, guarded=False)
     if USE_CODE_FLAGS:
-        flags.update(memo=True, modedp=True, chunks=True, newton=True, ldu=True, shellmm=True)
+        flags.update(memo=True, modedp=True, chunks=True, newton=True, ldu=True, shellmm=True, guarded=True)
+    _KAPPA = GUARD_KAPPA if flags["guarded"] else None
     lam = float(lam)
     shapes = []
     for r0 in R0:
@@ -221,4 +228,4 @@ def choose_params(lam, target="third"):
             best = (s["e"], p[1])
     if best:
         return best[1]
-    return dict(levels=1, r=[2], u=[2], a=[3], delta=1e-4, Lc=4096, **flags)
+    return make([2], [2], 1e-4, 4096, flags)

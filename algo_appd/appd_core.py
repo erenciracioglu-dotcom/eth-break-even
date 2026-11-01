@@ -609,6 +609,9 @@ class NodeExpansion:
         assert not (basis == "ldu" and weights != "sharp"), "the ldu basis has only the sharp weights"
         self.net, self.pk, self.t, self.p, self.q = net, pk, t, p, q
         self.basis = basis
+        self.guarded = getattr(pk, "guarded", False)
+        if self.guarded:
+            assert basis == "ldu" and weights == "sharp", "the guarded deformation uses the LDU basis only"
         self.m = 1 << p
         a, L = pk.a, pk.L
         self.alpha = 2 ** (a + 1)
@@ -618,13 +621,20 @@ class NodeExpansion:
         M = len(net.wires)
         # exact series of C'(0) W_xy(t + alpha z) / C'(0)
         self.Wser = {}
-        for P, pkd in enumerate(pk.packets):
-            for x in range(L):
-                for y in range(L):
-                    d = y - x
-                    poly = pk.Wpoly(d)
-                    s = taylor_at([Fr(c, pk.Cp0) for c in poly], t, self.alpha, q)
-                    self.Wser[(P, x, y)] = s
+        if self.guarded:
+            # guarded: W~_xy(t + alpha z) itself, only for the pairs of real slots
+            for P, pkd in enumerate(pk.packets):
+                for x in pkd["wire_at"]:
+                    for y in pkd["wire_at"]:
+                        self.Wser[(P, x, y)] = taylor_at(pk.Wfrac(x, y), t, self.alpha, q)
+        else:
+            for P, pkd in enumerate(pk.packets):
+                for x in range(L):
+                    for y in range(L):
+                        d = y - x
+                        poly = pk.Wpoly(d)
+                        s = taylor_at([Fr(c, pk.Cp0) for c in poly], t, self.alpha, q)
+                        self.Wser[(P, x, y)] = s
         # groups of the ports
         self.rowg = {w: self.grp[net.wires[w][0]] for w in range(M)}
         self.colg = {w: self.grp[net.wires[w][1]] for w in range(M)}
@@ -691,10 +701,11 @@ class NodeExpansion:
             # coefficient G L_km d_m in row k >= m.
             half = 1 << i
             n = L // 2
-            Cpoly = [1]
-            for sv in pk.S:
-                Cpoly = poly_mul(Cpoly, [-sv, 1])
-            G = taylor_at([Fr(c, pk.Cp0) for c in Cpoly], t, self.alpha, q)
+            if not self.guarded:
+                Cpoly = [1]
+                for sv in pk.S:
+                    Cpoly = poly_mul(Cpoly, [-sv, 1])
+                G = taylor_at([Fr(c, pk.Cp0) for c in Cpoly], t, self.alpha, q)
             for P, pkd in enumerate(pk.packets):
                 lo, hi = pkd["pat"][i]
                 if lo == hi:
@@ -719,8 +730,12 @@ class NodeExpansion:
                         for (k, w2) in occ:
                             if k < m:
                                 continue
-                            tup = tuple(red(c, p) for c in Um[m][k])
-                            assert all(v2(c) >= 0 for c in Um[m][k]), ("U not integral", P, h, m, k)
+                            if self.guarded:
+                                cf = [c * pk.colunit(xk[k]) for c in Um[m][k]]
+                            else:
+                                cf = Um[m][k]
+                            assert all(v2(c) >= 0 for c in cf), ("U not integral", P, h, m, k)
+                            tup = tuple(red(c, p) for c in cf)
                             if any(tup):
                                 lin.append((tup, w2))
                         if not lin:
@@ -731,7 +746,11 @@ class NodeExpansion:
                             if k < m:
                                 continue
                             assert all(v2(c) >= 0 for c in Lm[k][m]), ("L not integral", P, h, m, k)
-                            cc = ser_mul(ser_mul(G, d[m], q), Lm[k][m], q)
+                            if self.guarded:
+                                R_k = pk.rowfactor(xk[k], t, self.alpha, q)
+                                cc = ser_mul(ser_mul(R_k, d[m], q), Lm[k][m], q)
+                            else:
+                                cc = ser_mul(ser_mul(G, d[m], q), Lm[k][m], q)
                             assert all(v2(c) >= wgt for c in cc), ("weight", wgt, [v2(c) for c in cc])
                             self.coef[(wr, mi)] = [red(c, p) for c in cc]
         # (D.12) check: every crossing entry equals its mode expansion mod 2^p
@@ -1054,11 +1073,15 @@ def direct_taylor_mod(net, pk, t, p, q):
     """F(t + alpha z) mod (2^p, z^q) straight from (D.8), without modes."""
     m, alpha, M = 1 << p, 2 ** (pk.a + 1), len(net.wires)
     Wres = {}
+    gd = getattr(pk, "guarded", False)
     for P, pkd in enumerate(pk.packets):
         for x in pkd["wire_at"]:
             for y in pkd["wire_at"]:
-                Wres[(P, x, y)] = [red(c, p) for c in
-                                   taylor_at([Fr(c, pk.Cp0) for c in pk.Wpoly(y - x)], t, alpha, q)]
+                if gd:
+                    Wres[(P, x, y)] = [red(c, p) for c in taylor_at(pk.Wfrac(x, y), t, alpha, q)]
+                else:
+                    Wres[(P, x, y)] = [red(c, p) for c in
+                                       taylor_at([Fr(c, pk.Cp0) for c in pk.Wpoly(y - x)], t, alpha, q)]
     tot = [0] * q
     for xx in range(1 << (2 * M)):
         X = [(xx >> w) & 1 for w in range(M)]
@@ -1308,7 +1331,8 @@ def node_value(net, pk, labels, t, p, q, weights="paper", method="dp", basis="po
     return ser, stats
 
 
-def count_e2e(n, clauses, chunks=True, Lc=2, r=3, seed=0, a=1, u=1, basis="power", method="dp"):
+def count_e2e(n, clauses, chunks=True, Lc=2, r=3, seed=0, a=1, u=1, basis="power", method="dp",
+              guarded=False, kappa=2):
     """Exact #F by the whole algorithm with packet coordinates a and retained valuation levels u: build the
     network (chunk super-vertices when chunks, units from make_units(n, clauses, Lc, random.Random(seed))),
     labels of a coordinates tuple(rng.randrange(r)) * a per vertex from the same rng, packing,
@@ -1316,18 +1340,23 @@ def count_e2e(n, clauses, chunks=True, Lc=2, r=3, seed=0, a=1, u=1, basis="power
     with q_t > 0 use precision P_t = p + loss_bits(...) with p = n + 1 and the 'sharp' weights with the given
     basis ("power", "newton" or "ldu"), F(t + alpha z) mod (2^P_t, z^q_t) from sum_dp, then recover(...) and reduce
     mod 2^p; multiply by 2^(unused variables). With a = 1, u = 1 this is the old a = 1, u = 1 call and must
-    equal count_sat."""
+    equal count_sat. With guarded=True the packing is GuardedPacking(net, labels, a, u, kappa) with labels of u
+    coordinates, the nodes are guarded_multiplicities(pk, guarded_h(M, pk)) and the basis must be "ldu"."""
     rng = random.Random(seed)
     if chunks:
         net = chunk_net_mapped(n, clauses, make_units(n, clauses, Lc, rng))
     else:
         net = formula_net(n, clauses)
-    labels = [tuple(rng.randrange(r) for _ in range(a)) for _ in net.verts]
-    pk = Packing(net, labels, a)
+    lab_n = u if guarded else a
+    labels = [tuple(rng.randrange(r) for _ in range(lab_n)) for _ in net.verts]
+    pk = GuardedPacking(net, labels, a, u, kappa) if guarded else Packing(net, labels, a)
     M = len(net.wires)
     L = pk.L
-    h = M * (2 * L - 1) // sum((L >> i) * (u - i) for i in range(u)) + 1
-    qm = multiplicities(a, u, h)
+    if guarded:
+        qm = guarded_multiplicities(pk, guarded_h(M, pk))
+    else:
+        h = M * (2 * L - 1) // sum((L >> i) * (u - i) for i in range(u)) + 1
+        qm = multiplicities(a, u, h)
     p = n + 1
     data = {}
     for t, qt in sorted(qm.items()):
