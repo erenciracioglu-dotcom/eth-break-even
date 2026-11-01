@@ -105,11 +105,16 @@ def newton_items(C, cases, basis="newton"):
                     except Exception:  # noqa: BLE001
                         it.update(ok=False, error=traceback.format_exc()[-400:])
                     items.append(it)
+    modes_bad = any(i["kind"] == basis + "_modes" and not i["ok"] for i in items)
     for cs in cases.get("newton_e2e", []):
         rng = random.Random(cs["seed"])
         n = cs["n"]
         cls = R.random_formula(n, cs["m"], rng)
         it = dict(kind=basis + "_e2e", seed=cs["seed"], chunks=cs["chunks"], a=cs["a"], u=cs["u"])
+        if modes_bad:      # a wrong basis can make these counts very slow; they cannot verify the flag anyway
+            it.update(ok=False, error="not run: the candidate's " + basis + " modes differ from the reference")
+            items.append(it)
+            continue
         try:
             got = C.count_e2e(n, cls, chunks=cs["chunks"], Lc=cs["Lc"], r=cs["r"], seed=cs["seed"], a=cs["a"],
                               u=cs["u"], basis=basis)

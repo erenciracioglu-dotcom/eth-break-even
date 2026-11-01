@@ -619,3 +619,18 @@ round 5 ends there.
 - referee_appd version 3: the newton items run a second time with basis = 'ldu' and sharp weights (same hidden
   cases); they decide only the new flag ldu (cK = 1/2). The head's LDU implementation verifies every flag and scores
   third 1,370, occ3sat 5,518, ppsz 1,044, sharp3sat 368, brute 197.
+
+## Round 6: two recursion levels executed on toys [appd-twolevel, audit T19]
+- appd_twolevel.py builds every child network of D.4.6 that a root node needs as an explicit network (the group's
+  old vertices plus one packet vertex per packet, whose entries are the parent's z-series residues lifted to
+  integers) and contracts it with the algorithm itself over R1 = Z[z1]/(z1^q1): its own labels, packing, Cauchy
+  deformation, nodes, Newton modes and exact Hermite recovery, at the precision the parent node needs (inherited
+  precision), with level-2 leaves by brute force. Lifting is sound because the child value is a polynomial with
+  integer coefficients in the table entries, so lifted residues give a value congruent mod 2^P.
+- Result (seeds 31-36, 90 trials, no failure): 76 formulas (root a = 1 or 2, u = 1 or 2, r = 2 or 3; child a = 1 or 2, r = 2 or 3;
+  30 of them on chunk networks) counted exactly through both levels, 236 root nodes whose values from recursively
+  computed children equal (D.8), and 38,030 level-1 contractions each equal to the brute-force child value in every
+  z1-coefficient mod 2^P; child networks up to 5 wires, packet vertices of degree up to 4 (at most 2 L_parent), child
+  precision up to 77 bits (root nodes up to 58). 14 formulas were skipped by a memory guard (a level-1 node above 200,000 mode tuples).
+  This executes what the cost model's second level assumes (child wire count, packet-vertex degree 2 L_parent,
+  inherited precision); it does not test the asymptotic label balance.
