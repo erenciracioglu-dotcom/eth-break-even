@@ -1,4 +1,4 @@
-"""FROZEN referee for the Appendix D route, version 1. Usage: python referee.py <candidate_dir> <out_json>
+"""FROZEN referee for the Appendix D route, version 2 (round 6: Newton basis gates). Usage: python referee.py <candidate_dir> <out_json>
 Runs the verify gate, then the score gate with the flags verify confirmed (separate processes)."""
 import json
 import os

@@ -12,6 +12,9 @@ Everything is exact (Python integers and Fractions). Checks:
   6. end to end (a = 1): #F from the mode sums at the precision of Lemma D.5
 Weights: 'paper' w = b + 1, or 'sharp' w = a + 1 - i + b (every crossing entry of W(t + alpha z)
 is divisible by 2^(a+1-i): C(t + alpha z)/C'(0) is divisible by alpha = 2^(a+1)).
+Bases (round 6): 'power' (the paper: source forms sum_j j^b X_(y0 + c j), coefficients W_(x, y0) (c / A)^b) or
+'newton' (binomial moments, suggested by GPT-6 Astra: source forms sum_j binom(j, b) X_(y0 + c j), coefficients
+W_(x, y0) prod_(l=1..b) c l / (A - c l), the b-th forward difference in j; every weight grows by v2(b!)).
 """
 import itertools
 import math
@@ -70,6 +73,11 @@ def ser_inv(a, q):
         s = sum(a[j] * inv[k - j] for j in range(1, min(k, len(a) - 1) + 1))
         inv[k] = -s / a[0]
     return inv
+
+
+def v2fact(b):
+    """v2(b!) = b - (number of ones in b)."""
+    return b - bin(b).count("1")
 
 
 def ps_mul_mod(a, b, q, m):
@@ -433,7 +441,9 @@ def loss_bits(qmult, a, t):
 class NodeExpansion:
     """Mode expansion of F(t + alpha z) mod (2^p, z^q) at node t with i = v2(t)."""
 
-    def __init__(self, net, pk, labels, t, p, q, weights="paper"):
+    def __init__(self, net, pk, labels, t, p, q, weights="paper", basis="power"):
+        assert basis in ("power", "newton")
+        self.basis = basis
         self.net, self.pk, self.t, self.p, self.q = net, pk, t, p, q
         self.m = 1 << p
         a, L = pk.a, pk.L
@@ -477,29 +487,36 @@ class NodeExpansion:
                 rows = [(x, w) for x, w in pkd["wire_at"].items() if pk.row_sym(P, x, i) == tgt]
                 if not cols or not rows:
                     continue
+                cache = {}           # (x, b) -> exact coefficient series of mode b in row x
                 for b in range(p):
-                    wgt = (b + 1) if weights == "paper" else (a + 1 - i + b)
+                    extra = v2fact(b) if basis == "newton" else 0
+                    wgt = (b + 1 + extra) if weights == "paper" else (a + 1 - i + b + extra)
                     if wgt >= p:
                         break
-                    # L_Z(X) = sum_j j^b X_y ; trivial if all j^b vanish
-                    lin = [(j ** b if (j or b == 0) else 0, w2) for j, w2 in cols]
+                    # L_Z(X) = sum_j j^b X_y (power) or sum_j binom(j, b) X_y (newton); trivial if all vanish
+                    lin = [(self.bfun(j, b), w2) for j, w2 in cols]
                     lin = [(c, w2) for c, w2 in lin if c]
-                    if not lin:
-                        continue
                     k = len(self.modes)
-                    self.modes.append(dict(P=P, y0=y0, b=b, src=src, tgt=tgt, w=wgt, lin=lin))
+                    if lin:
+                        self.modes.append(dict(P=P, y0=y0, b=b, src=src, tgt=tgt, w=wgt, lin=lin))
                     for x, wr in rows:
                         A = Fr(t - y0 + x)
                         assert v2(A) <= i
-                        first = taylor_at([Fr(c, pk.Cp0) for c in pk.Wpoly(y0 - x)], t, self.alpha, q)
-                        base = [A, Fr(self.alpha)] + [Fr(0)] * max(0, q - 2)
-                        invb = ser_inv(base[:q], q)
-                        ratio = [Fr(2 ** (i + 1)) * c for c in invb]
-                        c = first
-                        for _ in range(b):
-                            c = ser_mul(c, ratio, q)
-                        assert all(v2(cc) >= wgt for cc in c), ("weight", wgt, [v2(cc) for cc in c])
-                        self.coef[(wr, k)] = [red(cc, p) for cc in c]
+                        if b == 0:
+                            c = taylor_at([Fr(c, pk.Cp0) for c in pk.Wpoly(y0 - x)], t, self.alpha, q)
+                        else:
+                            prev = cache[(x, b - 1)]
+                            if basis == "power":       # ratio c / (A + alpha z)
+                                base, num = [A, Fr(self.alpha)], Fr(step)
+                            else:                      # ratio c b / (A - c b + alpha z)
+                                base, num = [A - step * b, Fr(self.alpha)], Fr(step * b)
+                            base = (base + [Fr(0)] * q)[:q]
+                            ratio = [num * cc for cc in ser_inv(base, q)]
+                            c = ser_mul(prev, ratio, q)
+                        cache[(x, b)] = c
+                        assert all(v2(cc) >= wgt for cc in c), ("weight", basis, b, wgt, [v2(cc) for cc in c])
+                        if lin:
+                            self.coef[(wr, k)] = [red(cc, p) for cc in c]
         # (D.12) check: every crossing entry equals its mode expansion mod 2^p
         for P, pkd in enumerate(pk.packets):
             for x, wr in pkd["wire_at"].items():
@@ -510,7 +527,7 @@ class NodeExpansion:
                     acc = [0] * q
                     for k, md in enumerate(self.modes):
                         if md["P"] == P and md["y0"] == y0 and (wr, k) in self.coef:
-                            jb = j ** md["b"] if (j or md["b"] == 0) else 0
+                            jb = self.bfun(j, md["b"])
                             acc = ps_add_mod(acc, [(jb * c) % self.m for c in self.coef[(wr, k)]], self.m)
                     direct = [red(c, p) for c in self.Wser[(P, x, y)]]
                     assert acc == direct, ("D.12 failed", P, x, y)
@@ -519,6 +536,12 @@ class NodeExpansion:
         self.sg = {g: [k for k, md in enumerate(self.modes) if md["src"] == g] for g in self.r_groups}
         self.inc = {g: sorted(set(self.tg[g]) | set(self.sg[g])) for g in self.r_groups}
         self.child_calls = 0
+
+    def bfun(self, j, b):
+        """Value at column index j of the b-th source form."""
+        if self.basis == "newton":
+            return math.comb(j, b)
+        return j ** b if (j or b == 0) else 0
 
     # -- tuples
     def tuples(self, idx, budget):

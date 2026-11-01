@@ -49,5 +49,29 @@
   "result": "third threshold 5,404 -> 5,300 (1.92% lower threshold)",
   "spec_v2": true,
   "done_iter": 3
+ },
+ {
+  "id": "T17",
+  "title": "Newton (binomial) mode basis and the newton code flag",
+  "kind": "score",
+  "files": [
+   "appd_core.py",
+   "appd_params.py"
+  ],
+  "spec": "Add a second mode basis, the Newton (binomial) basis, to appd_core.py. NOTES.md, section 'Round 6', has the math. Everything that exists must keep working exactly as now: basis='power' is the default everywhere.\n\n1. NodeExpansion.__init__(self, net, pk, labels, t, p, q, weights='paper', basis='power'): accept basis 'power' or 'newton' and store it as self.basis. With basis='newton', inside the existing loop over b:\n   - weight: add v2(b!) to the current weight formula, where v2(b!) = b - bin(b).count('1'); stop at the first b whose weight is >= p, as now;\n   - source form: lin = [(math.comb(j, b), w2) for j, w2 in cols] without zero coefficients; a mode whose form is empty is not created, but keep the coefficient chain going for the next b;\n   - coefficients of row x, with A = Fr(t - y0 + x) and c = step = 2^(i+1): N_0 = the current first series (taylor_at of pk.Wpoly(y0 - x)); N_b = ser_mul(N_(b-1), r_b, q) where r_b is the series of c*b / (A - c*b + alpha z), i.e. Fr(c*b) times ser_inv([A - c*b, alpha] padded or cut to q terms, q). Keep the assertion that every coefficient of N_b has v2 >= the weight, and store [red(x, p) ...] in self.coef[(row wire, mode index)] as now;\n   - the (D.12) self-check at the end of __init__ must evaluate the source form with math.comb(j, b) for this basis (j ** b for the power basis). A helper method self.bfun(j, b) is a clean way to do both.\n   Keep the data layout: self.modes is a list of dict(P, y0, b, src, tgt, w, lin) in the same order as now (packets, then y0, then b) and self.coef[(row wire, mode index)] holds the residue series. The referee compares modes, weights, forms and coefficient residues with its own reference.\n2. node_value(net, pk, labels, t, p, q, weights='paper', method='dp', basis='power'): pass basis on to NodeExpansion.\n3. count_e2e(n, clauses, chunks=True, Lc=2, r=3, seed=0, a=1, u=1, basis='power'): the same construction as now with general a and u: labels with a coordinates from the same rng (as now), h = M * (2L - 1) // (sum over i < u of (L >> i) * (u - i)) + 1, qm = multiplicities(a, u, h), and NodeExpansion(..., weights='sharp', basis=basis) at every node. With a = 1, u = 1 the result must not change. Update its docstring.\n4. appd_params.py: in choose_params, set newton=True together with the other code flags when USE_CODE_FLAGS (newton=False otherwise). Give rank_e a parameter cK=2.0, use it in both A.tup calls, and pass A.ck(flags) where choose_params calls rank_e (the frozen model uses cK = 1 when newton is on).\ngroup_table, the three sums and byvars_value need no change: they only read self.modes and self.coef.",
+  "stop": "smoke_appd.py prints SMOKE OK and then NEWTON OK",
+  "needs_flags": [
+   "memo",
+   "modedp",
+   "chunks",
+   "newton"
+  ],
+  "after": [
+   "T16"
+  ],
+  "status": "open",
+  "priority": 30,
+  "max_attempts": 3,
+  "steps": 60
  }
 ]

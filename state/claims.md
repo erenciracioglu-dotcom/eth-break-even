@@ -540,3 +540,38 @@ round 5 ends there.
 - What-if in the cost model (appd_model4, weight step s acts like cK = 2/s): break-even vs 2^(n/3) / 1.307^n /
   1.1199^n / 1.637^n: power basis 5,405 / 4,033 / 23,062 / 1,226; Newton (s = 2) 2,719 / 2,033 / 11,550 / 656;
   LDU (s = 4) 1,383 / 1,052 / 5,793 / 371. Not yet scored by a referee.
+
+## Round 6 (1 November): binomial (Newton) mode basis [appd-newton]
+- Lemma [head proof, suggested by GPT-6 Astra]. Node t with i = v2(t) < u, c = 2^(i+1), alpha = 2^(a+1),
+  T = t + alpha z; a packet whose pattern differs at coordinate i; tile y0 with columns y_j = y0 + c j
+  (0 <= j < L/c); a crossing row x, so A0 = t - y0 + x has e = v2(A0) <= i. With A = A0 + alpha z:
+    W_(x, y_j)(T) = sum_(b = 0..j) N_(x,b)(T) binom(j, b),  N_(x,b) = W_(x, y0)(T) prod_(l = 1..b) c l / (A - c l),
+  and coefficientwise in z, v2(N_(x,b)) >= v2(W_(x,y0)) + b + v2(b!), i.e. weight b + 1 + v2(b!) (paper) or
+  a + 1 - i + b + v2(b!) (sharp).
+  Proof: W_(x,y)(T) = G(T)/(T - (y - x)) with G = C(T)/C'(0), so W_(x, y_j) = G f(j), f(j) = 1/(A - c j). The divided
+  difference of s -> 1/(A - s) at s = 0, c, ..., b c is 1/prod_(l<=b)(A - c l), so Delta^b f(0) = b! c^b /
+  prod_(l<=b)(A - c l), and Newton's forward formula f(j) = sum_(b<=j) binom(j, b) Delta^b f(0) is exact for integers
+  j >= 0. For l >= 1, v2(A0 - c l) = e because v2(c l) >= i + 1 > e; as a series in z, 1/(A - c l) has coefficients of
+  valuation >= -e + k (a + 1 - e) >= -e, so c l/(A - c l) has coefficients of valuation >= i + 1 + v2(l) - e >= 1 + v2(l).
+  Valuation bounds multiply under series products. QED.
+- Consequence: the crossing part of every row factor is sum_b N_(x,b) L_b(X) with integer source forms
+  L_b(X) = sum_(j>=b) binom(j, b) X_(y0 + c j) that read only the source group's column bits: everything (D.13)-(D.16),
+  D.4.6, memo, modedp and the leaves need, with new weights. v2(b!) = b - s_2(b) >= b - log2(b + 1), so a tile has
+  at most (W + log2(W + 1))/2 + 1 modes of weight <= w0 + W instead of W + 1. In the partition bound
+  (2 pi/ln 2) sqrt(K p/6) for the mode tuples the density K halves: the model constant cK = 2 becomes cK = 1. Exact
+  tuple counts (newton_partition.py): log N(Newton)/log N(power) = 0.738 at one tile and p = 4,000, falling
+  towards 1/sqrt 2 = 0.707; the s_2 correction is lower order.
+- Head checks (appd_toy.py with basis = 'newton', md5 61944a04): 178 node instances at a = 2..4 with both weight
+  rules (D.12 and the weights asserted entrywise; node values by the three summation orders equal (D.8) computed
+  directly; 1,172 child networks of D.4.6 and 980 by-variables leaves equal the tables); 88 end-to-end exact counts
+  at a = 2 (u = 1, 2) and a = 3 (u = 1, 2), all correct; on the same instances the power basis needed a median
+  36 times more mode tuples (largest: 5.9 million against 1.05 trillion). With basis = 'power' the toy's report is
+  byte-identical to round 5.
+- referee_appd version 2 (round 6): the assembly gains the code flag newton (cK = 1); the gates add 18 hidden node
+  cases (a = 2..4, the candidate's Newton modes, weights, forms and coefficient residues must equal the reference;
+  node values by the three orders with the reference child and enumeration counts; by-variables leaves) and 8 hidden
+  end-to-end counts at a = 2, 3; these items decide only the newton flag. Version 1 results are reproduced exactly
+  (third 5,300, occ3sat 21,942, ppsz 3,958, sharp3sat 1,212, brute 572 for the current code). The head's own
+  Newton implementation verifies every flag and scores third 2,670, occ3sat 10,993, ppsz 1,998, sharp3sat 652,
+  brute 320; a deliberately wrong candidate (Newton forms with the power weights: right values, wrong weights)
+  loses the newton flag on 18 checks.

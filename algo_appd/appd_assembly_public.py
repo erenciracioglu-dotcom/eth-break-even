@@ -1,15 +1,18 @@
-"""FROZEN Appendix D assembly, referee_appd version 1 (2026-11-01).
+"""FROZEN Appendix D assembly, referee_appd version 2 (2026-11-01, round 6: adds the newton flag).
 
 Cost exponent e (cost ~ 2^(e n), lam = log2 n, polynomial factors ignored) of the tensor-contraction algorithm
 of Appendix D (Theorem D.1) on 3-CNF with at most three occurrences per variable, with the head-audited steps of
 state/claims.md: appd-tight, appd-bernstein, appd-memo, appd-modedp, appd-chunks, appd-perclass, appd-leafvars,
-appd-labelfree. All wire counts are per n.
+appd-labelfree, appd-newton. All wire counts are per n.
 
 params = {"levels": L in 1..3, "r": [r_0..r_{L-1}] groups per level, "u": [u_d] retained valuation levels
 (integers >= 2), "a": [a_d] packet coordinates (L_d = 2^a_d, integers), "delta": balance tolerance,
-"Lc": chunk size, and boolean flags memo, modedp, chunks, perclass, leafvars, labelfree}.
-Flags memo, modedp, chunks and leafvars count only when the verify gate confirmed the agent's code for them
-(see referee.py); perclass and labelfree are accounting facts (audited) and need no code.
+"Lc": chunk size, and boolean flags memo, modedp, chunks, perclass, leafvars, labelfree, newton}.
+Flags memo, modedp, chunks, leafvars and newton count only when the verify gate confirmed the agent's code for
+them (see referee.py); perclass and labelfree are accounting facts (audited) and need no code.
+newton (appd-newton): crossing entries expanded in binomial moments, source forms sum_j binom(j, b) X_(y0 + c j);
+the weight of mode b grows by v2(b!) >= b - log2(b + 1), so a class has about W/2 modes of weight <= W instead of W:
+the mode-tuple constant cK = 2 of the power basis becomes cK = 1 (ck() below).
 """
 import math
 
@@ -17,8 +20,8 @@ LN2 = math.log(2.0)
 TARGETS = {"third": 1.0 / 3.0, "occ3sat": math.log2(1.1199), "ppsz": math.log2(1.307031578),
            "sharp3sat": math.log2(1.637), "brute": 1.0}
 PRIMARY = "third"            # fair counting competitor for this class: 2^(n/3) (pathwidth DP)
-FLAGS = ("memo", "modedp", "chunks", "perclass", "leafvars", "labelfree")
-CODE_FLAGS = ("memo", "modedp", "chunks", "leafvars")
+FLAGS = ("memo", "modedp", "chunks", "perclass", "leafvars", "labelfree", "newton")
+CODE_FLAGS = ("memo", "modedp", "chunks", "leafvars", "newton")
 
 
 def eps_dp(r):
@@ -36,6 +39,11 @@ def f_grp(r):
 def tup(u, f, dm, cK=2.0):
     """log2(#mode tuples) per unit M/sqrt(u): K = cK (1 + dm) f M / D per weight, p_t = 6 h D, h = M/(u - 1)."""
     return (2 * math.pi / LN2) * math.sqrt((u / (u - 1.0)) * cK * (1 + dm) * f)
+
+
+def ck(params):
+    """Mode-tuple constant: modes per unit weight per crossing class times 2 (power basis 2, Newton 1)."""
+    return 1.0 if params.get("newton") else 2.0
 
 
 def lse2(*xs):
@@ -109,12 +117,13 @@ def exponent_of(params, lam):
         checks[f"d{d}"] = dict(lD=round(lD, 1), pad_slack=round(logM + math.log2(delta) - pad, 2),
                                bal_slack=round(logM - lD - slack, 2))
     dm = 2 * delta if fl["perclass"] else delta
+    cK = ck(fl)
     worst, cum, terms = 0.0, 0.0, []
     for d in range(L):
         x = M[d] / math.sqrt(u[d])
-        arith = tup(u[d], eps_dp(r[d]) if fl["modedp"] else f_all(r[d]), dm) * x
+        arith = tup(u[d], eps_dp(r[d]) if fl["modedp"] else f_all(r[d]), dm, cK) * x
         if fl["memo"]:
-            child = tup(u[d], f_grp(r[d]), dm) * x
+            child = tup(u[d], f_grp(r[d]), dm, cK) * x
             worst = max(worst, cum + arith)
             terms.append(dict(arith=cum + arith, child=child))
             cum += child

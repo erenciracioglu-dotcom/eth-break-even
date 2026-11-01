@@ -81,7 +81,10 @@ def problem(ref):
     if (s.get("choose_params_avg_s") or 0) >= 3.0:
         return f"choose_params too slow: {s['choose_params_avg_s']:.2f} s per call (limit 3 s)"
     if not (ref.get("thresholds") or {}).get("third"):
-        return "score gate: the 2^(n/3) target was never reached"
+        bad = ref.get("verify_failures") or []
+        why = "; ".join(str({k: v for k, v in i.items() if k != "ok"})[:300] for i in bad[:3])
+        return ("score gate: the 2^(n/3) target was never reached (parameters that use an unverified code flag "
+                "are invalid)" + ("; failing checks: " + why if why else ""))
     return None
 
 
@@ -94,7 +97,10 @@ def decide(task, ref, best):
     need = task.get("needs_flags") or []
     missing = [f for f in need if not (ref.get("verified_flags") or {}).get(f)]
     if missing:
-        return False, "code flags not verified: " + ", ".join(missing) + "; " + detail
+        bad = ref.get("verify_failures") or []
+        why = "; ".join(str({k: v for k, v in i.items() if k != "ok"})[:300] for i in bad[:3])
+        return False, ("code flags not verified: " + ", ".join(missing) + "; " + detail
+                       + ("; failing checks: " + why if why else ""))
     if task.get("kind", "score") == "score":
         if new < old * (1 - MIN_GAIN):
             return True, detail + f" ({100 * (1 - new / old):.2f}% lower threshold)"
