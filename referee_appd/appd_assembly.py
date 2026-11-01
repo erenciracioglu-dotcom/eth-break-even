@@ -1,20 +1,23 @@
-"""FROZEN Appendix D assembly, referee_appd version 3 (2026-11-01, round 6: newton and ldu flags).
+"""FROZEN Appendix D assembly, referee_appd version 4 (2026-11-01, round 7: shellmm flag).
 
 Cost exponent e (cost ~ 2^(e n), lam = log2 n, polynomial factors ignored) of the tensor-contraction algorithm
 of Appendix D (Theorem D.1) on 3-CNF with at most three occurrences per variable, with the head-audited steps of
 state/claims.md: appd-tight, appd-bernstein, appd-memo, appd-modedp, appd-chunks, appd-perclass, appd-leafvars,
-appd-labelfree, appd-newton, appd-ldu. All wire counts are per n.
+appd-labelfree, appd-newton, appd-ldu, appd-shellmm. All wire counts are per n.
 
 params = {"levels": L in 1..3, "r": [r_0..r_{L-1}] groups per level, "u": [u_d] retained valuation levels
 (integers >= 2), "a": [a_d] packet coordinates (L_d = 2^a_d, integers), "delta": balance tolerance,
-"Lc": chunk size, and boolean flags memo, modedp, chunks, perclass, leafvars, labelfree, newton, ldu}.
-Flags memo, modedp, chunks, leafvars, newton and ldu count only when the verify gate confirmed the agent's code
+"Lc": chunk size, and boolean flags memo, modedp, chunks, perclass, leafvars, labelfree, newton, ldu,
+shellmm}. Flags memo, modedp, chunks, leafvars, newton, ldu and shellmm count only when the verify gate confirmed the agent's code
 for them (see referee.py); perclass and labelfree are accounting facts (audited) and need no code.
 newton (appd-newton): crossing entries expanded in binomial moments, source forms sum_j binom(j, b) X_(y0 + c j);
 the weight of mode b grows by v2(b!) >= b - log2(b + 1), so a class has about W/2 modes of weight <= W instead of W:
 the mode-tuple constant cK = 2 of the power basis becomes cK = 1 (ck() below).
 ldu (appd-ldu): the crossing block of each packet half is factored as a Cauchy matrix K = L D U over Z_(2)[[z]];
 mode m = (U X)_m has weight a + 1 - i + 2b + 2 v2(b!) with b = floor(m/2^i), twice the Newton growth: cK = 1/2.
+shellmm (appd-shellmm): every step of the group-by-group mode sum is a set of block matrix products, one per
+triple of exact weights (shells) of the index sets x (processed-later), y (processed-current), z (current-later);
+with Strassen on square blocks the mode fraction eps_dp(r) becomes eps_mm(r) (f_mm below, omega = log2 7).
 """
 import math
 
@@ -22,8 +25,8 @@ LN2 = math.log(2.0)
 TARGETS = {"third": 1.0 / 3.0, "occ3sat": math.log2(1.1199), "ppsz": math.log2(1.307031578),
            "sharp3sat": math.log2(1.637), "brute": 1.0}
 PRIMARY = "third"            # fair counting competitor for this class: 2^(n/3) (pathwidth DP)
-FLAGS = ("memo", "modedp", "chunks", "perclass", "leafvars", "labelfree", "newton", "ldu")
-CODE_FLAGS = ("memo", "modedp", "chunks", "leafvars", "newton", "ldu")
+FLAGS = ("memo", "modedp", "chunks", "perclass", "leafvars", "labelfree", "newton", "ldu", "shellmm")
+CODE_FLAGS = ("memo", "modedp", "chunks", "leafvars", "newton", "ldu", "shellmm")
 
 
 def eps_dp(r):
@@ -36,6 +39,29 @@ def f_all(r):
 
 def f_grp(r):
     return 2.0 * (r - 1) / (r * r)
+
+
+OMEGA_MM = math.log2(7.0)          # Strassen's algorithm
+
+
+def f_mm(a, b, c, r, om=OMEGA_MM):
+    """Mode fraction of one shell-matrix-product merge: blocks A (a groups) and B (b groups), c groups left,
+    x = A-C, y = A-B, z = B-C. Naive cost 2(ab + ac + bc)/r^2; with square-block fast matrix multiplication of
+    exponent om the smallest of the three index sets enters with weight (om - 2)^2 (appd-shellmm)."""
+    s = a * b + a * c + b * c
+    return 2.0 * (s - (1.0 - (om - 2.0) ** 2) * min(a * b, a * c, b * c)) / float(r * r)
+
+
+def eps_mm(r):
+    """appd-shellmm: eps of the group-by-group order (one group per step) with Strassen; eps_mm(r) <= eps_dp(r)."""
+    return max([2.0 * (r - 1) / float(r * r)] + [f_mm(k - 1, 1, r - k, r) for k in range(2, r + 1)])
+
+
+def eps_mode(r, fl):
+    """Mode fraction of the root sum: all modes without modedp, eps_dp with it, eps_mm with shellmm as well."""
+    if not fl.get("modedp"):
+        return f_all(r)
+    return eps_mm(r) if fl.get("shellmm") else eps_dp(r)
 
 
 def tup(u, f, dm, cK=2.0):
@@ -81,6 +107,8 @@ def exponent_of(params, lam):
         return _bad("Lc outside [1, 2^20]")
     if fl["modedp"] and not fl["memo"]:
         return _bad("modedp needs memo (the elimination reads the child tables)")
+    if fl["shellmm"] and not fl["modedp"]:
+        return _bad("shellmm needs modedp (it reorganises the group-by-group sum)")
     if fl["leafvars"] and not (fl["chunks"] and L == 1):
         return _bad("leafvars applies to the depth-1 leaves of a chunk network only")
     for d in range(L):
@@ -125,7 +153,7 @@ def exponent_of(params, lam):
     worst, cum, terms = 0.0, 0.0, []
     for d in range(L):
         x = M[d] / math.sqrt(u[d])
-        arith = tup(u[d], eps_dp(r[d]) if fl["modedp"] else f_all(r[d]), dm, cK) * x
+        arith = tup(u[d], eps_mode(r[d], fl), dm, cK) * x
         if fl["memo"]:
             child = tup(u[d], f_grp(r[d]), dm, cK) * x
             worst = max(worst, cum + arith)

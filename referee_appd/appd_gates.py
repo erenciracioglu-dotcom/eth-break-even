@@ -1,4 +1,4 @@
-"""FROZEN gates of referee_appd version 3 (round 6). Usage: python appd_gates.py <candidate_dir> <verify|score> <out_json> [verified_flags_json]
+"""FROZEN gates of referee_appd version 4 (round 7). Usage: python appd_gates.py <candidate_dir> <verify|score> <out_json> [verified_flags_json]
 
 verify: the agent's appd_core.py against the frozen reference appd_ref.py on hidden cases (cases_appd.json):
   node   - node_value(method = paper, memo, dp) equals F(t + alpha z) mod (2^p, z^q) from the frozen direct
@@ -13,9 +13,16 @@ verify: the agent's appd_core.py against the frozen reference appd_ref.py on hid
   ldu (version 3; decides only the ldu flag) - the same checks on the same hidden cases with basis="ldu" and
            weights="sharp": modes, weights, series source forms and coefficient residues equal the reference; node
            values by the three orders with the reference counts; byvars on chunk networks; end-to-end counts.
+  shellmm (version 4; decides only the shellmm flag) - matmul equals the schoolbook product on 11 shapes and
+           uses at most 7^(k-1) * 8 ring products (counted through ps_mul_mod) for 2^k x 2^k inputs;
+           node_value(..., method="mm") equals (D.8) on the node cases (power basis) and the newton node
+           cases (ldu basis), its per-step block shapes and the shapes of every matmul call equal the
+           reference shell structure and its max_enum equals the reference dp count; count_e2e(...,
+           basis="ldu", method="mm") equals the brute-force count on the newton end-to-end cases.
   direct_taylor_mod and F_poly of the agent module are blocked while it runs.
   Verified flags: memo (every memo item), modedp (every dp item), chunks (every item on a chunk network and every
-  chunk end-to-end count), leafvars (every byvars item), newton (every newton item), ldu (every ldu item).
+  chunk end-to-end count), leafvars (every byvars item), newton (every newton item), ldu (every ldu item),
+  shellmm (every mm item).
   With IMPLEMENTED = False
   nothing is tried and no code flag is verified (the gate still passes).
 score: break-even sizes from the agent's appd_params.choose_params(lam, target), re-scored here with the frozen
@@ -126,6 +133,103 @@ def newton_items(C, cases, basis="newton"):
     return items
 
 
+MM_SHAPES = ((1, 1, 1), (1, 3, 2), (2, 3, 1), (3, 1, 4), (5, 3, 7), (12, 4, 9), (7, 13, 6), (4, 4, 4), (8, 8, 8),
+             (16, 16, 16), (32, 32, 32))
+MM_MAX_PRODUCTS = {4: 7 * 8, 8: 7 ** 2 * 8, 16: 7 ** 3 * 8, 32: 7 ** 4 * 8}
+
+
+def mm_items(C, cases):
+    """Round 7 (shellmm): matmul exact against the schoolbook product, with at most 7^(k-1) * 8 ring products for
+    2^k x 2^k inputs; node values through shell matrix products, with the reference block shapes in the stats and
+    in every matmul call; end-to-end counts with method mm (ldu basis)."""
+    if not callable(getattr(C, "matmul", None)):
+        return [dict(kind=k, ok=False, error="appd_core has no matmul (round 7 not implemented)")
+                for k in ("mm_matmul", "mm_node", "mm_e2e")]
+    items = []
+    rng = random.Random(7007)
+    for (n, k, l) in MM_SHAPES:
+        q, m = rng.choice([1, 2, 3]), 1 << rng.choice([3, 5, 8])
+        Am = [[[rng.randrange(m) for _ in range(q)] for _ in range(k)] for _ in range(n)]
+        Bm = [[[rng.randrange(m) for _ in range(q)] for _ in range(l)] for _ in range(k)]
+        it = dict(kind="mm_matmul", shape=[n, k, l], q=q, m=m)
+        cnt = [0]
+        orig = C.ps_mul_mod
+
+        def counting(a, b, qq, mm, _o=orig):
+            cnt[0] += 1
+            return _o(a, b, qq, mm)
+        try:
+            want = R.naive_matmul(Am, Bm, q, m)
+            C.ps_mul_mod = counting
+            try:
+                got = C.matmul(Am, Bm, q, m)
+            finally:
+                C.ps_mul_mod = orig
+            ok = [[[int(x) % m for x in s] for s in row] for row in got] == want
+            if n == k == l and n in MM_MAX_PRODUCTS:
+                ok = ok and cnt[0] <= MM_MAX_PRODUCTS[n]
+            it.update(ok=bool(ok), ring_products=cnt[0])
+        except Exception:  # noqa: BLE001
+            it.update(ok=False, error=traceback.format_exc()[-400:])
+        items.append(it)
+    jobs = [(cs, "power") for cs in cases["node"]] + [(cs, "ldu") for cs in cases.get("newton_node", [])]
+    for cs, basis in jobs:
+        rng = random.Random(cs["seed"])
+        n_, cls, net, labels, pk = R.setup(rng, cs["n"], cs["m"], cs["a"], cs["r"], chunks=cs["chunks"], Lc=cs["Lc"])
+        M = len(net.wires)
+        if M < 2 or M > 8:
+            continue
+        C._WIREMAP.update({k: v for k, v in R._WIREMAP.items() if k[0] == id(net)})
+        nodes = [s for s in pk.S if s and R.v2(s) < pk.a]
+        t = nodes[int(cs["tpick"] * len(nodes)) % len(nodes)]
+        p, q = cs["p"], cs["q"]
+        w = "sharp" if basis == "ldu" else cs["weights"]
+        direct = R.direct_taylor_mod(net, pk, t, p, q)
+        ref = R.NodeExpansion(net, pk, labels, t, p, q, weights=w, basis=basis)
+        _, ref_enum, _ = ref.sum_dp()
+        want = ref.mm_shapes()
+        it = dict(kind="mm_node", basis=basis, seed=cs["seed"], chunks=cs["chunks"], M=M, t=t, p=p, q=q,
+                  modes=len(ref.modes), blocks=sum(len(s) for s in want))
+        log = []
+        orig_mm = C.matmul
+
+        def logging_mm(Am, Bm, qq, mm, _o=orig_mm):
+            log.append((len(Am), len(Bm), len(Bm[0]) if Bm else 0))
+            return _o(Am, Bm, qq, mm)
+        C.matmul = logging_mm
+        try:
+            ser, st = C.node_value(net, pk, labels, t, p, q, weights=w, method="mm", basis=basis)
+            ok = [int(x) % (1 << p) for x in ser] == direct
+            got_shapes = [sorted(tuple(int(v) for v in x) for x in s) for s in st.get("shapes", [])]
+            ok = ok and got_shapes == want and sorted(log) == sorted(x for s in want for x in s)
+            ok = ok and int(st.get("max_enum", -1)) == ref_enum
+            it.update(ok=bool(ok), max_enum=[st.get("max_enum"), ref_enum], calls=len(log))
+        except Exception:  # noqa: BLE001
+            it.update(ok=False, error=traceback.format_exc()[-400:])
+        finally:
+            C.matmul = orig_mm
+        items.append(it)
+    node_bad = any(i["kind"] == "mm_node" and not i["ok"] for i in items)
+    for cs in cases.get("newton_e2e", []):
+        rng = random.Random(cs["seed"])
+        n = cs["n"]
+        cls = R.random_formula(n, cs["m"], rng)
+        it = dict(kind="mm_e2e", seed=cs["seed"], chunks=cs["chunks"], a=cs["a"], u=cs["u"])
+        if node_bad:
+            it.update(ok=False, error="not run: a shell matrix product node check failed")
+            items.append(it)
+            continue
+        try:
+            got = C.count_e2e(n, cls, chunks=cs["chunks"], Lc=cs["Lc"], r=cs["r"], seed=cs["seed"], a=cs["a"],
+                              u=cs["u"], basis="ldu", method="mm")
+            want_c = R.count_sat(n, cls)
+            it.update(ok=int(got) == want_c, got=int(got), want=want_c)
+        except Exception:  # noqa: BLE001
+            it.update(ok=False, error=traceback.format_exc()[-400:])
+        items.append(it)
+    return items
+
+
 def verify(cand):
     sys.path.insert(0, cand)
     import appd_core as C  # noqa: E402
@@ -191,8 +295,10 @@ def verify(cand):
         items.append(it)
     items += newton_items(C, cases)
     items += newton_items(C, cases, basis="ldu")
+    items += mm_items(C, cases)
     nk = ("newton_modes", "newton_paper", "newton_memo", "newton_dp", "newton_byvars", "newton_e2e")
     lk = tuple("ldu" + k[len("newton"):] for k in nk)
+    mk = ("mm_matmul", "mm_node", "mm_e2e")
     core = ("paper", "memo", "dp", "byvars", "e2e")       # the newton items only decide the newton flag
     flags = {
         "memo": all(i["ok"] for i in items if i["kind"] == "memo") and any(i["kind"] == "memo" for i in items),
@@ -202,9 +308,10 @@ def verify(cand):
         "leafvars": all(i["ok"] for i in items if i["kind"] == "byvars") and any(i["kind"] == "byvars" for i in items),
         "newton": all(i["ok"] for i in items if i["kind"] in nk) and all(any(i["kind"] == k for i in items) for k in nk),
         "ldu": all(i["ok"] for i in items if i["kind"] in lk) and all(any(i["kind"] == k for i in items) for k in lk),
+        "shellmm": all(i["ok"] for i in items if i["kind"] in mk) and all(any(i["kind"] == k for i in items) for k in mk),
     }
     return {"ok": all(i["ok"] for i in items if i["kind"] in core), "implemented": True, "items": items, "flags": flags,
-            "counts": {k: sum(1 for i in items if i["kind"] == k) for k in ("paper", "memo", "dp", "byvars", "e2e") + nk + lk}}
+            "counts": {k: sum(1 for i in items if i["kind"] == k) for k in ("paper", "memo", "dp", "byvars", "e2e") + nk + lk + mk}}
 
 
 def score(cand, verified):

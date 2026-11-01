@@ -1221,3 +1221,153 @@ if __name__ == "__main__":
     import json
     rep = main()
     print(json.dumps(rep, indent=1, default=str))
+
+
+# ---- round 7 (appd-shellmm): the group-by-group mode sum as shell matrix products with Strassen's algorithm
+
+
+def ps_sub_mod(a, b, m):
+    return [(x - y) % m for x, y in zip(a, b)]
+
+
+def naive_matmul(A, B, q, m):
+    """Schoolbook product of an n x k and a k x l matrix whose entries are series mod (m, z^q)."""
+    n, k, l = len(A), len(B), len(B[0])
+    out = [[[0] * q for _ in range(l)] for _ in range(n)]
+    for i in range(n):
+        for kk in range(k):
+            a = A[i][kk]
+            for j in range(l):
+                out[i][j] = ps_add_mod(out[i][j], ps_mul_mod(a, B[kk][j], q, m), m)
+    return out
+
+
+def _mm_add(X, Y, m):
+    return [[ps_add_mod(a, b, m) for a, b in zip(r1, r2)] for r1, r2 in zip(X, Y)]
+
+
+def _mm_sub(X, Y, m):
+    return [[ps_sub_mod(a, b, m) for a, b in zip(r1, r2)] for r1, r2 in zip(X, Y)]
+
+
+def strassen_sq(X, Y, q, m):
+    """S x S times S x S, S a power of two: Strassen's seven half-size products down to 2 x 2 blocks (schoolbook
+    there), so 7^(k-1) * 8 ring products for S = 2^k >= 2."""
+    S = len(X)
+    if S <= 2:
+        return naive_matmul(X, Y, q, m)
+    h = S // 2
+
+    def blk(M_, i, j):
+        return [row[j * h:(j + 1) * h] for row in M_[i * h:(i + 1) * h]]
+    A11, A12, A21, A22 = blk(X, 0, 0), blk(X, 0, 1), blk(X, 1, 0), blk(X, 1, 1)
+    B11, B12, B21, B22 = blk(Y, 0, 0), blk(Y, 0, 1), blk(Y, 1, 0), blk(Y, 1, 1)
+    M1 = strassen_sq(_mm_add(A11, A22, m), _mm_add(B11, B22, m), q, m)
+    M2 = strassen_sq(_mm_add(A21, A22, m), B11, q, m)
+    M3 = strassen_sq(A11, _mm_sub(B12, B22, m), q, m)
+    M4 = strassen_sq(A22, _mm_sub(B21, B11, m), q, m)
+    M5 = strassen_sq(_mm_add(A11, A12, m), B22, q, m)
+    M6 = strassen_sq(_mm_sub(A21, A11, m), _mm_add(B11, B12, m), q, m)
+    M7 = strassen_sq(_mm_sub(A12, A22, m), _mm_add(B21, B22, m), q, m)
+    C11 = _mm_add(_mm_sub(_mm_add(M1, M4, m), M5, m), M7, m)
+    C12 = _mm_add(M3, M5, m)
+    C21 = _mm_add(M2, M4, m)
+    C22 = _mm_add(_mm_add(_mm_sub(M1, M2, m), M3, m), M6, m)
+    return [r1 + r2 for r1, r2 in zip(C11, C12)] + [r1 + r2 for r1, r2 in zip(C21, C22)]
+
+
+def matmul(A, B, q, m):
+    """n x k times k x l over (Z/m)[z]/(z^q): square blocks of side S = the largest power of two <= min(n, k, l)
+    (zero series outside the matrices), Strassen on every block product; about n k l S^(log2(7) - 3) ring
+    products."""
+    n, k, l = len(A), len(B), len(B[0])
+    s = min(n, k, l)
+    S = 1
+    while 2 * S <= s:
+        S *= 2
+    zero = [0] * q
+
+    def get(M_, i, j, R_, C_):
+        return M_[i][j] if i < R_ and j < C_ else zero
+    out = [[zero for _ in range(l)] for _ in range(n)]
+    for bi in range(-(-n // S)):
+        for bj in range(-(-l // S)):
+            acc = None
+            for bk in range(-(-k // S)):
+                X = [[get(A, bi * S + i, bk * S + j, n, k) for j in range(S)] for i in range(S)]
+                Y = [[get(B, bk * S + i, bj * S + j, k, l) for j in range(S)] for i in range(S)]
+                Pm = strassen_sq(X, Y, q, m)
+                acc = Pm if acc is None else _mm_add(acc, Pm, m)
+            for i in range(S):
+                for j in range(S):
+                    if bi * S + i < n and bj * S + j < l:
+                        out[bi * S + i][bj * S + j] = acc[i][j]
+    return out
+
+
+def _mm_steps(ne):
+    """Per step of the order ne.r_groups: (g, X, Y, Z) with X the cut modes not touching g, Y the cut modes
+    touching g, Z the modes between g and later groups."""
+    pos = {g: j for j, g in enumerate(ne.r_groups)}
+    ends = [(min(pos[md["src"]], pos[md["tgt"]]), max(pos[md["src"]], pos[md["tgt"]])) for md in ne.modes]
+    out = []
+    for j, g in enumerate(ne.r_groups):
+        cut = [k for k, (lo, hi) in enumerate(ends) if lo < j <= hi]
+        inc = set(ne.inc[g])
+        out.append((g, [k for k in cut if k not in inc], [k for k in cut if k in inc],
+                    [k for k, (lo, hi) in enumerate(ends) if lo == j < hi]))
+    return out
+
+
+def _mm_shells(ne, idx):
+    sh = {}
+    for tpl in ne.tuples(idx, ne.p):
+        tpl = dict(tpl)
+        sh.setdefault(ne.weight(tpl), []).append(tpl)
+    return dict(sorted(sh.items()))
+
+
+def _mm_shapes(self):
+    """Block shapes of sum_mm: per step, the sorted list of (|X_w1|, |Y_w2|, |Z_w3|) over w1 + w2 + w3 < p."""
+    res = []
+    for g, X, Y, Z in _mm_steps(self):
+        xs, ys, zs = _mm_shells(self, X), _mm_shells(self, Y), _mm_shells(self, Z)
+        res.append(sorted((len(a), len(b), len(c)) for w1, a in xs.items() for w2, b in ys.items()
+                          for w3, c in zs.items() if w1 + w2 + w3 < self.p))
+    return res
+
+
+def _sum_mm(self):
+    """appd-shellmm: the sum of sum_dp with every step done as shell matrix products through the module-level
+    matmul. Return (series, shapes, child_calls)."""
+    self.child_calls = 0
+    tables = {g: self.group_table(g) for g in self.r_groups}
+    q, m, p = self.q, self.m, self.p
+    zero = [0] * q
+    Phi = {(): [1] + [0] * (q - 1)}
+    shapes = []
+    for g, X, Y, Z in _mm_steps(self):
+        xs, ys, zs = _mm_shells(self, X), _mm_shells(self, Y), _mm_shells(self, Z)
+        new, st = {}, []
+        for w1, xl in xs.items():
+            for w2, yl in ys.items():
+                if w1 + w2 >= p:
+                    continue
+                Am = [[Phi.get(self.key({**x, **y}), zero) for y in yl] for x in xl]
+                for w3, zl in zs.items():
+                    if w1 + w2 + w3 >= p:
+                        continue
+                    Bm = [[tables[g][self.key({**y, **z})] for z in zl] for y in yl]
+                    Cm = matmul(Am, Bm, q, m)
+                    st.append((len(xl), len(yl), len(zl)))
+                    for i, x in enumerate(xl):
+                        for j, z in enumerate(zl):
+                            kk = self.key({**x, **z})
+                            new[kk] = ps_add_mod(new[kk], Cm[i][j], m) if kk in new else Cm[i][j]
+        shapes.append(sorted(st))
+        Phi = new
+    return Phi.get((), [0] * q), shapes, self.child_calls
+
+
+NodeExpansion.mm_shapes = _mm_shapes
+NodeExpansion.sum_mm = _sum_mm

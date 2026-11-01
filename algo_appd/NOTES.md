@@ -52,3 +52,21 @@ v2(G) >= a + 1 the weight of mode m is a + 1 - i + 2b + 2 v2(b!): twice the Newt
 cK = 1/2 when the ldu flag is on. Only the sharp weights exist for this basis. Because the source forms have series
 coefficients, every place that evaluates a form must multiply series (helpers lin_eval, src_mul, src_scale,
 src_zero in appd_core.py keep int-only forms on the exact old code path).
+
+
+## Round 7: the mode sum as shell matrix products (appd-shellmm)
+sum_dp eliminates the groups in the order r_groups. At the step for group g the state tuples live on the cut
+modes. Split them into X (cut modes that do not touch g: processed group to later group) and Y (cut modes that
+touch g: processed group to g), and let Z be the new modes (g to later groups). The step computes
+Phi'[x + z] = sum over y of Phi[x + y] * T_g[y + z] over w(x) + w(y) + w(z) < p: a matrix product with rows x,
+inner index y and columns z, restricted by the weight budget. Grouping each of X, Y and Z by exact weight
+(shells) makes every allowed shell triple (w1, w2, w3), w1 + w2 + w3 < p, one full block product
+A[X_w1 x Y_w2] * B[Y_w2 x Z_w3]; summed over the triples this is the same sum as sum_dp, term by term. A fast
+matrix multiplication algorithm then multiplies the blocks. Strassen's algorithm uses only ring additions,
+subtractions and multiplications, so it works over (Z/2^p)[z]/(z^q); on square blocks of side S (the smallest
+dimension) it needs about n k l S^(log2(7) - 3) ring products instead of n k l. In the cost model the dominant
+shell then costs 2^(log N_x + log N_z + (omega - 2) log N_y) (y the smallest index set) instead of
+2^(log N_x + log N_y + log N_z); re-optimising the weight split gives the mode fraction
+eps_mm(r) = max_k 2[(k-1)(r-k) + (k-1) + (r-k) - (1 - (omega - 2)^2) min(k-1, (k-1)(r-k), r-k)] / r^2 with
+omega = log2(7) (appd_assembly_public.eps_mm, about 7 percent below eps_dp at r = 7). The frozen model uses it
+when the shellmm flag is verified.

@@ -8,7 +8,11 @@ w_b = (b + 1 + v2(b!)) or (a + 1 - i + b + v2(b!)), and count_e2e(..., a, u, bas
 Then e of choose_params at three lam values (lower is better; must be valid and under 3 s per call).
 LDU checks (round 6): NodeExpansion(..., weights="sharp", basis="ldu") at a = 2, 3 and 4 (weights
 a + 1 - i + 2b + 2 v2(b!) with b = m >> i, series source forms), node values, byvars, count_e2e(..., basis="ldu").
-Prints SMOKE OK or SMOKE FAIL (core and parameters), then NEWTON OK or NEWTON FAIL, then LDU OK or LDU FAIL."""
+MM checks (round 7): matmul against a schoolbook product (and at most 7 * 7 * 7 * 8 ring products at 16 x 16 x 16),
+node_value(..., method="mm") against direct_taylor_mod, its block shapes against the shapes of the matmul calls,
+its max_enum against method "dp", and count_e2e(..., basis="ldu", method="mm").
+Prints SMOKE OK or SMOKE FAIL (core and parameters), then NEWTON OK or NEWTON FAIL, then LDU OK or LDU FAIL,
+then MM OK or MM FAIL."""
 import math
 import random
 import time
@@ -219,6 +223,85 @@ def ldu_checks():
     return ok_all
 
 
+def mm_checks():
+    ok_all = True
+    rng = random.Random(17)
+    for (n, k, l) in [(1, 1, 1), (2, 3, 1), (5, 3, 7), (4, 4, 4), (9, 6, 11), (16, 16, 16)]:
+        q, m = 2, 1 << 6
+        A_ = [[[rng.randrange(m) for _ in range(q)] for _ in range(k)] for _ in range(n)]
+        B_ = [[[rng.randrange(m) for _ in range(q)] for _ in range(l)] for _ in range(k)]
+        want = [[[0] * q for _ in range(l)] for _ in range(n)]
+        for i in range(n):
+            for kk in range(k):
+                for j in range(l):
+                    want[i][j] = C.ps_add_mod(want[i][j], C.ps_mul_mod(A_[i][kk], B_[kk][j], q, m), m)
+        cnt = [0]
+        orig = C.ps_mul_mod
+
+        def counting(a, b, qq, mm, _o=orig):
+            cnt[0] += 1
+            return _o(a, b, qq, mm)
+        C.ps_mul_mod = counting
+        try:
+            got = C.matmul(A_, B_, q, m)
+        except Exception as exc:  # noqa: BLE001
+            got = repr(exc)[:160]
+        finally:
+            C.ps_mul_mod = orig
+        good = got == want and not (n == k == l == 16 and cnt[0] > 7 * 7 * 7 * 8)
+        print(f"matmul {n}x{k}x{l}: {cnt[0]} ring products {'ok' if good else 'FAIL'}")
+        ok_all &= good
+    pick = random.Random(19)
+    done = 0
+    for k in range(40):
+        if done >= 8:
+            break
+        seed, chunks = 700 + k, k % 2 == 1
+        a = pick.choice([2, 3, 3, 4])
+        n_, cls, net, labels, pk = C.setup(random.Random(seed), pick.randint(4, 6), pick.randint(3, 4), a,
+                                           pick.choice([3, 4]), chunks=chunks, Lc=2)
+        M = len(net.wires)
+        nodes = [s for s in pk.S if s and C.v2(s) < pk.a]
+        t, p, q = pick.choice(nodes), pick.choice([5, 6, 7]), pick.choice([1, 2])
+        basis = pick.choice(["power", "ldu"])
+        if M < 2 or M > 7:
+            continue
+        done += 1
+        direct = C.direct_taylor_mod(net, pk, t, p, q)
+        log = []
+        orig_mm = C.matmul
+
+        def logging_mm(A_, B_, qq, mm, _o=orig_mm):
+            log.append((len(A_), len(B_), len(B_[0])))
+            return _o(A_, B_, qq, mm)
+        C.matmul = logging_mm
+        try:
+            ser, st = C.node_value(net, pk, labels, t, p, q, weights="sharp", method="mm", basis=basis)
+            _, st2 = C.node_value(net, pk, labels, t, p, q, weights="sharp", method="dp", basis=basis)
+            good = [int(x) % (1 << p) for x in ser] == direct
+            flat = sorted(tuple(x) for s in st["shapes"] for x in s)
+            good = good and flat == sorted(log) and st["max_enum"] == st2["max_enum"]
+        except Exception as exc:  # noqa: BLE001
+            good = False
+            print("   mm error:", repr(exc)[:200])
+        finally:
+            C.matmul = orig_mm
+        print(f"mm case {seed}: basis={basis} a={a} chunks={chunks} M={M} t={t} p={p} q={q} matmul calls {len(log)} "
+              f"{'ok' if good else 'FAIL'}")
+        ok_all &= good
+    for k, (a, u) in enumerate([(2, 1), (2, 2), (3, 1)]):
+        seed, n = 800 + k, 3
+        cls = C.random_formula(n, 1 + k % 2, random.Random(seed))
+        try:
+            got = C.count_e2e(n, cls, chunks=k % 2 == 1, Lc=2, r=3, seed=seed, a=a, u=u, basis="ldu", method="mm")
+        except Exception as exc:  # noqa: BLE001
+            got = repr(exc)[:160]
+        want = C.count_sat(n, cls)
+        print(f"mm count_e2e seed {seed} a={a} u={u}: got {got} want {want} {'ok' if got == want else 'FAIL'}")
+        ok_all &= got == want
+    return ok_all
+
+
 def param_checks():
     ok_all = True
     for lam in (1350, 2700, 5300):
@@ -240,3 +323,5 @@ if __name__ == "__main__":
     print("NEWTON OK" if nw else "NEWTON FAIL")
     lw = ldu_checks() if C.IMPLEMENTED else False
     print("LDU OK" if lw else "LDU FAIL")
+    mw = mm_checks() if C.IMPLEMENTED else False
+    print("MM OK" if mw else "MM FAIL")

@@ -104,5 +104,31 @@
   "attempts": 1,
   "result": "third threshold 2,670 -> 1,370 (48.69% lower threshold)",
   "done_iter": 5
+ },
+ {
+  "id": "T20",
+  "title": "Shell matrix products with Strassen in the mode sum (shellmm flag)",
+  "kind": "score",
+  "files": [
+   "appd_core.py",
+   "appd_params.py"
+  ],
+  "spec": "Add appd-shellmm to appd_core.py: the group-by-group mode sum of sum_dp, done as shell matrix products with Strassen's algorithm. NOTES.md, section 'Round 7', has the math. Everything that exists must keep working exactly as now.\n\n1. Module level, next to ps_add_mod: ps_sub_mod(a, b, m) returning [(x - y) % m for x, y in zip(a, b)]; naive_matmul(A, B, q, m), the schoolbook product (A is a list of n rows of k series, B a list of k rows of l series, a series is a list of q ints mod m, the result is n rows of l series); strassen_sq(X, Y, q, m) for S x S matrices with S a power of two: if S <= 2 return naive_matmul(X, Y, q, m); otherwise split X and Y into four h x h quadrants (h = S // 2) and return the four result quadrants from Strassen's seven products M1 = (A11 + A22)(B11 + B22), M2 = (A21 + A22) B11, M3 = A11 (B12 - B22), M4 = A22 (B21 - B11), M5 = (A11 + A12) B22, M6 = (A21 - A11)(B11 + B12), M7 = (A12 - A22)(B21 + B22), each computed by a recursive strassen_sq call: C11 = M1 + M4 - M5 + M7, C12 = M3 + M5, C21 = M2 + M4, C22 = M1 - M2 + M3 + M6 (entrywise ps_add_mod / ps_sub_mod). matmul(A, B, q, m) for an n x k and a k x l matrix: S = the largest power of two <= min(n, k, l); cut A and B into S x S blocks, using zero series [0] * q outside the matrices; result block (bi, bj) = sum over bk of strassen_sq(block (bi, bk) of A, block (bk, bj) of B); return the n x l result. Multiply two series only by calling the module-level ps_mul_mod (the referee counts those calls: at most 7^(k-1) * 8 for 2^k x 2^k inputs, k >= 1).\n2. NodeExpansion.sum_mm(self): reset self.child_calls = 0 and build tables = {g: self.group_table(g) for g in self.r_groups} as sum_dp does. pos[g] = index of g in self.r_groups; for every mode k let lo, hi = min and max of pos[src], pos[tgt]. For the step of group g (index j): X = modes with lo < j <= hi that are not in self.inc[g]; Y = modes with lo < j <= hi that are in self.inc[g]; Z = modes with lo == j < hi. For each of X, Y and Z put the tuples self.tuples(idx, self.p) (as dicts) into shells by their exact weight self.weight(...), shells in increasing weight. Start with Phi = {(): [1] + [0] * (q - 1)}. In a step, for every X shell xl (weight w1) and Y shell yl (weight w2) with w1 + w2 < p: Am[i][s] = Phi.get(self.key({**x_i, **y_s}), zero series); then for every Z shell zl (weight w3) with w1 + w2 + w3 < p: Bm[s][j] = tables[g][self.key({**y_s, **z_j})], Cm = matmul(Am, Bm, self.q, self.m) (call the module-level name matmul), record (len(xl), len(yl), len(zl)), and add Cm[i][j] into new[self.key({**x_i, **z_j})] with ps_add_mod. After the step Phi = new; the step's shape list is the sorted list of its recorded triples. Return (Phi.get((), zero series), shapes, self.child_calls) where shapes is the list of the per-step shape lists in step order.\n3. node_value(..., method=\"mm\"): ser, shapes, calls = ne.sum_mm(); stats = {\"shapes\": shapes, \"max_enum\": the largest, over the steps, sum of n * k * l over that step's triples, \"child_calls\": calls, \"modes\": len(ne.modes)}. count_e2e gets a new last parameter method=\"dp\"; with method=\"mm\" every node uses ne.sum_mm() instead of ne.sum_dp().\n4. appd_params.py: in choose_params add shellmm=False to the flags dict and shellmm=True to the USE_CODE_FLAGS update; give rank_e a last parameter shellmm=False, pass flags[\"shellmm\"] to it from choose_params, and inside rank_e use A.eps_mode(r[d], {\"modedp\": True, \"shellmm\": shellmm}) instead of A.eps_dp(r[d]).\nThe referee checks matmul against a schoolbook product and counts its ring products; checks node values from method \"mm\", the shape lists, the shapes of every matmul call and max_enum against its own reference; and exact end-to-end counts with method=\"mm\" and basis=\"ldu\".",
+  "stop": "smoke_appd.py prints SMOKE OK, then NEWTON OK, then LDU OK, then MM OK",
+  "needs_flags": [
+   "memo",
+   "modedp",
+   "chunks",
+   "newton",
+   "ldu",
+   "shellmm"
+  ],
+  "after": [
+   "T18"
+  ],
+  "status": "open",
+  "priority": 40,
+  "max_attempts": 3,
+  "steps": 70
  }
 ]
