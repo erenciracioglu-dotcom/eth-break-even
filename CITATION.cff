@@ -16,6 +16,14 @@ authors:
     affiliation: "Independent Researcher, Türkiye"
 repository-code: "https://github.com/erenciracioglu-dotcom/eth-break-even"
 url: "https://github.com/erenciracioglu-dotcom/eth-break-even"
+doi: "10.5281/zenodo.23895434"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.23895434"
+    description: "Concept DOI: all versions, resolves to the latest"
+  - type: doi
+    value: "10.5281/zenodo.23895435"
+    description: "Version 1.0"
 license:
   - MIT
   - CC-BY-4.0

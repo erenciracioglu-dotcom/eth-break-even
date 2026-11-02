@@ -1210,3 +1210,4 @@ No loop task: the round changes one size condition of the model and the paramete
 
 ## Publication (2 November 2026)
 - Public repository: https://github.com/erenciracioglu-dotcom/eth-break-even (first public commit 9c5a042, the full loop history included). MIT for code, CC BY 4.0 for the write-up, results page and review texts. README, CITATION.cff, check_certificates.py (re-checks the five round-12 certificates in the frozen v8 model), paper/ (write-up as Markdown and PDF), results/ (results page v25), reviews/round11-hostile-review/ (our request, GPT-6 Astra's report, her checker and search). work/head/r12/whatif_dens_v8.py now reads the model and the search from the repository (identical SHA-256 to the staging copies it used before).
+- Zenodo (2 November 2026): GitHub release v1.0 (commit 56bd6f1, metadata from .zenodo.json) archived as doi:10.5281/zenodo.23895435; concept DOI 10.5281/zenodo.23895434 for all versions. README badge and CITATION.cff updated.

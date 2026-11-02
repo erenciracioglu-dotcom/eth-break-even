@@ -1,5 +1,7 @@
 # Break-even sizes of the Appendix D route of "The Exponential Time Hypothesis is False"
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23895434.svg)](https://doi.org/10.5281/zenodo.23895434)
+
 From which formula size does the tensor-contraction route in Appendix D of OpenAI's preprint *The Exponential Time Hypothesis is False* (revision of 25 October 2026) beat the best known algorithms? This repository holds the frozen cost model and referee that produced our numbers, the code written in the loop, the ledger of every step and review, the write-up and the results page.
 
 **Short answer.** On 3-CNF formulas in which every variable occurs at most three times, the route's most favourable class, it beats the best counting bound we know for that class, 2^(n/3), only from about 10^158 variables, and brute force from about 10^28. With the paper's own choices the first comparison needed 2^(1.11 × 10^11) variables. These are feasible thresholds of a frozen cost model, not proved minima; our modifications rest on proof sketches, and the paper's theorem is assumed.
@@ -82,4 +84,4 @@ To run the loop again you need an agent that edits files in a workspace (the dri
 
 ## Citation and license
 
-Cite this work with the metadata in [`CITATION.cff`](CITATION.cff); a Zenodo DOI will be added here. The code is under the MIT license ([`LICENSE`](LICENSE)). The write-up, its figures, the results page and the review texts are under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+Cite this work as: Faruk Eren Çıracıoğlu (2026), *How far is the ETH refutation from practice? Break-even sizes of the Appendix D route*, version 1.0, Zenodo, [doi:10.5281/zenodo.23895435](https://doi.org/10.5281/zenodo.23895435). The DOI [10.5281/zenodo.23895434](https://doi.org/10.5281/zenodo.23895434) covers all versions and resolves to the latest; the metadata are in [`CITATION.cff`](CITATION.cff). The code is under the MIT license ([`LICENSE`](LICENSE)). The write-up, its figures, the results page and the review texts are under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
