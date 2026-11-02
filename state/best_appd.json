@@ -15,7 +15,7 @@
   "guarded": true,
   "bincross": true,
   "bc_fast": true,
-  "profile": false
+  "profile": true
  },
  "params_third": {
   "levels": 3,
@@ -53,8 +53,8 @@
    10
   ]
  },
- "iter": 12,
- "task": "T25",
- "updated": "2026-11-02 13:46:19",
+ "iter": 13,
+ "task": "T26",
+ "updated": "2026-11-02 18:11:03",
  "referee_version": 7
 }

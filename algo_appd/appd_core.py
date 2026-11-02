@@ -11,6 +11,8 @@ import random
 import sys
 from fractions import Fraction as Fr
 
+import appd_assembly_public as _ap
+
 
 # ----------------------------------------------------------------------------- helpers
 def v2(x):
@@ -1324,6 +1326,9 @@ def node_value(net, pk, labels, t, p, q, weights="paper", method="dp", basis="po
     elif method == "cross":
         ser, records, calls = ne.sum_cross()
         stats = {"records": records, "child_calls": calls, "modes": len(ne.modes)}
+    elif method == "prof":
+        ser, records, calls = ne.sum_prof()
+        stats = {"records": records, "child_calls": calls, "modes": len(ne.modes)}
     elif method == "mm":
         ser, shapes, calls = ne.sum_mm()
         stats = {"shapes": shapes,
@@ -1371,6 +1376,8 @@ def count_e2e(n, clauses, chunks=True, Lc=2, r=3, seed=0, a=1, u=1, basis="power
             ser, _sh, _cc = ne.sum_mm()
         elif method == "cross" and len(ne.r_groups) >= 4:
             ser, _rec, _cc = ne.sum_cross()
+        elif method == "prof" and len(ne.r_groups) in _ap.PF_MENUS:
+            ser, _rec, _cc = ne.sum_prof()
         else:
             ser, _me, _cc = ne.sum_dp()
         data[t] = ser
@@ -1677,3 +1684,178 @@ def sum_cross(self):
 
 
 NodeExpansion.sum_cross = sum_cross
+
+
+# ------------------------------------------- profile-adaptive contraction orders (round 11, appd-profile)
+def pf_cost(order, bits, r):
+    """Cost bound of the sequential order `order` (a permutation of the positions 0..r-1) on the alphabet bit
+    sizes bits = {(i, j): b_e} over the edges (i, j), i < j, of r groups: at step k = 1..r-1 with B = order[k],
+    A = order[:k], C = order[k+1:], X sums the bits of the edges between A and B, Y those between A and C and Z
+    those between B and C, and the step costs 125 (X + Y + Z) - 24 min(X, Y, Z) (alpha = 101/125 > log2 7 - 2,
+    scaled by 125). Return the maximum over the steps (an integer, 0 when r = 1)."""
+    pos = [0] * r
+    for k, g in enumerate(order):
+        pos[g] = k
+    best = 0
+    for k in range(1, r):
+        X = Y = Z = 0
+        for i in range(r):
+            pi = pos[i]
+            for j in range(i + 1, r):
+                b = bits.get((i, j), 0)
+                if not b:
+                    continue
+                pj = pos[j]
+                lo, hi = (pi, pj) if pi <= pj else (pj, pi)
+                if lo < k:
+                    if hi == k:                    # edge A - B
+                        X += b
+                    elif hi > k:                   # edge A - C
+                        Y += b
+                elif lo == k:                      # edge B - C (hi > k)
+                    Z += b
+                # otherwise the edge lies inside A or inside C
+        v = 125 * (X + Y + Z) - 24 * min(X, Y, Z)
+        if v > best:
+            best = v
+    return best
+
+
+def pf_choose(bits, r, menu=None):
+    """Choose the order of menu = PF_MENUS[r] of appd_assembly_public (when menu is None) with the smallest cost
+    pf_cost(o, bits, r), the smallest index among equal costs. Return (j, costs) with
+    costs = [pf_cost(o, bits, r) for o in menu]."""
+    if menu is None:
+        menu = _ap.PF_MENUS[r]
+    costs = [pf_cost(o, bits, r) for o in menu]
+    j = 0
+    for i in range(1, len(costs)):
+        if costs[i] < costs[j]:
+            j = i
+    return j, costs
+
+
+def sum_prof(self):
+    """Same sum as sum_dp (appd-profile), split by complete shell profiles: the edges (i, j), i < j, in
+    lexicographic order carry the modes whose ends are {r_groups[i], r_groups[j]}, and a profile picks one shell
+    of self.shells(...) per edge with total weight < p, enumerated depth first (edges in edge order, shells in
+    increasing weight, stopping at the first shell whose weight reaches the remaining budget). Inside a profile
+    every edge has the alphabet of its shell tuples in shell order; the contraction order is chosen by
+    pf_choose(bits, r, menu) from the bit sizes of the alphabets, and every step of that order is one shell
+    matrix product through the module-level matmul. Return (series, records, self.child_calls) with
+    self.child_calls reset to 0 first; records has one dict per profile in enumeration order with keys weights
+    (per edge), sizes (per edge), order (the menu index chosen), costs (the menu costs), shapes (the
+    (len(rows), len(inner), len(cols)) of every matmul call) and value (the profile series mod 2^p)."""
+    self.child_calls = 0
+    p, q, mod = self.p, self.q, self.m
+    r = len(self.r_groups)
+    menu = _ap.PF_MENUS[r]
+    tables = {g: self.group_table(g) for g in self.r_groups}
+    edges = [(i, j) for i in range(r) for j in range(i + 1, r)]
+    incE = {g: [e for e in edges if g in e] for g in range(r)}
+    shE, wE = {}, {}
+    for (i, j) in edges:
+        gi, gj = self.r_groups[i], self.r_groups[j]
+        em = sorted(k for k, md in enumerate(self.modes) if {md["src"], md["tgt"]} == {gi, gj})
+        sh = self.shells(em)
+        shE[(i, j)] = sh
+        wE[(i, j)] = [self.weight(s[0]) for s in sh]
+
+    def contract(order, alph):
+        """One profile (alph = {edge: the chosen shell}) contracted in the position order `order`.
+        Return (series, shapes)."""
+        sizes = {e: len(alph[e]) for e in edges}
+
+        def entry(g, es, ii):
+            d = {}
+            for e, ix in zip(es, ii):
+                d.update(alph[e][ix])
+            return tables[self.r_groups[g]][self.key(d)]
+
+        done = {order[0]}
+        open_e = [e for e in edges if (e[0] in done) != (e[1] in done)]
+        start = incE[order[0]]
+        T = {}
+        for c in itertools.product(*[range(sizes[e]) for e in start]):
+            T[c] = entry(order[0], start, c)
+        shapes = []
+        for k in range(1, r):
+            b = order[k]
+            AB = [e for e in open_e if b in e]
+            AC = [e for e in open_e if b not in e]
+            BC = [e for e in incE[b] if e[0] not in done and e[1] not in done]
+            rows = list(itertools.product(*[range(sizes[e]) for e in AC]))
+            inner = list(itertools.product(*[range(sizes[e]) for e in AB]))
+            cols = list(itertools.product(*[range(sizes[e]) for e in BC]))
+            aold = [open_e.index(e) for e in AC]
+            bold = [open_e.index(e) for e in AB]
+            Am = [[None] * len(inner) for _ in rows]
+            for ri, row in enumerate(rows):
+                base = [0] * len(open_e)
+                for v, pp in zip(row, aold):
+                    base[pp] = v
+                for t, inr in enumerate(inner):
+                    st = list(base)
+                    for v, pp in zip(inr, bold):
+                        st[pp] = v
+                    Am[ri][t] = T[tuple(st)]
+            Bm = []
+            for inr in inner:
+                d = {}
+                for e, ix in zip(AB, inr):
+                    d.update(alph[e][ix])
+                brow = []
+                for col in cols:
+                    dd = dict(d)
+                    for e, ix in zip(BC, col):
+                        dd.update(alph[e][ix])
+                    brow.append(tables[self.r_groups[b]][self.key(dd)])
+                Bm.append(brow)
+            Cm = matmul(Am, Bm, q, mod)
+            shapes.append((len(rows), len(inner), len(cols)))
+            done = done | {b}
+            new_open = [e for e in edges if (e[0] in done) != (e[1] in done)]
+            anew = [new_open.index(e) for e in AC]
+            bnew = [new_open.index(e) for e in BC]
+            newT = {}
+            for ri, row in enumerate(rows):
+                crow = Cm[ri]
+                for cj, col in enumerate(cols):
+                    st = [0] * len(new_open)
+                    for v, pp in zip(row, anew):
+                        st[pp] = v
+                    for v, pp in zip(col, bnew):
+                        st[pp] = v
+                    newT[tuple(st)] = crow[cj]
+            T = newT
+            open_e = new_open
+        return T[()], shapes
+
+    total = [0] * q
+    records = []
+
+    def rec(ei, chosen, weights, left):
+        if ei == len(edges):
+            alph = {e: shE[e][chosen[idx]] for idx, e in enumerate(edges)}
+            sizes = {e: len(alph[e]) for e in edges}
+            bits = {(i, j): (sizes[(i, j)] - 1).bit_length() for (i, j) in edges}
+            j, costs = pf_choose(bits, r, menu)
+            value, shapes = contract(menu[j], alph)
+            total[:] = ps_add_mod(total, value, mod)
+            records.append(dict(weights=list(weights), sizes=[sizes[e] for e in edges], order=j, costs=costs,
+                                shapes=shapes, value=[x % mod for x in value]))
+            return
+        e = edges[ei]
+        for si, w in enumerate(wE[e]):
+            if w >= left:
+                break
+            chosen.append(si)
+            weights.append(w)
+            rec(ei + 1, chosen, weights, left - w)
+            chosen.pop()
+            weights.pop()
+    rec(0, [], [], p)
+    return total, records, self.child_calls
+
+
+NodeExpansion.sum_prof = sum_prof
