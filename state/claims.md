@@ -644,8 +644,8 @@ round 5 ends there.
   LDU, T18), each step a halving as the cost model predicts (log N of the mode tuples scales with sqrt(cK)). Both
   lemmas are head proofs with exact checks; the second recursion level is now executed on toys (appd-twolevel).
 
-## Round 7 (1 November, evening): three outside reviews (ChatGPT, Gemini, Fable), shell matrix products [T20]
-- appd-shellmm [head proof sketch, suggested by ChatGPT]. In sum_dp the step for group g computes
+## Round 7 (1 November, evening): three outside reviews (GPT-6 Astra, Gemini, Fable), shell matrix products [T20]
+- appd-shellmm [head proof sketch, suggested by GPT-6 Astra]. In sum_dp the step for group g computes
   Phi'[x + z] = sum_y Phi[x + y] T_g[y + z] over w(x) + w(y) + w(z) < p_t, where x runs over the tuples on the cut modes
   that do not touch g (processed group to later group), y over the cut modes that touch g and z over the modes from g
   to later groups; every cut tuple of weight < p_t is a state (induction on the steps), so the enumerated
@@ -681,7 +681,7 @@ round 5 ends there.
   basis="ldu") exact on the 8 newton end-to-end cases. Dry runs: the head's solution verifies every flag and scores
   1,280 / 5,137 / 977 / 347 / 187 (= the what-if); the round-6 code keeps every old flag and its scores with shellmm
   off; a schoolbook matmul and a sum_mm that bypasses matmul both fail shellmm.
-- appd-ldu finite bound [head proof, suggested by ChatGPT]. For k >= 0, B = 2^k, w_b = k + 2 + 4b - 2 s2(b) (b < B,
+- appd-ldu finite bound [head proof, suggested by GPT-6 Astra]. For k >= 0, B = 2^k, w_b = k + 2 + 4b - 2 s2(b) (b < B,
   s2 = binary digit sum; these are the LDU weights a + 1 - i + 2b + 2 v2(b!) with k = a - i - 1) and every s > 0:
   sum_b -log(1 - e^(-s w_b)) <= pi^2/(24 s). Proof: (1) W_k = {w_b} is majorized by V_k = {4b + 2}: by the top bit of
   b, W_k = (W_(k-1) + 1) u (W_(k-1) + 2^(k+1) - 1) and V_k = V_(k-1) u (V_(k-1) + 2^(k+1)), in both the lower half
@@ -1204,3 +1204,6 @@ No loop task: the round changes one size condition of the model and the paramete
   round-12 search, both patched only in M_root, q and the leaf term): m = 4.26n gives 6,594 / 22,223 / 3,357 against 1.637^n / 1.307^n / 2^n (the withdrawn round-11 entries were 6,063 / 20,415 / 3,089); m = 5n gives 9,293 / 31,365 / 4,722 (withdrawn: 8,660 / 29,219 / 4,401), n about 10^1,421 against 2^n.
   Caveat: the weighted vertex events of the leaf step at high density are not separately quantified.
 - Page version 24 (2 November, about 21:05): round-12 rows in both Appendix D tables (147 / 524 / 403 / 2,032 and 92 / 147 / 524 / 403 / 2,032), summary row, comparison and practical paragraphs, the round-12 paragraph, the density entries restored with the repaired count, dropped-cost margin at least 2^46.
+
+## Correction (2 November 2026)
+- Owner's correction: the round-7 proposals (appd-shellmm and the finite bound of appd-ldu) came from GPT-6 Astra; the entries above credited them to ChatGPT until this date. Results page v25 and the write-up credit Astra.
