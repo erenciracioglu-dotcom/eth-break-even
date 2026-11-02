@@ -1,0 +1,24 @@
+{
+  "upload_type": "software",
+  "title": "How far is the ETH refutation from practice? Break-even sizes of the Appendix D route",
+  "version": "1.0",
+  "creators": [
+    {
+      "name": "Çıracıoğlu, Faruk Eren",
+      "affiliation": "Independent Researcher, Türkiye"
+    }
+  ],
+  "description": "<p>Break-even sizes of the tensor-contraction route in Appendix D of OpenAI's preprint <em>The Exponential Time Hypothesis is False</em> (revision of 25 October 2026) against the best known algorithms, with the frozen cost model, the referee, the loop's code and history, the ledger of every step and review, the write-up (paper/, Markdown and PDF) and the results page (results/).</p><p>On 3-CNF formulas in which every variable occurs at most three times, the route beats the best counting bound known for that class, 2^(n/3), only from about 10^158 variables (log2 n = 524), and brute force from about 10^28 (log2 n = 92). With the paper's own choices the first comparison needed 2^(1.11 × 10^11) variables. The thresholds are feasible values of a frozen cost model, not proved minima; the modifications rest on proof sketches, and the paper's theorem is assumed.</p><p>Made with Claude (Anthropic) as head (ideas, proof sketches, cost model, referee), Qwen3.8 Flash run locally as hands (code), and outside reviews by GPT-6 Astra, Fable 5.1 and Gemini 4 Argon; see Credits in README.md. Code under the MIT license; the write-up, figures, results page and review texts under CC BY 4.0.</p>",
+  "access_right": "open",
+  "license": "mit",
+  "language": "eng",
+  "keywords": [
+    "exponential time hypothesis",
+    "#SAT",
+    "3-SAT",
+    "model counting",
+    "tensor networks",
+    "break-even",
+    "autoresearch"
+  ]
+}
