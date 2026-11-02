@@ -1,0 +1,956 @@
+{
+  "scope": "Arithmetic checks; no original algorithm/referee source supplied",
+  "certificates": {
+    "third": {
+      "valid": true,
+      "e": 0.3330366656244391,
+      "terms": [
+        {
+          "arith": 0.32968664438276396,
+          "child": 0.24121181175018921
+        },
+        {
+          "arith": 0.3330366656244391,
+          "child": 0.0644665486549251
+        },
+        {
+          "arith": 0.3284031091056385,
+          "child": 0.015429058107948267
+        }
+      ],
+      "leaf": 0.33232977856812984,
+      "M_root": 1.0009765625,
+      "checks": {
+        "d0": {
+          "lD": 474.0,
+          "pad_slack": 15.2,
+          "bal_slack": 0.83
+        },
+        "d1": {
+          "lD": 399.4,
+          "pad_slack": 10.64,
+          "bal_slack": 1.72
+        },
+        "d2": {
+          "lD": 332.2,
+          "pad_slack": 13.39,
+          "bal_slack": 2.04
+        }
+      },
+      "memo": true,
+      "modedp": true,
+      "chunks": true,
+      "perclass": true,
+      "leafvars": false,
+      "labelfree": true,
+      "newton": true,
+      "ldu": true,
+      "shellmm": true,
+      "guarded": true,
+      "bincross": true,
+      "profile": true,
+      "margin": 0.0002966677088941938,
+      "previous_size": {
+        "valid": false,
+        "e": null,
+        "why": "label balance at depth 0: log2(M/D_arr) = 58.0 < 58.2"
+      },
+      "exact_precision_checks": [
+        {
+          "r": 8,
+          "u": 79,
+          "a": 101,
+          "min_relative_precision_slack": 4.5192544762048696e-23
+        },
+        {
+          "r": 9,
+          "u": 63,
+          "a": 166,
+          "min_relative_precision_slack": 2.301071087181198e-18
+        },
+        {
+          "r": 10,
+          "u": 50,
+          "a": 218,
+          "min_relative_precision_slack": 1.492194926496456e-14
+        }
+      ]
+    },
+    "occ3sat": {
+      "valid": true,
+      "e": 0.16334388309514064,
+      "terms": [
+        {
+          "arith": 0.16166964476631004,
+          "child": 0.11828391772466317
+        },
+        {
+          "arith": 0.1631866954959153,
+          "child": 0.03152444012484807
+        },
+        {
+          "arith": 0.1616664546195086,
+          "child": 0.0065848222972968995
+        }
+      ],
+      "leaf": 0.16334388309514064,
+      "M_root": 1.0000009536743164,
+      "checks": {
+        "d0": {
+          "lD": 1938.0,
+          "pad_slack": 3.41,
+          "bal_slack": 9.18
+        },
+        "d1": {
+          "lD": 1629.3,
+          "pad_slack": 0.89,
+          "bal_slack": 16.11
+        },
+        "d2": {
+          "lD": 1384.0,
+          "pad_slack": 9.0,
+          "bal_slack": 0.52
+        }
+      },
+      "memo": true,
+      "modedp": true,
+      "chunks": true,
+      "perclass": true,
+      "leafvars": false,
+      "labelfree": true,
+      "newton": true,
+      "ldu": true,
+      "shellmm": true,
+      "guarded": true,
+      "bincross": true,
+      "profile": true,
+      "margin": 2.6031379635832463e-05,
+      "previous_size": {
+        "valid": false,
+        "e": null,
+        "why": "padding at depth 1: 2019.4 > 2019.3"
+      },
+      "exact_precision_checks": [
+        {
+          "r": 8,
+          "u": 323,
+          "a": 349,
+          "min_relative_precision_slack": 6.359026058802838e-96
+        },
+        {
+          "r": 9,
+          "u": 257,
+          "a": 608,
+          "min_relative_precision_slack": 3.7081885672927464e-76
+        },
+        {
+          "r": 16,
+          "u": 173,
+          "a": 783,
+          "min_relative_precision_slack": 4.837440852510586e-51
+        }
+      ]
+    },
+    "ppsz": {
+      "valid": true,
+      "e": 0.3860517653259298,
+      "terms": [
+        {
+          "arith": 0.38093738442767955,
+          "child": 0.2787088838045232
+        },
+        {
+          "arith": 0.3860517653259298,
+          "child": 0.0753611337496522
+        },
+        {
+          "arith": 0.38081898869667724,
+          "child": 0.018161319868675693
+        }
+      ],
+      "leaf": 0.3835540070029292,
+      "M_root": 1.00390625,
+      "checks": {
+        "d0": {
+          "lD": 360.0,
+          "pad_slack": 13.17,
+          "bal_slack": 0.69
+        },
+        "d1": {
+          "lD": 298.0,
+          "pad_slack": 14.25,
+          "bal_slack": 4.06
+        },
+        "d2": {
+          "lD": 245.8,
+          "pad_slack": 17.3,
+          "bal_slack": 5.33
+        }
+      },
+      "memo": true,
+      "modedp": true,
+      "chunks": true,
+      "perclass": true,
+      "leafvars": false,
+      "labelfree": true,
+      "newton": true,
+      "ldu": true,
+      "shellmm": true,
+      "guarded": true,
+      "bincross": true,
+      "profile": true,
+      "margin": 0.00024223186989608125,
+      "previous_size": {
+        "valid": false,
+        "e": null,
+        "why": "label balance at depth 0: log2(M/D_arr) = 52.0 < 52.3"
+      },
+      "exact_precision_checks": [
+        {
+          "r": 8,
+          "u": 60,
+          "a": 82,
+          "min_relative_precision_slack": 1.8210235355100857e-17
+        },
+        {
+          "r": 9,
+          "u": 47,
+          "a": 131,
+          "min_relative_precision_slack": 1.1306599170299861e-13
+        },
+        {
+          "r": 10,
+          "u": 37,
+          "a": 170,
+          "min_relative_precision_slack": 9.084074263992081e-11
+        }
+      ]
+    },
+    "sharp3sat": {
+      "valid": true,
+      "e": 0.7033646636737405,
+      "terms": [
+        {
+          "arith": 0.7011694287566193,
+          "child": 0.5130033355487406
+        }
+      ],
+      "leaf": 0.7033646636737405,
+      "M_root": 1.015625,
+      "checks": {
+        "d0": {
+          "lD": 114.0,
+          "pad_slack": 16.15,
+          "bal_slack": 0.27
+        }
+      },
+      "memo": true,
+      "modedp": true,
+      "chunks": true,
+      "perclass": true,
+      "leafvars": true,
+      "labelfree": true,
+      "newton": true,
+      "ldu": true,
+      "shellmm": true,
+      "guarded": true,
+      "bincross": true,
+      "profile": true,
+      "margin": 0.007689658138325894,
+      "previous_size": {
+        "valid": false,
+        "e": null,
+        "why": "label balance at depth 0: log2(M/D_arr) = 44.0 < 44.8"
+      },
+      "exact_precision_checks": [
+        {
+          "r": 8,
+          "u": 19,
+          "a": 38,
+          "min_relative_precision_slack": 1.3986995191506651e-05
+        }
+      ]
+    },
+    "brute": {
+      "valid": true,
+      "e": 0.978682293713792,
+      "terms": [
+        {
+          "arith": 0.978682293713792,
+          "child": 0.7423826954761479
+        }
+      ],
+      "leaf": 0.9642465347618622,
+      "M_root": 1.015625,
+      "checks": {
+        "d0": {
+          "lD": 61.8,
+          "pad_slack": 16.08,
+          "bal_slack": 0.44
+        }
+      },
+      "memo": true,
+      "modedp": true,
+      "chunks": true,
+      "perclass": true,
+      "leafvars": true,
+      "labelfree": true,
+      "newton": true,
+      "ldu": true,
+      "shellmm": true,
+      "guarded": true,
+      "bincross": true,
+      "profile": true,
+      "margin": 0.021317706286207994,
+      "previous_size": {
+        "valid": false,
+        "e": null,
+        "why": "label balance at depth 0: log2(M/D_arr) = 40.3 < 40.8"
+      },
+      "exact_precision_checks": [
+        {
+          "r": 7,
+          "u": 11,
+          "a": 29,
+          "min_relative_precision_slack": 0.0022958854177460874
+        }
+      ]
+    }
+  },
+  "profile_certificates": {
+    "4": "185701/375000",
+    "5": "185239/390625",
+    "6": "332719/750000",
+    "7": "651717/1531250",
+    "8": "102163/250000",
+    "9": "338143/843750",
+    "10": "2440461/6250000",
+    "11": "2280778/5671875",
+    "12": "265501/675000",
+    "13": "620336/1584375",
+    "14": "1781599/4593750",
+    "15": "1349194/3515625",
+    "16": "6840623/18000000"
+  },
+  "hermite_grid_cases": 5658,
+  "finite_ldu_majorization_cases": 17,
+  "binary_factorization_pieces": 15,
+  "binary_channel_cases": 101,
+  "additional_certificates": {
+    "third": {
+      "model": "frozen-unchanged",
+      "lam": 532,
+      "params": {
+        "levels": 3,
+        "r": [
+          8,
+          9,
+          11
+        ],
+        "u": [
+          79,
+          63,
+          38
+        ],
+        "delta": 0.0029,
+        "Lc": 512,
+        "a": [
+          101,
+          166,
+          206
+        ],
+        "kappa": [
+          10,
+          10,
+          10
+        ],
+        "memo": true,
+        "modedp": true,
+        "chunks": true,
+        "perclass": true,
+        "leafvars": false,
+        "labelfree": true,
+        "newton": true,
+        "ldu": true,
+        "shellmm": true,
+        "guarded": true,
+        "bincross": true,
+        "profile": true
+      },
+      "e": 0.3333192774223924,
+      "margin": 1.4055910940891092e-05,
+      "exact_precision_checks": [
+        {
+          "r": 8,
+          "u": 79,
+          "a": 101,
+          "min_relative_precision_slack": 4.519254477203426e-23
+        },
+        {
+          "r": 9,
+          "u": 63,
+          "a": 166,
+          "min_relative_precision_slack": 2.3010625197860966e-18
+        },
+        {
+          "r": 11,
+          "u": 38,
+          "a": 206,
+          "min_relative_precision_slack": 4.7381996671369936e-11
+        }
+      ]
+    },
+    "occ3sat": {
+      "model": "frozen-unchanged",
+      "lam": 2033,
+      "params": {
+        "levels": 3,
+        "r": [
+          8,
+          9,
+          16
+        ],
+        "u": [
+          323,
+          257,
+          173
+        ],
+        "delta": 0.0004,
+        "Lc": 1048576,
+        "a": [
+          349,
+          608,
+          783
+        ],
+        "kappa": [
+          10,
+          10,
+          10
+        ],
+        "memo": true,
+        "modedp": true,
+        "chunks": true,
+        "perclass": true,
+        "leafvars": false,
+        "labelfree": true,
+        "newton": true,
+        "ldu": true,
+        "shellmm": true,
+        "guarded": true,
+        "bincross": true,
+        "profile": true
+      },
+      "e": 0.1633660656285362,
+      "margin": 3.8488462402730406e-06,
+      "exact_precision_checks": [
+        {
+          "r": 8,
+          "u": 323,
+          "a": 349,
+          "min_relative_precision_slack": 6.359026058802838e-96
+        },
+        {
+          "r": 9,
+          "u": 257,
+          "a": 608,
+          "min_relative_precision_slack": 3.708191997902011e-76
+        },
+        {
+          "r": 16,
+          "u": 173,
+          "a": 783,
+          "min_relative_precision_slack": 4.837447161325731e-51
+        }
+      ]
+    },
+    "ppsz": {
+      "model": "frozen-unchanged",
+      "lam": 411,
+      "params": {
+        "levels": 3,
+        "r": [
+          8,
+          9,
+          11
+        ],
+        "u": [
+          59,
+          47,
+          29
+        ],
+        "delta": 0.0021,
+        "Lc": 512,
+        "a": [
+          81,
+          130,
+          161
+        ],
+        "kappa": [
+          10,
+          10,
+          10
+        ],
+        "memo": true,
+        "modedp": true,
+        "chunks": true,
+        "perclass": true,
+        "leafvars": false,
+        "labelfree": true,
+        "newton": true,
+        "ldu": true,
+        "shellmm": true,
+        "guarded": true,
+        "bincross": true,
+        "profile": true
+      },
+      "e": 0.38626541058974984,
+      "margin": 2.8586606076019816e-05,
+      "exact_precision_checks": [
+        {
+          "r": 8,
+          "u": 59,
+          "a": 81,
+          "min_relative_precision_slack": 3.584337188068868e-17
+        },
+        {
+          "r": 9,
+          "u": 47,
+          "a": 130,
+          "min_relative_precision_slack": 1.1295472557869101e-13
+        },
+        {
+          "r": 11,
+          "u": 29,
+          "a": 161,
+          "min_relative_precision_slack": 1.866190391199436e-08
+        }
+      ]
+    },
+    "sharp3sat": {
+      "model": "frozen-unchanged",
+      "lam": 157,
+      "params": {
+        "levels": 1,
+        "r": [
+          8
+        ],
+        "u": [
+          19
+        ],
+        "delta": 0.02,
+        "Lc": 64,
+        "a": [
+          38
+        ],
+        "kappa": [
+          10
+        ],
+        "memo": true,
+        "modedp": true,
+        "chunks": true,
+        "perclass": true,
+        "leafvars": true,
+        "labelfree": true,
+        "newton": true,
+        "ldu": true,
+        "shellmm": true,
+        "guarded": true,
+        "bincross": true,
+        "profile": true
+      },
+      "e": 0.7102544584105839,
+      "margin": 0.0007998634014825257,
+      "exact_precision_checks": [
+        {
+          "r": 8,
+          "u": 19,
+          "a": 38,
+          "min_relative_precision_slack": 1.3986995191506651e-05
+        }
+      ]
+    },
+    "brute": {
+      "model": "frozen-unchanged",
+      "lam": 100,
+      "params": {
+        "levels": 1,
+        "r": [
+          7
+        ],
+        "u": [
+          11
+        ],
+        "delta": 0.0362,
+        "Lc": 32,
+        "a": [
+          29
+        ],
+        "kappa": [
+          10
+        ],
+        "memo": true,
+        "modedp": true,
+        "chunks": true,
+        "perclass": true,
+        "leafvars": true,
+        "labelfree": true,
+        "newton": true,
+        "ldu": true,
+        "shellmm": true,
+        "guarded": true,
+        "bincross": true,
+        "profile": true
+      },
+      "e": 0.9995344797946857,
+      "margin": 0.00046552020531431815,
+      "exact_precision_checks": [
+        {
+          "r": 7,
+          "u": 11,
+          "a": 29,
+          "min_relative_precision_slack": 0.002295885510371798
+        }
+      ]
+    },
+    "third_matching": {
+      "model": "matching-root",
+      "lam": 526,
+      "params": {
+        "levels": 3,
+        "r": [
+          9,
+          7,
+          11
+        ],
+        "u": [
+          76,
+          57,
+          43
+        ],
+        "delta": 0.0031,
+        "Lc": 512,
+        "a": [
+          98,
+          157,
+          201
+        ],
+        "kappa": [
+          10,
+          10,
+          10
+        ],
+        "memo": true,
+        "modedp": true,
+        "chunks": true,
+        "perclass": true,
+        "leafvars": false,
+        "labelfree": true,
+        "newton": true,
+        "ldu": true,
+        "shellmm": true,
+        "guarded": true,
+        "bincross": true,
+        "profile": true
+      },
+      "e": 0.33331217593531426,
+      "margin": 2.115739801905603e-05,
+      "exact_precision_checks": [
+        {
+          "r": 9,
+          "u": 76,
+          "a": 98,
+          "min_relative_precision_slack": 3.483267989318981e-22
+        },
+        {
+          "r": 7,
+          "u": 57,
+          "a": 157,
+          "min_relative_precision_slack": 1.3309112905787905e-16
+        },
+        {
+          "r": 11,
+          "u": 43,
+          "a": 201,
+          "min_relative_precision_slack": 1.5971521671642297e-12
+        }
+      ],
+      "matching_size_checks": [
+        {
+          "depth": 0,
+          "balance_required_lambda": 525.9094161560519,
+          "padding_required_lambda": 523.7115363746107
+        },
+        {
+          "depth": 1,
+          "balance_required_lambda": 448.6614729124149,
+          "padding_required_lambda": 441.51539117551096
+        },
+        {
+          "depth": 2,
+          "balance_required_lambda": 486.8317187811353,
+          "padding_required_lambda": 473.20799723592836
+        }
+      ]
+    },
+    "occ3sat_matching": {
+      "model": "matching-root",
+      "lam": 2033,
+      "params": {
+        "levels": 3,
+        "r": [
+          8,
+          9,
+          16
+        ],
+        "u": [
+          323,
+          257,
+          173
+        ],
+        "delta": 0.0004,
+        "Lc": 524288,
+        "a": [
+          349,
+          608,
+          783
+        ],
+        "kappa": [
+          10,
+          10,
+          10
+        ],
+        "memo": true,
+        "modedp": true,
+        "chunks": true,
+        "perclass": true,
+        "leafvars": false,
+        "labelfree": true,
+        "newton": true,
+        "ldu": true,
+        "shellmm": true,
+        "guarded": true,
+        "bincross": true,
+        "profile": true
+      },
+      "e": 0.16336622142640858,
+      "margin": 3.6930483678920822e-06,
+      "exact_precision_checks": [
+        {
+          "r": 8,
+          "u": 323,
+          "a": 349,
+          "min_relative_precision_slack": 6.359026058802927e-96
+        },
+        {
+          "r": 9,
+          "u": 257,
+          "a": 608,
+          "min_relative_precision_slack": 3.708191997902011e-76
+        },
+        {
+          "r": 16,
+          "u": 173,
+          "a": 783,
+          "min_relative_precision_slack": 4.837447161325731e-51
+        }
+      ],
+      "matching_size_checks": [
+        {
+          "depth": 0,
+          "balance_required_lambda": 1999.9657001142339,
+          "padding_required_lambda": 2030.1734850936964
+        },
+        {
+          "depth": 1,
+          "balance_required_lambda": 2017.0576026697988,
+          "padding_required_lambda": 2032.6933784219245
+        },
+        {
+          "depth": 2,
+          "balance_required_lambda": 2032.6500549382504,
+          "padding_required_lambda": 2024.5875522403176
+        }
+      ]
+    },
+    "ppsz_matching": {
+      "model": "matching-root",
+      "lam": 403,
+      "params": {
+        "levels": 3,
+        "r": [
+          8,
+          9,
+          10
+        ],
+        "u": [
+          60,
+          46,
+          36
+        ],
+        "delta": 0.0045,
+        "Lc": 512,
+        "a": [
+          82,
+          130,
+          168
+        ],
+        "kappa": [
+          10,
+          10,
+          10
+        ],
+        "memo": true,
+        "modedp": true,
+        "chunks": true,
+        "perclass": true,
+        "leafvars": false,
+        "labelfree": true,
+        "newton": true,
+        "ldu": true,
+        "shellmm": true,
+        "guarded": true,
+        "bincross": true,
+        "profile": true
+      },
+      "e": 0.3862392902079105,
+      "margin": 5.470698791537609e-05,
+      "exact_precision_checks": [
+        {
+          "r": 8,
+          "u": 60,
+          "a": 82,
+          "min_relative_precision_slack": 1.8210235347203888e-17
+        },
+        {
+          "r": 9,
+          "u": 46,
+          "a": 130,
+          "min_relative_precision_slack": 2.216361923333083e-13
+        },
+        {
+          "r": 10,
+          "u": 36,
+          "a": 168,
+          "min_relative_precision_slack": 1.7691478262994758e-10
+        }
+      ],
+      "matching_size_checks": [
+        {
+          "depth": 0,
+          "balance_required_lambda": 402.60336220259336,
+          "padding_required_lambda": 399.9885443541515
+        },
+        {
+          "depth": 1,
+          "balance_required_lambda": 402.87477041002006,
+          "padding_required_lambda": 392.4118091347066
+        },
+        {
+          "depth": 2,
+          "balance_required_lambda": 400.2978757301645,
+          "padding_required_lambda": 388.07896382780035
+        }
+      ]
+    },
+    "sharp3sat_matching": {
+      "model": "matching-root",
+      "lam": 148,
+      "params": {
+        "levels": 1,
+        "r": [
+          8
+        ],
+        "u": [
+          19
+        ],
+        "delta": 0.02,
+        "Lc": 64,
+        "a": [
+          38
+        ],
+        "kappa": [
+          10
+        ],
+        "memo": true,
+        "modedp": true,
+        "chunks": true,
+        "perclass": true,
+        "leafvars": true,
+        "labelfree": true,
+        "newton": true,
+        "ldu": true,
+        "shellmm": true,
+        "guarded": true,
+        "bincross": true,
+        "profile": true
+      },
+      "e": 0.7102544584105839,
+      "margin": 0.0007998634014825257,
+      "exact_precision_checks": [
+        {
+          "r": 8,
+          "u": 19,
+          "a": 38,
+          "min_relative_precision_slack": 1.3986995191506651e-05
+        }
+      ],
+      "matching_size_checks": [
+        {
+          "depth": 0,
+          "balance_required_lambda": 147.73579286588395,
+          "padding_required_lambda": 141.8500634041502
+        }
+      ]
+    },
+    "brute_matching": {
+      "model": "matching-root",
+      "lam": 92,
+      "params": {
+        "levels": 1,
+        "r": [
+          7
+        ],
+        "u": [
+          11
+        ],
+        "delta": 0.0521,
+        "Lc": 64,
+        "a": [
+          29
+        ],
+        "kappa": [
+          10
+        ],
+        "memo": true,
+        "modedp": true,
+        "chunks": true,
+        "perclass": true,
+        "leafvars": true,
+        "labelfree": true,
+        "newton": true,
+        "ldu": true,
+        "shellmm": true,
+        "guarded": true,
+        "bincross": true,
+        "profile": true
+      },
+      "e": 0.9988785103598802,
+      "margin": 0.0011214896401198216,
+      "exact_precision_checks": [
+        {
+          "r": 7,
+          "u": 11,
+          "a": 29,
+          "min_relative_precision_slack": 0.0022958854177460874
+        }
+      ],
+      "matching_size_checks": [
+        {
+          "depth": 0,
+          "balance_required_lambda": 91.99348570172549,
+          "padding_required_lambda": 86.12110914687612
+        }
+      ]
+    }
+  }
+}

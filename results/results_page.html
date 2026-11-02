@@ -1,0 +1,662 @@
+<title>ETH Algorithm Break-Even</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=STIX+Two+Text:ital,wght@0,500;0,600;1,500&display=swap">
+<style>
+/* Layout: one reading column (~68ch) with a wider figure band for the chart; summary before detail, ledger last. */
+:root {
+  --page: #f4f6f8;
+  --surface: #fcfcfb;
+  --ink: #10151d;
+  --ink-2: #485160;
+  --muted: #747d8a;
+  --rule: #dde2e8;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --accent: #1c5cab;
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --s4: #8b55cc;
+  --good: #0ca30c;
+  --good-text: #006300;
+  --warn: #8a5a00;
+  --chip-bg: rgba(16, 21, 29, 0.05);
+  --tip-bg: #ffffff;
+  --shadow: 0 6px 24px rgba(16, 21, 29, 0.12);
+  --font-display: "STIX Two Text", "STIX Two", Georgia, "Times New Roman", serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #111316; --surface: #1a1a19; --ink: #eef0f2; --ink-2: #c3c7cd; --muted: #8b929c;
+    --rule: #2b3037; --grid: #2c2c2a; --axis: #45464a; --accent: #6da7ec;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #a982ee; --good: #0ca30c; --good-text: #3ec63e; --warn: #e2b04a;
+    --chip-bg: rgba(238, 240, 242, 0.07); --tip-bg: #222324; --shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #111316; --surface: #1a1a19; --ink: #eef0f2; --ink-2: #c3c7cd; --muted: #8b929c;
+  --rule: #2b3037; --grid: #2c2c2a; --axis: #45464a; --accent: #6da7ec;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #a982ee; --good: #0ca30c; --good-text: #3ec63e; --warn: #e2b04a;
+  --chip-bg: rgba(238, 240, 242, 0.07); --tip-bg: #222324; --shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 64px;
+}
+main { max-width: 980px; margin: 0 auto; display: grid; gap: 56px; }
+.col { max-width: 68ch; }
+h1, h2 { font-family: var(--font-display); font-weight: 600; text-wrap: balance; margin: 0; line-height: 1.2; }
+h1 { font-size: clamp(1.75rem, 1.2rem + 2.2vw, 2.45rem); letter-spacing: -0.01em; }
+h2 { font-size: 1.45rem; }
+p { margin: 0; }
+.eyebrow { font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.lede { font-size: 1.08rem; color: var(--ink-2); }
+section { display: grid; gap: 18px; min-width: 0; }
+header { display: grid; gap: 14px; }
+.mono, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+em.math { font-family: var(--font-display); font-style: italic; font-size: 1.06em; }
+a { color: var(--accent); }
+
+/* summary table */
+.table-wrap { overflow-x: auto; min-width: 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+th, td { text-align: left; padding: 10px 14px 10px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 500; color: var(--muted); font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; }
+th.var { text-transform: none; letter-spacing: 0; font-family: var(--font-display); font-style: italic; font-size: 0.95rem; }
+td.num { white-space: nowrap; }
+tr.best td { font-weight: 600; }
+tr.group th { text-align: left; font-weight: 600; font-size: 0.85rem; color: var(--muted); padding-top: 14px; border-bottom: 1px solid var(--rule); }
+.key { display: inline-block; width: 18px; height: 2px; border-radius: 1px; vertical-align: middle; margin-right: 8px; transform: translateY(-1px); }
+.note { color: var(--ink-2); font-size: 0.95rem; }
+
+/* figure */
+figure { margin: 0; background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 18px 18px 14px; display: grid; gap: 14px; min-width: 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 0.9rem; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; }
+.chart { position: relative; width: 100%; min-width: 0; touch-action: pan-y; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--muted); font-family: var(--font-body); font-size: 12px; }
+.chart .ref-label { fill: var(--ink-2); font-size: 11.5px; }
+.chart .anno { fill: var(--ink-2); font-size: 11.5px; }
+.tip[hidden] { display: none; }
+.tip { position: absolute; pointer-events: none; background: var(--tip-bg); color: var(--ink); border: 1px solid var(--rule); border-radius: 8px; box-shadow: var(--shadow); padding: 10px 12px; font-size: 0.85rem; min-width: 210px; display: grid; gap: 4px; z-index: 2; }
+.tip .t-head { color: var(--muted); font-size: 0.78rem; }
+.tip .t-row { display: grid; grid-template-columns: 16px auto 1fr; align-items: center; gap: 8px; }
+.tip .t-row b { font-family: var(--font-mono); font-weight: 500; }
+.tip .t-row span.n { color: var(--ink-2); }
+figcaption { font-size: 0.88rem; color: var(--ink-2); }
+
+/* slider + breakdown */
+.control { display: grid; gap: 6px; }
+.control label { font-size: 0.9rem; color: var(--ink-2); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.control output { font-family: var(--font-mono); color: var(--ink); }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; padding: 2px 9px; border-radius: 999px; background: var(--chip-bg); color: var(--ink-2); white-space: nowrap; font-family: var(--font-body); font-weight: 500; }
+.chip.ok { color: var(--good-text); }
+.chip.ok::before { content: "✓"; font-weight: 700; }
+.chip.part::before { content: "◐"; }
+.chip.no::before { content: "✕"; }
+.chip.fb::before { content: "↺"; }
+
+/* changes list */
+.changes { display: grid; gap: 22px; margin: 0; padding: 0; list-style: none; }
+.changes > li { display: grid; gap: 6px; padding-top: 18px; border-top: 1px solid var(--rule); }
+.changes h3 { font-family: var(--font-body); font-size: 1rem; font-weight: 600; margin: 0; }
+.ba { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; font-size: 0.93rem; color: var(--ink-2); }
+.ba dt { color: var(--muted); }
+.ba dd { margin: 0; min-width: 0; }
+.who { color: var(--muted); font-size: 0.86rem; }
+.tag { font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); font-weight: 600; margin-left: 8px; }
+
+/* ledger */
+.pass { color: var(--good-text); font-weight: 600; white-space: nowrap; }
+.pass::before { content: "✓ "; }
+ul.plain { margin: 0; padding-left: 1.1em; display: grid; gap: 8px; color: var(--ink-2); }
+details summary { cursor: pointer; color: var(--accent); font-size: 0.92rem; }
+details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+details[open] summary { margin-bottom: 10px; }
+footer { color: var(--muted); font-size: 0.85rem; max-width: 68ch; }
+@media (max-width: 560px) {
+  body { padding-block: 24px 48px; }
+  .ledger-head { display: none; }
+  .ledger tr { display: grid; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+  .ledger td { display: block; padding: 0; border: 0; }
+  .ledger td:nth-child(2) { color: var(--muted); font-size: 0.88rem; }
+  .loop td:nth-child(1) { font-weight: 600; }
+  .loop td:nth-child(2) { color: var(--ink-2); font-size: 0.95rem; margin-bottom: 4px; }
+  .loop td[data-label]::before { content: attr(data-label) "  "; display: inline-block; min-width: 9.5em; color: var(--muted); font-family: var(--font-body); font-size: 0.85rem; }
+  main { gap: 44px; }
+  figure { padding: 14px 12px 12px; }
+  th, td { padding-right: 10px; }
+}
+</style>
+
+<main>
+  <header class="col">
+    <p class="eyebrow">Numerical audit and autoresearch loop · “The Exponential Time Hypothesis is False” (OpenAI, Oct 2026)</p>
+    <h1>When does the ETH-refuting algorithm beat brute force?</h1>
+    <p class="lede">I modelled the paper’s counting algorithm (Sections 2–4, bounded-occurrence 3-CNF, its most favourable case), recomputed exactly where its own parameter checks pass and where its cost drops below known algorithms, then re-tuned it within its own constraints. The core construction was also implemented and tested in code. A follow-up research loop then cut the break-even against the best yes/no algorithm for this class (1.1199ⁿ) to <em class="math">log₂ n</em> ≈ 196,700, and against 1.307ⁿ, the record for all 3-SAT formulas, from 2.22 million to about 10,100, using extensions whose proofs are only sketched; that section comes first. The paper’s second algorithm (Appendix D) with new steps counts exactly and would beat the best counting method for this class (2<sup>n/3</sup>) from about 525 and 1.1199ⁿ from about 2,000; its code passed the loop’s referee on small formulas, and its cost bounds are a model with proof sketches. Everything here assumes the paper’s theorem, which independent reviewers have not yet confirmed.</p>
+  </header>
+
+  <section aria-labelledby="loop-h">
+    <h2 id="loop-h">Autoresearch loop, 31 October to 2 November (eleven rounds)</h2>
+    <p class="col note">A local loop on one workstation did the follow-up. Claude acted as head: it proposed each step, wrote any extension of the cost model together with a proof sketch, and audited the results. Qwen3.8 Flash (IQ3_S, through the Eragent harness) acted as hands: it wrote and tuned the code. A frozen referee outside the agent’s workspace decided every step. It counted hidden small formulas exactly against brute force, checked the design facts the cost model relies on, and re-scored every parameter set with its own copy of the cost model. Each cell is <em class="math">log₂ n</em> at which the cost first drops below the competitor’s.</p>
+    <div class="table-wrap">
+      <table>
+        <thead class="ledger-head"><tr><th scope="col">Step</th><th scope="col">Change and who did it</th><th scope="col">Beats 2ⁿ</th><th scope="col">Beats 1.637ⁿ</th><th scope="col">Beats 1.307ⁿ</th><th scope="col">vs start</th><th scope="col">Checked by</th></tr></thead>
+        <tbody class="ledger loop">
+          <tr><td>Start</td><td>Tighter accounting from the first audit (below), re-scored by the referee</td><td class="num" data-label="Beats 2ⁿ">84,505</td><td class="num" data-label="Beats 1.637ⁿ">304,561</td><td class="num" data-label="Beats 1.307ⁿ">2,224,173</td><td class="num" data-label="vs start">1.00×</td><td data-label="Checked by">Referee baseline</td></tr>
+          <tr><td>T1</td><td>Finer search over r, Q and R<br><span class="who">Qwen</span></td><td class="num" data-label="Beats 2ⁿ">84,001</td><td class="num" data-label="Beats 1.637ⁿ">291,781</td><td class="num" data-label="Beats 1.307ⁿ">2,140,603</td><td class="num" data-label="vs start">1.04×</td><td data-label="Checked by">Referee score</td></tr>
+          <tr><td>T2</td><td>Label balancing by a two-stage Bernstein bound: D up to about M/(24 ln D) instead of √(M/12)<br><span class="who">Claude (proof), Qwen (search)</span></td><td class="num" data-label="Beats 2ⁿ">44,410</td><td class="num" data-label="Beats 1.637ⁿ">153,399</td><td class="num" data-label="Beats 1.307ⁿ">1,117,111</td><td class="num" data-label="vs start">1.99×</td><td data-label="Checked by">Referee score; proof sketch</td></tr>
+          <tr><td>T3</td><td>Balancing tolerance δ: h ≤ (1 + δ)M/D copies instead of 2M/D<br><span class="who">Claude (proof), Qwen (search)</span></td><td class="num" data-label="Beats 2ⁿ">42,042</td><td class="num" data-label="Beats 1.637ⁿ">145,933</td><td class="num" data-label="Beats 1.307ⁿ">1,070,239</td><td class="num" data-label="vs start">2.08×</td><td data-label="Checked by">Referee score; proof sketch</td></tr>
+          <tr><td>T4</td><td>Each clause reads one of its own variables directly, so the Taylor degree drops by a third<br><span class="who">Claude (idea, proof), Qwen (construction, counter, search)</span></td><td class="num" data-label="Beats 2ⁿ">16,752</td><td class="num" data-label="Beats 1.637ⁿ">58,867</td><td class="num" data-label="Beats 1.307ⁿ">438,437</td><td class="num" data-label="vs start">5.07×</td><td data-label="Checked by">Exact counts on hidden formulas; proof sketch</td></tr>
+          <tr><td>T5</td><td>Inclusion–exclusion grouped per U: one restricted sum per set U, Taylor term H(x) instead of x + H(x)<br><span class="who">Claude (identity), Qwen (group-by-group routine)</span></td><td class="num" data-label="Beats 2ⁿ">5,703</td><td class="num" data-label="Beats 1.637ⁿ">29,702</td><td class="num" data-label="Beats 1.307ⁿ">273,036</td><td class="num" data-label="vs start">8.15×</td><td data-label="Checked by">Exact counts and number of sums; proof sketch</td></tr>
+          <tr><td>T6</td><td>Clause units from a greedy maximal matching: matched clauses are read entirely directly, at most 12n/7 replacements in the worst case<br><span class="who">Claude (idea, bound), Qwen (matching, counter, search)</span></td><td class="num" data-label="Beats 2ⁿ">3,959</td><td class="num" data-label="Beats 1.637ⁿ">20,909</td><td class="num" data-label="Beats 1.307ⁿ">193,841</td><td class="num" data-label="vs start">11.47×</td><td data-label="Checked by">Exact counts and matching checks; proof sketch</td></tr>
+          <tr><td>T7</td><td>Clean-up: parameter search without a clock, so every score is reproducible<br><span class="who">Qwen</span></td><td class="num" data-label="Beats 2ⁿ">3,959</td><td class="num" data-label="Beats 1.637ⁿ">20,909</td><td class="num" data-label="Beats 1.307ⁿ">193,841</td><td class="num" data-label="vs start">11.47×</td><td data-label="Checked by">Referee score (no regression)</td></tr>
+          <tr><td>T8</td><td>Units are connected chunks of at least L = 4096 variables, so at most (1 + 1/L)n replacements remain in the worst case instead of 12n/7<br><span class="who">Claude (idea, bound), Qwen (chunking, search)</span></td><td class="num" data-label="Beats 2ⁿ">1,106</td><td class="num" data-label="Beats 1.637ⁿ">6,030</td><td class="num" data-label="Beats 1.307ⁿ">57,882</td><td class="num" data-label="vs start">38.43×</td><td data-label="Checked by">Exact counts, unit structure, (1 + 1/L)n bound; proof sketch</td></tr>
+          <tr><td>T9</td><td>Yes/no answer as a weighted count modulo a prime p ≤ 2Q (random weights): each measured value costs log₂(2Q) bits instead of Q<br><span class="who">Claude (idea, proof), Qwen (residue keys, weights, search)</span></td><td class="num" data-label="Beats 2ⁿ">1,106</td><td class="num" data-label="Beats 1.637ⁿ">6,030</td><td class="num" data-label="Beats 1.307ⁿ">29,002</td><td class="num" data-label="vs start">76.69×</td><td data-label="Checked by">Weighted counts mod p, residue-keyed groups; proof sketch</td></tr>
+          <tr><td>T10</td><td>Per-point measurements: at checkpoint t the swap at position t costs nothing, so only the measured values that matter at that checkpoint are kept<br><span class="who">Claude (idea, proof), Qwen (per-point matrices, search)</span></td><td class="num" data-label="Beats 2ⁿ">1,046</td><td class="num" data-label="Beats 1.637ⁿ">5,621</td><td class="num" data-label="Beats 1.307ⁿ">25,699</td><td class="num" data-label="vs start">86.55×</td><td data-label="Checked by">Exact and weighted counts, row bounds per point; proof sketch</td></tr>
+          <tr><td>T11</td><td>Equal-pair windows: the interpolation window is centred separately for each number of positions where a variable’s and its clause’s schedules agree<br><span class="who">Claude (idea, proof), Qwen (windows, search)</span></td><td class="num" data-label="Beats 2ⁿ">1,046</td><td class="num" data-label="Beats 1.637ⁿ">5,190</td><td class="num" data-label="Beats 1.307ⁿ">24,714</td><td class="num" data-label="vs start">90.00×</td><td data-label="Checked by">Exact counts, row bounds per window; proof sketch</td></tr>
+          <tr><td>T13</td><td>Small prime for the yes/no answer: interpolation points in GF(p²), so the prime only has to exceed R − 1 (about 140 near the break-even) instead of Q; each measured value costs log₂ p bits<br><span class="who">Claude (idea, proof, hidden checks), Qwen (GF(p²) rows, search)</span></td><td class="num" data-label="Beats 2ⁿ">1,046</td><td class="num" data-label="Beats 1.637ⁿ">5,190</td><td class="num" data-label="Beats 1.307ⁿ">22,118</td><td class="num" data-label="vs start">100.56×</td><td data-label="Checked by">Rows at every GF(p²) point on hidden designs, three wrong variants rejected; proof sketch</td></tr>
+          <tr><td>T12</td><td>Contraction: the groups are summed one at a time, so only about half of the measured links between groups are open at once<br><span class="who">Claude (idea, proof), Qwen (contraction routine, search)</span></td><td class="num" data-label="Beats 2ⁿ">940</td><td class="num" data-label="Beats 1.637ⁿ">4,803</td><td class="num" data-label="Beats 1.307ⁿ">18,817</td><td class="num" data-label="vs start">118.20×</td><td data-label="Checked by">Exact counts, two-group link condition; proof sketch</td></tr>
+          <tr class="best"><td>T14 + T14b</td><td>Edge bits: the derivative terms ride along in the same group-by-group sum, one on/off bit per open clause–variable link, instead of one separate restricted sum for every small set of variables<br><span class="who">Claude (idea, proof, reference, hidden checks), Qwen (edge routine, search)</span></td><td class="num" data-label="Beats 2ⁿ">57 †</td><td class="num" data-label="Beats 1.637ⁿ">61 †</td><td class="num" data-label="Beats 1.307ⁿ">10,086</td><td class="num" data-label="vs start">220.52×</td><td data-label="Checked by">Taylor data at every point against a direct evaluation, exact and weighted counts; proof sketch</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="col note"><strong>Where the loop stands now.</strong> The table above covers rounds 1 to 4, on the paper’s main algorithm (Sections 2–4). From round 5 on, the loop worked on its second algorithm (Appendix D), which counts exactly and went much further; the table below continues the ledger with it. All its cells are counting results, “vs start” compares the 1.307ⁿ column with the same start as above (2,224,173), and the 2<sup>n/3</sup> and 1.1199ⁿ columns are the fair competitors for this class. Every step’s code passed the frozen referee’s hidden checks; the rounds are described below and in the Appendix D section.</p>
+    <div class="table-wrap">
+      <table>
+        <thead class="ledger-head"><tr><th scope="col">Step</th><th scope="col">Change and who did it</th><th scope="col">Beats 2ⁿ</th><th scope="col">Beats 1.637ⁿ</th><th scope="col">Beats 2<sup>n/3</sup></th><th scope="col">Beats 1.307ⁿ</th><th scope="col">Beats 1.1199ⁿ</th><th scope="col">vs start</th></tr></thead>
+        <tbody class="ledger loop">
+          <tr><td>Start (round 5)</td><td>Appendix D with my tighter accounting and two model-only steps, scored by the loop’s new referee before any of Qwen’s code counted<br><span class="who">Claude (accounting, model steps, referee)</span></td><td class="num" data-label="Beats 2ⁿ">16,738</td><td class="num" data-label="Beats 1.637ⁿ">34,975</td><td class="num" data-label="Beats 2^(n/3)">201,458</td><td class="num" data-label="Beats 1.307ⁿ">140,745</td><td class="num" data-label="Beats 1.1199ⁿ">1,475,104</td><td class="num" data-label="vs start">15.8×</td></tr>
+          <tr><td>T15 (round 5)</td><td>Code for the four code-dependent steps: each distinct sub-contraction computed once, the mode sum group by group, chunks of the formula as single vertices, sub-contractions summed over the chunks’ variables<br><span class="who">Claude (steps, proofs, reference, hidden checks), Qwen (code)</span></td><td class="num" data-label="Beats 2ⁿ">579</td><td class="num" data-label="Beats 1.637ⁿ">1,213</td><td class="num" data-label="Beats 2^(n/3)">5,404</td><td class="num" data-label="Beats 1.307ⁿ">4,032</td><td class="num" data-label="Beats 1.1199ⁿ">23,056</td><td class="num" data-label="vs start">552×</td></tr>
+          <tr><td>T16 (round 5)</td><td>Wider parameter search: chunk size, balance tolerance δ and group counts chosen per level<br><span class="who">Qwen</span></td><td class="num" data-label="Beats 2ⁿ">572</td><td class="num" data-label="Beats 1.637ⁿ">1,212</td><td class="num" data-label="Beats 2^(n/3)">5,300</td><td class="num" data-label="Beats 1.307ⁿ">3,958</td><td class="num" data-label="Beats 1.1199ⁿ">21,942</td><td class="num" data-label="vs start">562×</td></tr>
+          <tr><td>T17 (round 6)</td><td>Newton moments instead of powers in the mode expansion, so each mode’s weight grows twice as fast<br><span class="who">GPT-6 Astra (idea), Claude (proof, hidden checks), Qwen (code)</span></td><td class="num" data-label="Beats 2ⁿ">320</td><td class="num" data-label="Beats 1.637ⁿ">652</td><td class="num" data-label="Beats 2^(n/3)">2,670</td><td class="num" data-label="Beats 1.307ⁿ">1,998</td><td class="num" data-label="Beats 1.1199ⁿ">10,993</td><td class="num" data-label="vs start">1,113×</td></tr>
+          <tr><td>T18 (round 6)</td><td>Cauchy LDU factorisation of each crossing block: weights grow four times as fast as with powers<br><span class="who">GPT-6 Astra (idea), Claude (proof, hidden checks), Qwen (code)</span></td><td class="num" data-label="Beats 2ⁿ">197</td><td class="num" data-label="Beats 1.637ⁿ">368</td><td class="num" data-label="Beats 2^(n/3)">1,370</td><td class="num" data-label="Beats 1.307ⁿ">1,044</td><td class="num" data-label="Beats 1.1199ⁿ">5,518</td><td class="num" data-label="vs start">2,130×</td></tr>
+          <tr><td>T20 (round 7)</td><td>Each group-by-group step as block matrix products, multiplied with Strassen’s algorithm<br><span class="who">GPT-6 Astra (idea), Claude (proof, hidden checks), Qwen (code)</span></td><td class="num" data-label="Beats 2ⁿ">187</td><td class="num" data-label="Beats 1.637ⁿ">347</td><td class="num" data-label="Beats 2^(n/3)">1,280</td><td class="num" data-label="Beats 1.307ⁿ">977</td><td class="num" data-label="Beats 1.1199ⁿ">5,137</td><td class="num" data-label="vs start">2,277×</td></tr>
+          <tr><td>T21 (round 8)</td><td>Guard slots at both ends of each packet: a Lagrange polynomial of half the degree replaces the Cauchy deformation, and the 2-adic precision halves<br><span class="who">GPT-6 Astra (idea), Claude (proof, hidden checks), Qwen (code)</span></td><td class="num" data-label="Beats 2ⁿ">126</td><td class="num" data-label="Beats 1.637ⁿ">204</td><td class="num" data-label="Beats 2^(n/3)">686</td><td class="num" data-label="Beats 1.307ⁿ">531</td><td class="num" data-label="Beats 1.1199ⁿ">2,600</td><td class="num" data-label="vs start">4,189×</td></tr>
+          <tr><td>T22 (round 9)</td><td>The parameter search also checks the label balance and tries smaller chunks<br><span class="who">Claude (found the gap), Qwen (search)</span></td><td class="num" data-label="Beats 2ⁿ">114</td><td class="num" data-label="Beats 1.637ⁿ">190</td><td class="num" data-label="Beats 2^(n/3)">663</td><td class="num" data-label="Beats 1.307ⁿ">508</td><td class="num" data-label="Beats 1.1199ⁿ">2,600</td><td class="num" data-label="vs start">4,378×</td></tr>
+          <tr><td>T23–T25 (round 10)</td><td>One binary crossing in every level’s mode sum, split into a few pieces and absorbed with fast integer transforms<br><span class="who">GPT-6 Astra (idea), Claude (check, hidden checks), Qwen (code)</span></td><td class="num" data-label="Beats 2ⁿ">112</td><td class="num" data-label="Beats 1.637ⁿ">186</td><td class="num" data-label="Beats 2^(n/3)">646</td><td class="num" data-label="Beats 1.307ⁿ">497</td><td class="num" data-label="Beats 1.1199ⁿ">2,531</td><td class="num" data-label="vs start">4,475×</td></tr>
+          <tr><td>T26–T27 (round 11)</td><td>Every shell profile contracted in the cheapest of three or four group orders<br><span class="who">GPT-6 Astra (idea, two orders), Claude (proof, larger menus, hidden checks), Qwen (code)</span></td><td class="num" data-label="Beats 2ⁿ">103</td><td class="num" data-label="Beats 1.637ⁿ">159</td><td class="num" data-label="Beats 2^(n/3)">533</td><td class="num" data-label="Beats 1.307ⁿ">413</td><td class="num" data-label="Beats 1.1199ⁿ">2,034</td><td class="num" data-label="vs start">5,385×</td></tr>
+          <tr><td>Review (2 November)</td><td>Same frozen model, finer choice of δ, L<sub>c</sub> and the last level<br><span class="who">GPT-6 Astra (hostile review), Claude (check)</span></td><td class="num" data-label="Beats 2ⁿ">100</td><td class="num" data-label="Beats 1.637ⁿ">157</td><td class="num" data-label="Beats 2^(n/3)">532</td><td class="num" data-label="Beats 1.307ⁿ">411</td><td class="num" data-label="Beats 1.1199ⁿ">2,033</td><td class="num" data-label="vs start">5,412×</td></tr>
+          <tr class="best"><td>Round 12 (2 November)</td><td>Root label balance by matchings (model version 8) and finer parameter searches<br><span class="who">GPT-6 Astra (proof, witnesses), Claude (check, model, searches)</span></td><td class="num" data-label="Beats 2ⁿ">92</td><td class="num" data-label="Beats 1.637ⁿ">147</td><td class="num" data-label="Beats 2^(n/3)">524</td><td class="num" data-label="Beats 1.307ⁿ">403</td><td class="num" data-label="Beats 1.1199ⁿ">2,032</td><td class="num" data-label="vs start">5,519×</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="col note">Fifteen tasks ran in four rounds on 31 October, from 11:57 to 20:13. Each agent run took 5 to 40 minutes. Qwen wrote the real code for T4 to T14b: the direct-read construction, a group-by-group routine that carries a polynomial in an extra variable, the clause matching, the chunking of units, the residue keys and random weights of the yes/no version, the per-point measurement matrices, the equal-pair windows, the rows over GF(p²) and the two contraction routines. Rounds three and four (T10 to T14) came from studying how the fast-multiplication record race kept improving: change what is computed, not only the parameters. Claude proposed each extension with a proof sketch, wrote the referee’s hidden checks for it, and first tested those checks against its own reference code and against deliberately wrong variants. T10’s first attempt was correct but was rejected by a bug in the referee itself; after the fix the same code was re-scored and accepted, and its two later attempts, which had reacted to the bogus error, were discarded. T14 took two parts: its first attempt cached clause values under the wrong key, its second wrote a correct edge routine (all six hidden checks passed) but ran out of time before switching the parameter search, so Claude kept that routine and a short follow-up task, T14b, made the switch. Once the loop itself crashed: after T9’s agent run it tripped over a file the agent had named “nul”, a reserved device name on Windows. “vs start” is how many times smaller the 1.307ⁿ break-even is than at the start. The start row is the first audit’s best version as re-scored by the referee, whose parameter search puts its 1.637ⁿ crossing at 304,561, 0.03% above the first audit’s 304,471. From T9 on, the 2ⁿ and 1.637ⁿ cells are the counting version’s and the 1.307ⁿ cells the yes/no version’s; the small prime of T13 helps only the yes/no version, because a count needs exact values. The referee starts its search at <em class="math">log₂ n</em> = 1,000, so the three counting cells below that (T12 against 2ⁿ, T14 against 2ⁿ and 1.637ⁿ) come from my own re-run of the same cost model with Qwen’s parameter search, down to <em class="math">log₂ n</em> = 10. Polynomial factors cannot change these cells, because n itself is still astronomically large (2⁵⁷ is about 1.4 × 10¹⁷); what is not re-checked at such sizes are the cost model’s own approximations and regime conditions. † For T14 the search then uses only 2 to 12 groups and replacement rows of degree at most 1, so these two cells measure the group-by-group contraction with its edge bits on its own, a dynamic program much like the 2<sup>n/3</sup> path-decomposition count mentioned below, not the interpolation; from <em class="math">log₂ n</em> ≈ 90 up to 1,000 its counting exponent stays at 0.50. T12’s 940 uses 19 groups and the full method. The referee confirms exact counts and design facts on small instances only. The asymptotic bounds behind T2 to T14b are proof sketches that have not been peer reviewed. An outside review (Fable) checked each of them against the paper’s definitions and found no error; if the least certain steps failed, its re-runs put the yes/no break-even against 1.307ⁿ between 11,500 and 18,826. The loop optimised against 1.307ⁿ. For counting, the fair competitor for this class is 2<sup>n/3</sup>, which the final counting version beats only from <em class="math">log₂ n</em> ≈ 43,518 (see the break-even table).</p>
+    <p class="col note">Round 5 (1 November, 00:32 to 02:48) moved the loop to Appendix D, with its own frozen referee: my implementation of the algorithm as the reference, hidden formulas, and the cost model with the new steps, where each code-dependent step counts only after the candidate’s code reproduces the reference. T15: Qwen wrote the seven core routines (the mode sum per tuple, with each sub-contraction once, and group by group; the sub-contraction over chunk variables, which it built itself from a description; and an exact end-to-end count) in one attempt. Every hidden check passed, and the break-even against 2<sup>n/3</sup> fell from 201,458 (the same model without verified code) to 5,404, equal to my own implementation. T16: Qwen widened the parameter search (chunk size, balance tolerance, group counts and level sizes chosen freely per level). Its first attempt explored for the full 55 minutes without writing the file and scored nothing; the second wrote a two-stage search (a cheap analytic pre-ranking, then the real model on the ten best shapes) in 21 minutes and moved the break-even against 2<sup>n/3</sup> to 5,300 and against 1.1199ⁿ to 21,942. At that point I found no further step with a sound and checkable gain, so the round ended there.</p>
+    <p class="col note">Round 6 (1 November, 15:50 to 18:30) followed an outside review (GPT-6 Astra). I proved and checked the two new mode bases first (2,038 coefficient checks for Newton, 76 closed-form Cauchy factorisations and every pivot valuation for the LDU, then the full algorithm in exact arithmetic: 178 and 71 node instances, 88 and 63 exact end-to-end counts at four and eight slots per packet). The referee gained hidden checks for each basis: the candidate’s modes, weights, source forms and coefficients must equal the reference, node values must be right by all three summation orders, and end-to-end counts exact; only then does the cost model use the faster weight growth. T17: Qwen added the Newton basis in one attempt. It met its stop condition within minutes and spent the rest of the hour on extra tests of its own; every hidden check passed and the break-even against 2<sup>n/3</sup> fell from 5,300 to 2,670, equal to my own implementation. T18: Qwen added the Cauchy LDU basis in one attempt of 11 minutes, from a specification that also gave it the series helpers; every hidden check passed and the break-even fell to 1,370, again equal to my implementation. A dry run before T18 showed that code without the new basis silently fell back to the old one and stalled the referee for half an hour; the referee now skips those end-to-end counts once the modes are wrong. The review also noted that the best scores use two recursion levels, which no gate had executed. I built the child networks of the first level explicitly and contracted each one with the algorithm itself, at the precision its parent needs and with its own labels and packets: 38,030 child contractions agreed with brute force in every coefficient, and 76 toy formulas were counted exactly through both levels (14 more were skipped by a memory guard).</p>
+    <p class="col note">Round 7 (1 November, 20:10 to 21:05) followed three more outside reviews. GPT-6 Astra proposed doing each step of the group-by-group mode sum as matrix multiplication. Sorting the three index sets of a step by exact weight turns the step into one block product per allowed weight triple, the same sum term by term, and Strassen’s algorithm multiplies the blocks with 7 products instead of 8 per halving. In the cost model the mode fraction of the largest step drops from 0.612 to 0.570 at seven groups. I proved the reorganisation and the cost formula, checked them on 108 toy nodes in three mode bases (5,435 block products, every value equal to the direct one), and gave the referee hidden checks: Strassen’s product counts, the shape of every block multiplication against its own reference, node values and exact end-to-end counts; a schoolbook multiplication and a sum that bypasses the multiplication both fail them. T20: Qwen added the matrix-product version in one attempt of eight minutes; every hidden check passed, and the break-even against 2<sup>n/3</sup> fell from 1,370 to 1,280, exactly as the what-if run had predicted (5,518 to 5,137 against 1.1199ⁿ, 1,044 to 977 against 1.307ⁿ, 368 to 347 against 1.637ⁿ). With the best known matrix multiplication exponent (about 2.37) instead of Strassen’s 2.81 the model would give about 1,180, but those algorithms are far too large to implement. The other proposals did not survive checking: Fable’s cap on the exponents per packet half changes the count by less than 0.01%, and Gemini’s ideas were either already in the model or cannot work, because the total weight of a block’s modes is fixed by the block itself.</p>
+    <p class="col note">Round 8 (1 November, 21:40 to 22:55) began with a question to GPT-6 Astra about Fable’s open problem. Astra kept the Cauchy blocks but changed the polynomial around them. Each packet gets empty guard slots at both ends (about a thousandth of its slots at each end at the chosen setting), and every entry of the deformation becomes a Lagrange interpolation polynomial of degree Q − 1 instead of 2Q − 1. At the interpolation points the matrix is still a pure shift, so the nodes stay local; near a node every crossing block is the old Cauchy matrix times a factor per row and a unit per column, so the LDU modes keep their weights; and because the polynomial has half the degree, the Hermite recovery needs half the 2-adic precision. I proved the steps, reran Astra’s own checks, and checked the construction in my exact toy: 75 nodes by four summation orders, 212 child networks and 41 exact end-to-end counts, which used 26 to 49% less precision than the paper’s deformation on the same formulas. The referee gained hidden checks for the new deformation; a wrong row factor and missing column units both fail them. Qwen wrote the code in one attempt; its own tests all passed after a quarter of an hour (I stopped it after 42 minutes, while it was still adding extra checks of its own), and every hidden check of the referee passed. The break-even against 2<sup>n/3</sup> fell from 1,280 to 686, exactly as the what-if run had predicted (5,137 to 2,600 against 1.1199ⁿ, 977 to 531 against 1.307ⁿ, 347 to 204 against 1.637ⁿ and 187 to 126 against 2ⁿ).</p>
+    <p class="col note">Round 9 (2 November, 00:00 to 00:45) checked two more proposals from GPT-6 Astra: a Chinese-remainder reset that recovers each child’s high input precision from many low-precision calls, and a label balance for the children that charges the number of parallel wires between two vertices instead of the maximum degree. Both hold (I checked the arguments and reran Astra’s programs), but in the cost model neither lowers a break-even: every constraint that binds now sits at the root, where the arithmetic needs about 108 retained 2-adic levels with seven groups and the root’s own label balance and padding then fix the size. The children have room to spare, and that room is what the two steps enlarge. The search behind this check found something else: Qwen’s parameter search had missed the best setting of the current model, because it tried only two chunk sizes and pre-ranked candidates by the padding budget alone, ignoring the root’s label balance. T22 fixed the search (Qwen’s code in six minutes, the same referee): the break-even against 2<sup>n/3</sup> fell from 686 to 663, exactly as my dry run had predicted (531 to 508 against 1.307ⁿ, 204 to 190 against 1.637ⁿ and 126 to 114 against 2ⁿ; 2,600 against 1.1199ⁿ and the numbers for denser formulas stay as they were).</p>
+    <p class="col note">Round 10 (2 November, 11:36 to 13:46) built a proposal of GPT-6 Astra that I had checked first. In the sum over the modes of a node, the wires between groups 1 and 3 and between groups 2 and 4 cross when groups 1, 2 and 3, 4 are taken as pairs. Written bit by bit, the two wires are a swap, and the swap splits into a few integer pieces; each piece passes through at most about √12 ≈ 3.46 channels per bit pair instead of 4, and tensor products of 4 × 4 integer matrices move the two pair tables onto those channels, without division and at a small polynomial cost. In the cost model the crossing index then counts as 3.26 units instead of 4, and the mode fraction at seven groups drops from 0.570 to 0.554. Before the loop ran, I checked the algebra with my own programs (both factorisations, their ranks, the fast transforms against dense ones, 216 exact contractions on six groups and more than 600 random nodes of the toy algorithm, where every piece agrees between the two pairings and with a direct evaluation). The referee (version 6) checks the transforms, every piece of 15 hidden nodes and end-to-end counts. Qwen built it in three tasks: the transforms (T23), the crossing route of the mode sum (T24) and the flag in the parameter search (T25). T24 needed two attempts. In the first, Qwen built the table keys by joining two lists instead of sorting them, so terms went missing whenever a mode with a larger number sat next to a crossing mode; three of the fifteen hidden nodes caught it, and a corrected copy confirmed the cause. The second attempt was right from 12:39 on, but Qwen kept adding tests of its own until the 55-minute limit stopped it. T25 then switched the flag on, and the break-even against 2<sup>n/3</sup> fell from 663 to 646, exactly as my what-if run had predicted (2,600 to 2,531 against 1.1199ⁿ, 508 to 497 against 1.307ⁿ, 190 to 186 against 1.637ⁿ and 114 to 112 against 2ⁿ).</p>
+    <p class="col note">After round 10 the owner of this page asked whether the much smaller sizes allow a more exact check, so I checked the cost model itself rather than only its outputs. Its three counting formulas are guaranteed upper bounds at every size, not asymptotic estimates: the number of mode tuples follows from a Chernoff-type bound, and the shell products with Strassen and the crossing index from the Cauchy–Schwarz inequality. Exact integer counts with weight budgets up to 2,000 stay below every formula (the tuple counts reach 95% of their bound in bits, the shell products 87 to 90%, closer as the budget grows). A scan of the parameter search from <em class="math">log₂ n</em> = 64 to 3,200 and on to 10⁹ shows the exponent falling steadily and reproduces the five cells exactly, each a size from which the route stays ahead. The factors the model drops are polynomial and cannot move a cell, because n is at least 2⁶⁴ there. What a computation cannot settle are the proofs of the steps, which remain sketches, and one constant: at 646 (round 10) the size is set by the root’s label balance, which asks for about 2<sup>55.6</sup> wires per label type and has 2<sup>56.5</sup>. That requirement comes from a deliberately generous balancing argument (a simpler bound for a single type would ask for about 14 bits less), so a sharper proof could lower the cell, but by about 1% at most.</p>
+    <p class="col note">Round 11 (2 November, 17:39 to 18:19) built a second proposal of GPT-6 Astra. In the mode sum of a node, fix the exact weight of every group pair (a shell profile); every mode tuple lies in exactly one profile, so the profiles can be summed one by one, each in its own order of the groups. One fixed order has to pay for its worst profile; choosing for each profile the cheapest order of a small menu pays only the minimum, and the minimum is at most the average of the orders’ costs. With the existing bound on the mode tuples this gives an exact certificate: at seven groups the mode fraction drops from 0.554 (one crossing) to 0.474 with Astra’s two orders and to 0.426 with the four orders I found by search; a uniform profile costs the same in every order, so no menu of such orders can go below 0.404. Before the loop ran, I reproduced Astra’s four certificates exactly with my own program and checked the method on more than 750 random nodes of the toy algorithm: every profile value equals a direct sum and is the same in every order. The referee (version 7) checks the order rule, every profile and every matrix product of 14 hidden nodes, the same again with an order chooser of its own, and end-to-end counts. Qwen built it in two tasks: the profile sum (T26) and the flag in the parameter search (T27). Qwen passed both on the first attempt, T26 in 24 minutes and T27 in 90 seconds, and the loop’s result equals my reference solution in every cell.</p>
+    <p class="col note">Hostile review (2 November, evening). The owner of this page sent the brief, the ledger, the frozen cost model, the round-11 certificates and this page to GPT-6 Astra with the request to refute them. Astra reproduced the five certificates and all thirteen profile constants and found no counterexample to the algebra of the profile orders, the binary crossing, the shell products or the guarded deformation (three of them her own proposals, which she was asked to review as if someone else had made them). She found three real problems. First, the cells are not minimal: the unchanged frozen model accepts 100, 157, 532, 411 and 2,033 with a finer choice of δ, L<sub>c</sub> and the last level; I reproduced all five exactly, and they are now in the tables. Second, the wire bound for formulas with more clauses omits small connected components; those entries were withdrawn and are recomputed in round 12. Third, several statements needed sharper wording: the formulas have clauses of width at most three, the counting competitor is 2<sup>n/3 + o(n)</sup>, the Appendix D steps must meet their own interface conditions rather than the paper’s Definition 3.1 and Lemmas 4.5 and 4.7, and the dropped costs need an explicit account (see the limits below). She ranks as the weakest links the root extension of the balancing argument, the accounting of memo lookups and tensor-entry evaluation, and the weighted balance behind the leaf step; none is a false identity. With the binary crossing of round 10 switched off every round-11 exponent stays the same, so the cells no longer depend on it. She also proposed a simpler, derandomisable proof of the root label balance that balances each matching of an edge colouring separately; it supports the present condition and, used in its place, would give 92, 148, 526, 403 and 2,033. I checked the proof and her witnesses, and they went into the model as round 12 (next paragraph).</p>
+    <p class="col note">Round 12 (2 November, evening) put the review into the model; it needed no new code, so the loop had no task. The root label balance by matchings became a step of its own (appd-matchbal) in version 8 of the frozen model. A chunk unit has at most 63·L<sub>c</sub> wires (it holds at most 1 + 7(L<sub>c</sub> − 1) variables, and its clauses and variables reach outside at most 42·L<sub>c</sub> and 21·L<sub>c</sub> times), so the wires split into at most 126·L<sub>c</sub> − 1 matchings; inside one matching the labels of different wires are independent, each matching is balanced separately with a share of the tolerance, and a union bound over the matchings and label pairs gives a condition that is linear in L<sub>c</sub> where the old one was quadratic: 9 to 13 bits less. I checked the degree count against the definition of the units, the tail bound and her five witnesses with my own copy of the model. Three parameter searches then ran on version 8: mine inside the referee’s protocol (the round-11 search with a local refinement, under 3 s per call; the frozen referee scored it at 93, 147, 525, 404 and 2,033), a head differential evolution in two passes, and the review’s own. The tables show the smallest dictionary any of them found, each checked in the frozen model: 92, 147, 524, 403 and 2,032, against 100, 157, 532, 411 and 2,033 before. These are feasible thresholds found by search, not proved minima. The same round repaired the entry for formulas with more clauses (see below).</p>
+  </section>
+
+  <section aria-labelledby="sum-h">
+    <h2 id="sum-h">Break-even sizes</h2>
+    <p class="col note">Each cell is a formula size, as <em class="math">log₂ n</em>, from which the cost <span class="mono">2<sup>e·n</sup></span> stays below the competitor’s: a feasible threshold of the cost model found by a parameter search, not proved minimal (an outside review found slightly smaller ones for the Appendix D route, now in the table). Smaller is better. The fair columns are the two for formulas with at most three occurrences per variable, the class modelled here; the other two are records for all formulas. The yes/no row answers only whether a formula is satisfiable, with one-sided random error like PPSZ itself, so it has no entries for the two counting columns.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th scope="col">Version</th><th scope="col">Beats 1.637ⁿ<br>counting, all formulas</th><th scope="col">Beats 2<sup>n/3</sup><br>counting, ≤ 3 occurrences</th><th scope="col">Beats 1.307ⁿ<br>yes/no, all formulas</th><th scope="col">Beats 1.1199ⁿ<br>yes/no, ≤ 3 occurrences</th></tr>
+        </thead>
+        <tbody id="sum-body"></tbody>
+      </table>
+    </div>
+    <p class="col note">† The main algorithm’s counting version beats 1.637ⁿ from 61 only through its contraction step on its own: at such sizes its parameter search switches the interpolation off (see the note under the loop table). The Appendix D route needs 147 with the full method.</p>
+    <p class="col note" id="scale-note"></p>
+    <p class="col note">The 1.637ⁿ and 1.307ⁿ records hold for all formulas, but this model covers only the algorithm’s best case, formulas in which every variable occurs at most three times. For exactly those formulas a faster algorithm is known: satisfiability in 1.1199ⁿ (Jain, Neoh and Stephan, 2024). Against that record, the fair comparison for this class, the break-even of the yes/no version after the loop is <em class="math">log₂ n</em> ≈ 196,722 (412,291 after the second round). The Appendix D route would reach 2,032 while counting exactly (code verified by the loop’s referee, cost bounds with proof sketches; see its section). Counting has a faster known method for this class too: the clause–variable graph has maximum degree 3, so its pathwidth is at most about n/3 (Fomin and Høie, 2006), and dynamic programming over a path decomposition counts the solutions in about 2<sup>n/3</sup> ≈ 1.26ⁿ. The loop’s counting version beats that only from 43,518; the Appendix D route from 524. The Fable review pointed this out; the loop itself had optimised against 1.307ⁿ.</p>
+    <p class="col note">What a practical break-even would mean. The cells compare worst-case upper bounds; they do not say how long a program runs on a given formula, and practical solvers are judged on real instances. As a scale only: at a break-even the two bounds are equal, against 2<sup>n/3</sup> about 2<sup>n/3</sup> steps, which is 2<sup>67</sup> at n = 200, within reach of today’s largest computers, and 2<sup>100</sup> at n = 300, far beyond them. A break-even of practical use for worst-case bounds would therefore lie at a few hundred variables, <em class="math">log₂ n</em> ≈ 8. Even against brute force the Appendix D route needs <em class="math">log₂ n</em> = 92 after round 12, about 10<sup>28</sup> variables, more than all the world’s storage holds (roughly 10<sup>24</sup> bits). In the present design every cell is set by a size condition, in four of the five round-12 dictionaries a label balance condition: the wires are spread over r<sup>2u</sup> label types, and the balancing argument asks for a margin of wires per type. Against 2<sup>n/3</sup> the top level has r = 8 groups and u = 79, so 8<sup>158</sup> = 2<sup>474</sup> types; the balance by matchings asks for 49.8 more bits, so n must exceed 2<sup>523.8</sup>, and the threshold is 524. Against 2ⁿ, 7<sup>22</sup> ≈ 2<sup>61.8</sup> types and 30.2 bits give 92. The u are this large because a level’s cost falls only like 1/√u. A perfect balancing argument would remove at most the last 50 of the 524 bits. The 474 bits of label types belong to the present labeling design and are not a proven lower bound; GPT-6 Astra asks whether the u coordinate has to carry every label pair. A rough estimate with round 12’s exponent parameters fixed: half the labels would give about 355 against 2<sup>n/3</sup> and 61 against 2ⁿ; with no labels at all the padding of the packets would still hold the break-even against 2<sup>n/3</sup> at about 225 (n ≈ 10<sup>68</sup>). No such construction exists yet. Within the present design, further steps like round 11’s measure how far from practice the route is; they do not bring it near.</p>
+  </section>
+
+  <section aria-labelledby="fig-h">
+    <h2 id="fig-h">Cost exponent by problem size</h2>
+    <figure>
+      <div class="legend" id="legend"></div>
+      <div class="chart" id="chart" role="img" aria-label="Cost exponent e against log2 n for five versions of the algorithm (two after the loop), with reference lines for brute force, the best #3-SAT and 3-SAT algorithms, and the best counting and SAT algorithms when every variable occurs at most three times."></div>
+      <div class="control">
+        <label for="size">Problem size <output id="size-out" for="size"></output></label>
+        <input id="size" type="range" min="0" max="0" step="1" value="0">
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Version</th><th scope="col" class="var">e</th><th scope="col">Status</th><th scope="col">Taylor</th><th scope="col">Measure</th><th scope="col">Groups</th><th scope="col" class="var">r</th><th scope="col" class="var">Q</th><th scope="col" class="var">R</th></tr></thead>
+          <tbody id="bd-body"></tbody>
+        </table>
+      </div>
+      <figcaption>Cost ≈ 2<sup>e·n</sup> with polynomial factors dropped. The three terms are the paper’s three costs (2.11): Taylor coefficients, measurement tuples, and assignments inside one group. Drag the slider or hover the chart.</figcaption>
+    </figure>
+  </section>
+
+  <section aria-labelledby="chg-h">
+    <h2 id="chg-h">What changed in the first audit</h2>
+    <p class="col note">Same algorithm, same correctness conditions (Definition 3.1, Lemmas 4.5 and 4.7). Figures compare the paper’s own choice with the first audit’s best version at <em class="math">log₂ n</em> = 2.22 × 10⁶, where that version first beats 1.307ⁿ.</p>
+    <ol class="changes">
+      <li>
+        <h3>Interval width R from the exact binomial tail</h3>
+        <p class="note">The paper sets R = 4⌈√λ⌉, which makes R²/(8Q) ≥ 256ν. Its tail requirement only needs about 1.4ν + 2. Where the paper’s checks first pass, R = 417,796 while its own bound needs about 26,000.</p>
+        <dl class="ba"><dt>Paper</dt><dd class="mono">R = 5,968 (larger than Q = 789, so the checks fail)</dd><dt>Best version</dt><dd class="mono">R = 1,978</dd></dl>
+      </li>
+      <li>
+        <h3>More interpolation points Q</h3>
+        <p class="note">The paper caps the label space at D = r<sup>2Q</sup> ≤ n<sup>1/128</sup>. The balancing lemma only needs 12D² ≤ M, which allows D up to about √n / 2. Since R grows like √Q, a larger Q shrinks R/Q, the ratio behind the dominant Taylor cost.</p>
+        <dl class="ba"><dt>Paper</dt><dd class="mono">Q = 789</dd><dt>Best version</dt><dd class="mono">Q = 121,275</dd></dl>
+      </li>
+      <li>
+        <h3>More groups r</h3>
+        <p class="note">The paper’s r = ⌊√λ / ν²⌋ is tiny at these sizes, so the group term 2n/r would dominate. The optimiser picks r between 8 and 48 near break-even.</p>
+        <dl class="ba"><dt>Paper</dt><dd class="mono">r = 3</dd><dt>Best version</dt><dd class="mono">r = 24</dd></dl>
+      </li>
+      <li>
+        <h3>Tighter accounting of what is enumerated<span class="tag">New, checked in code</span></h3>
+        <ul class="plain">
+          <li>Each measurement row is non-zero on at most 2 of the r groups, because each eigenvector factor touches at most two symbols at a position. The paper counts the row once per group.</li>
+          <li>A restricted row has absolute coefficient sum at most 2<sup>Q−1</sup>, so it takes at most 2<sup>Q</sup> + 1 values. The paper uses 2D + 1 = 2r<sup>2Q</sup> + 1.</li>
+          <li>The replacement rows have degree R − 1, not R, and the groups hold about n/r variables rather than the 2n/r bound.</li>
+        </ul>
+      </li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="ver-h">
+    <h2 id="ver-h">Verified in code</h2>
+    <p class="col note">Exact integer arithmetic; rank tests run modulo two primes near 2<sup>25</sup>. Kernels and measurement fibres were non-trivial, so the separation property was actually exercised.</p>
+    <div class="table-wrap">
+      <table>
+        <thead class="ledger-head"><tr><th scope="col">Check</th><th scope="col">Scope</th><th scope="col">Result</th></tr></thead>
+        <tbody class="ledger">
+          <tr><td>Remark 4.4 worked example: the row ⟨P<sub>u</sub>(T), ζ⟩ = ζ₀ − (T/2)ζ₁ − Tζ₂</td><td>r = 2, Q = R = 2</td><td class="pass">Exact match</td></tr>
+          <tr><td>Lemmas 4.1–4.3: interpolation of (−1)<sup>j</sup>, eigenstructure of M₀, support bound, P<sub>u</sub>(0) = δ<sub>u</sub>, degree, separation</td><td>9 parameter sets, D = 16 to 1,024</td><td class="pass">All pass</td></tr>
+          <tr><td>Definition 3.1(4) on real formulas, after the copy-and-place transfer of Sections 4.4–4.5</td><td>Random bounded-occurrence 3-CNF, n = 400 to 6,000 (up to 18,000 occurrences)</td><td class="pass">Pass; group kernels of dimension 163 to 2,602</td></tr>
+          <tr><td>Full counting algorithm: group-separated sums (Lemma 3.2) for every pair, inclusion–exclusion (Lemma 3.3), Hermite interpolation</td><td>9 formulas, n = 6</td><td class="pass">Exact counts, equal to brute force</td></tr>
+          <tr><td>Lemma 3.2 spot checks and full count</td><td>4 formulas, n = 8 and 9</td><td class="pass">Exact counts, equal to brute force</td></tr>
+          <tr><td>New accounting claims: groups per measurement row, restricted row sums</td><td>All four formula designs</td><td class="pass">At most 2 groups; sums reach exactly 2<sup>Q−1</sup></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="appd-h">
+    <h2 id="appd-h">Appendix D: the tensor-contraction route (cost model and exact checks)</h2>
+    <p class="col note">Appendix D proves Theorem 1.1 a different way. The formula becomes a network of one-bit wires, and a recursion over the wires replaces the single global Taylor expansion of Sections 2–4. Its cost exponent shrinks like 1/√(log n), without the extra log log n factor. I modelled its cost on the same class of formulas (every variable in at most three clauses): first with the paper’s constants (r = 64 groups, ε = 2<sup>−17</sup>, every edge subdivided, h = ⌈3M/u⌉, precision p + 8hD<sub>t</sub> + 8M(a + 1), 6M/D<sub>t</sub> modes of each weight, children with at most 6M/r wires), then with tighter accounting of the same kind as the first audit, then with new steps: four of mine and two suggested in review. In round 5 of the loop (1 November) the code for these steps went through a frozen referee. Each cell is a <em class="math">log₂ n</em> from which the cost stays below the competitor’s, found by a parameter search and not proved minimal.</p>
+    <div class="table-wrap">
+      <table>
+        <thead class="ledger-head"><tr><th scope="col">Version of Appendix D</th><th scope="col">Beats 1.637ⁿ</th><th scope="col">Beats 2<sup>n/3</sup></th><th scope="col">Beats 1.307ⁿ</th><th scope="col">Beats 1.1199ⁿ</th></tr></thead>
+        <tbody class="ledger loop">
+          <tr><td>As written (cost formula). The paper’s own invariant u ≥ λ<sup>4/5</sup> holds only from <em class="math">log₂ n</em> ≈ 3.9 × 10<sup>25</sup></td><td class="num" data-label="Beats 1.637ⁿ">2.45 × 10<sup>10</sup></td><td class="num" data-label="Beats 2^(n/3)">1.11 × 10<sup>11</sup></td><td class="num" data-label="Beats 1.307ⁿ">8.29 × 10<sup>10</sup></td><td class="num" data-label="Beats 1.1199ⁿ">4.63 × 10<sup>11</sup></td></tr>
+          <tr><td>Tighter accounting: no edge subdivision (the clause–variable graph is already bipartite), all valuation levels in Lemma D.5, the exact loss in (D.10), packets filled to within 1%; the paper’s second-moment label balancing</td><td class="num" data-label="Beats 1.637ⁿ">93,569</td><td class="num" data-label="Beats 2^(n/3)">496,177</td><td class="num" data-label="Beats 1.307ⁿ">359,349</td><td class="num" data-label="Beats 1.1199ⁿ">2,269,327</td></tr>
+          <tr><td>… with Bernstein balancing of the labels, as in T2–T3</td><td class="num" data-label="Beats 1.637ⁿ">50,334</td><td class="num" data-label="Beats 2^(n/3)">264,399</td><td class="num" data-label="Beats 1.307ⁿ">191,516</td><td class="num" data-label="Beats 1.1199ⁿ">1,200,418</td></tr>
+          <tr><td>… computing each distinct sub-contraction once: a child depends only on the modes that touch its group (new)</td><td class="num" data-label="Beats 1.637ⁿ">25,203</td><td class="num" data-label="Beats 2^(n/3)">143,651</td><td class="num" data-label="Beats 1.307ⁿ">97,912</td><td class="num" data-label="Beats 1.1199ⁿ">643,153</td></tr>
+          <tr><td>… with the mode sum contracted group by group (new; the T12/T14 idea)</td><td class="num" data-label="Beats 1.637ⁿ">15,010</td><td class="num" data-label="Beats 2^(n/3)">78,641</td><td class="num" data-label="Beats 1.307ⁿ">58,640</td><td class="num" data-label="Beats 1.1199ⁿ">375,303</td></tr>
+          <tr><td>… with chunks of the formula merged into single vertices, so only wires between chunks are deformed (new; the T8 idea)</td><td class="num" data-label="Beats 1.637ⁿ">1,527</td><td class="num" data-label="Beats 2^(n/3)">7,705</td><td class="num" data-label="Beats 1.307ⁿ">5,393</td><td class="num" data-label="Beats 1.1199ⁿ">34,371</td></tr>
+          <tr><td>… with each packet pattern padded only to its own granularity, and the last-level sub-contractions summed over the chunks’ variables instead of their wires (both suggested by Gemini, checked by Claude); against 1.1199ⁿ a second recursion level also helps</td><td class="num" data-label="Beats 1.637ⁿ">1,343</td><td class="num" data-label="Beats 2^(n/3)">6,345</td><td class="num" data-label="Beats 1.307ⁿ">4,601</td><td class="num" data-label="Beats 1.1199ⁿ">28,442</td></tr>
+          <tr><td>… with labels only on the 2-adic levels that are actually evaluated, so the precision headroom costs no label space, and a second recursion level (new; cost model)</td><td class="num" data-label="Beats 1.637ⁿ">1,226</td><td class="num" data-label="Beats 2^(n/3)">5,405</td><td class="num" data-label="Beats 1.307ⁿ">4,033</td><td class="num" data-label="Beats 1.1199ⁿ">23,062</td></tr>
+          <tr><td>Round 5 of the loop, T15: Qwen wrote the code for the four code-dependent steps; the frozen referee verified it on hidden formulas and scored it with its own copy of the cost model</td><td class="num" data-label="Beats 1.637ⁿ">1,213</td><td class="num" data-label="Beats 2^(n/3)">5,404</td><td class="num" data-label="Beats 1.307ⁿ">4,032</td><td class="num" data-label="Beats 1.1199ⁿ">23,056</td></tr>
+          <tr><td>Round 5, T16: Qwen widened the parameter search (chunk size, balance tolerance δ, group counts per level)</td><td class="num" data-label="Beats 1.637ⁿ">1,212</td><td class="num" data-label="Beats 2^(n/3)">5,300</td><td class="num" data-label="Beats 1.307ⁿ">3,958</td><td class="num" data-label="Beats 1.1199ⁿ">21,942</td></tr>
+          <tr><td>Round 6, T17: binomial (Newton) moments instead of powers in the mode expansion, so each mode’s weight grows twice as fast; Qwen’s code, verified by the frozen referee</td><td class="num" data-label="Beats 1.637ⁿ">652</td><td class="num" data-label="Beats 2^(n/3)">2,670</td><td class="num" data-label="Beats 1.307ⁿ">1,998</td><td class="num" data-label="Beats 1.1199ⁿ">10,993</td></tr>
+          <tr><td>Round 6, T18: Cauchy LDU factorisation of each crossing block, weights growing four times as fast as with powers; Qwen’s code, verified by the frozen referee</td><td class="num" data-label="Beats 1.637ⁿ">368</td><td class="num" data-label="Beats 2^(n/3)">1,370</td><td class="num" data-label="Beats 1.307ⁿ">1,044</td><td class="num" data-label="Beats 1.1199ⁿ">5,518</td></tr>
+          <tr><td>Round 7, T20: each group-by-group step done as matrix products of blocks sorted by weight, multiplied with Strassen’s algorithm (suggested by GPT-6 Astra); Qwen’s code, verified by the frozen referee</td><td class="num" data-label="Beats 1.637ⁿ">347</td><td class="num" data-label="Beats 2^(n/3)">1,280</td><td class="num" data-label="Beats 1.307ⁿ">977</td><td class="num" data-label="Beats 1.1199ⁿ">5,137</td></tr>
+          <tr><td>Round 8, T21: empty guard slots at both ends of each packet, so a Lagrange polynomial of half the degree replaces the Cauchy deformation and the 2-adic precision halves (proposed by GPT-6 Astra, checked by Claude); Qwen’s code, verified by the frozen referee</td><td class="num" data-label="Beats 1.637ⁿ">204</td><td class="num" data-label="Beats 2^(n/3)">686</td><td class="num" data-label="Beats 1.307ⁿ">531</td><td class="num" data-label="Beats 1.1199ⁿ">2,600</td></tr>
+          <tr><td>Round 9, T22: the parameter search also checks the label balance and tries smaller chunks (found while checking two further proposals by GPT-6 Astra, which give no gain here); Qwen’s code, verified by the frozen referee</td><td class="num" data-label="Beats 1.637ⁿ">190</td><td class="num" data-label="Beats 2^(n/3)">663</td><td class="num" data-label="Beats 1.307ⁿ">508</td><td class="num" data-label="Beats 1.1199ⁿ">2,600</td></tr>
+          <tr><td>Round 10, T23–T25: one binary crossing in every level’s mode sum, absorbed with fast integer transforms (proposed by GPT-6 Astra, checked by Claude); Qwen’s code, verified by the frozen referee</td><td class="num" data-label="Beats 1.637ⁿ">186</td><td class="num" data-label="Beats 2^(n/3)">646</td><td class="num" data-label="Beats 1.307ⁿ">497</td><td class="num" data-label="Beats 1.1199ⁿ">2,531</td></tr>
+          <tr><td>Round 11, T26–T27: every shell profile of a mode sum contracted in the cheapest of three or four group orders (proposed by GPT-6 Astra with two orders, extended and checked by Claude); Qwen’s code, verified by the frozen referee</td><td class="num" data-label="Beats 1.637ⁿ">159</td><td class="num" data-label="Beats 2^(n/3)">533</td><td class="num" data-label="Beats 1.307ⁿ">413</td><td class="num" data-label="Beats 1.1199ⁿ">2,034</td></tr>
+          <tr><td>After the hostile review (GPT-6 Astra, 2 November): the same frozen model with a finer choice of δ, L<sub>c</sub> and the last level; reproduced by Claude</td><td class="num" data-label="Beats 1.637ⁿ">157</td><td class="num" data-label="Beats 2^(n/3)">532</td><td class="num" data-label="Beats 1.307ⁿ">411</td><td class="num" data-label="Beats 1.1199ⁿ">2,033</td></tr>
+          <tr class="best"><td>Round 12: the root label balance proved by matchings (proposed by GPT-6 Astra in her review, checked by Claude) in the frozen model, version 8, and finer parameter searches</td><td class="num" data-label="Beats 1.637ⁿ">147</td><td class="num" data-label="Beats 2^(n/3)">524</td><td class="num" data-label="Beats 1.307ⁿ">403</td><td class="num" data-label="Beats 1.1199ⁿ">2,032</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="col note">The new steps have proofs or proof sketches in the loop’s claims ledger. A small exact implementation of Appendix D (packets, the Cauchy deformation, tapered Hermite recovery with 2-adic precision, modes, child networks) checks them on toy formulas. Plain and chunk networks contract to the right count (120 formulas). Recovery from Taylor data cut to the precision of Lemma D.5 returns the right value in 60 cases, and fails in 53 of them with three bits less. The mode expansion computed per tuple as in the paper, with each child once, and group by group agrees with a direct evaluation in 153 node checks (up to 23 modes and 873 tuples). A sub-contraction summed over its chunks’ variables equals the same value in 298 further checks; the toys already pack each pattern to its own granularity. Run end to end at the smallest packet size, the whole algorithm returns the exact count for 17 formulas. With constant labels on the headroom bits it still returns the exact count (7 formulas with four slots per packet and one evaluated level), and the packing needs half the packets (579 instead of 1,141 over 197 formulas). The toys do not test the asymptotic bounds or the label balancing, and they sum the children directly, which is also the model’s best choice. In round 5 the loop’s local model wrote the code for the four code-dependent steps from their descriptions. The frozen referee compared it with my implementation on hidden formulas: 21 node values for each of the three ways of summing the modes, 91 sub-contractions summed over chunk variables and 10 exact end-to-end counts, all equal. Only then did those steps enter the score.</p>
+    <p class="col note">For comparison, Sections 2–4 with the same tighter accounting start at 2.22 million (1.307ⁿ) and 27.7 million (1.1199ⁿ). After four loop rounds they stand at 24,174 and 513,356 for counting, and 10,086 and 196,722 for the yes/no version. Appendix D counts exactly and deterministically. With plain re-accounting it starts about six times lower than Sections 2–4 at the same stage (359,349 against 2.22 million). After round 12 it beats every loop result in the three hard columns: 524 against 2<sup>n/3</sup>, the fair counting competitor, about 83 times below the loop’s counting version (43,518); 403 against 1.307ⁿ, about 60 times below the loop’s counting result and 25 times below its yes/no result; and 2,032 against the fair 1.1199ⁿ competitor, 253 times below the counting result and 97 times below the yes/no result. Against 1.637ⁿ it needs 147 with the full method; the loop’s counting version reaches 61 there only through its contraction step on its own (marked † in the loop table). The largest single change since the first pass is the sub-contraction step. The paper charges every mode tuple with r fresh sub-contractions, but a sub-contraction depends only on the modes that touch its group, so each distinct one is computed once and a recursion level costs the larger of two terms instead of their sum. That step needs exponential memory, as the loop’s contraction steps already do. A second outside review (Fable), which saw only the first-pass model, independently found the same two facts: every tile carries modes, and a sub-contraction depends only on the modes that touch its group. An outside review (Gemini) checked my three steps and the arithmetic of the model and found no error, and it now agrees that the tile halving from its first review does not hold. It also proposed a second recursion level, which it expected to bring the 1.1199ⁿ column to about 20,000; in the model the gain is smaller (28,442 instead of 30,115), because a deeper level inherits its parent’s precision and high-degree packet vertices, and both cost label space. Once the headroom bits carry no labels, the second level pays in every hard column. After round 5 I looked for further steps and found none with a sound and checkable gain. An outside review (GPT-6 Astra, asked by the owner of this page) then found two that I had missed, both in how each crossing entry is split into modes. The paper writes 1/(A − cj) as a power series in j; Newton’s forward differences write it exactly in binomial coefficients C(j, b), and every term then carries v2(b!) ≈ b extra factors of 2. Factoring the whole crossing block of a packet half as a Cauchy matrix, L·D·U, doubles that again: the pivots lose 2b + 2 v2(b!) factors of 2. Each doubling of the weight growth halves the number of modes per unit of weight and divides the exponent of the mode arithmetic by √2, which halves the break-even size. I proved both steps (closed forms for the Cauchy factors, valuations coefficientwise in z), checked them in exact arithmetic and put them through the loop as round 6. The review also pointed out that no gate had executed the second recursion level that the best scores use; that audit is described in the loop section. The claims ledger lists the remaining ideas examined and why each was set aside. Three more outside reviews (GPT-6 Astra, Gemini and Fable, again asked by the owner of this page) followed in round 7. Astra’s proposal to do each group-by-group step as fast matrix multiplication went through the loop; its finite-size bound for the LDU weights is now a proof in the ledger, so the cost model’s mode count is an upper bound at every size, not only an asymptotic estimate. The other proposals were checked and set aside, with the reasons in the ledger. Asked about Fable’s open question, GPT-6 Astra then found a different deformation in round 8: empty guard slots at both ends of every packet let a Lagrange interpolation polynomial of half the degree do the work of the paper’s Cauchy deformation, with the same mode weights and half the 2-adic precision. It went through the loop as well. In round 9 Astra proposed two more steps, a Chinese-remainder reset of the children’s precision and a label balance that charges parallel wires instead of the maximum degree; both hold, but neither changes a break-even here, because every binding constraint now sits at the root. In round 10 Astra turned to the crossing idea of Anthropic’s paper and found a version that is cheap to carry out: two wires that cross between four groups are split into a few pieces, each of which passes through fewer channels than the two wires together, and integer transforms move the tables onto those channels without any division. I checked it independently and the loop built it; it lowers every break-even by about 2 to 3 percent. In round 11 Astra found that one fixed order of the groups, however good, pays for the worst weight profile; choosing the cheapest of two orders separately for each profile is cheaper, with a short exact certificate. I checked it, extended it to menus of three and four orders, and the loop built it: about 17 percent off the break-even against 2<sup>n/3</sup>.</p>
+    <p class="col note">Formulas with more clauses (repaired in round 12). Every row above is for formulas in which each variable occurs at most three times. A hostile review (GPT-6 Astra) found that the wire bound used here omits small connected components: one clause on three variables has no crossing wire, while 2m − n + n/L<sub>c</sub> = −1/4 at L<sub>c</sub> = 4. Round 12 solves small components directly; when every variable occurs in some clause, a connected component with c clauses has at most 2c + 1 variables, so the large components carry at most 2m − 2n/3 + n/L<sub>c</sub> wires. The root balance by matchings uses the exact unit degree 3B(2B + 1)·L<sub>c</sub> for an occurrence cap B in place of the old scaling argument. For a 3-CNF with m clauses and no limit on occurrences, the chunk networks of the large components therefore have at most 2m − 2n/3 + n/L<sub>c</sub> wires instead of about n (each clause contributes two wires, each variable inside a chunk saves one, and the small components hand back at most a third of a wire per variable), so the break-even grows roughly with the square of the clause density. At m = 4.26n, the density at which random formulas are hardest, the repaired model with round 12’s steps gives 6,594 against 1.637ⁿ, 22,223 against 1.307ⁿ and 3,357 against 2ⁿ (the withdrawn entries were 6,063, 20,415 and 3,089). At m = 5n it gives 9,293, 31,365 and 4,722. For comparison, Anthropic’s own paper on the question states that its displayed bound needs n above 10<sup>10,000</sup> to improve on exhaustive search at m = 5n: a threshold for that bound, not a certified crossover, and a later preprint (Majdoddin, 30 October) lowers the crossover points of that algorithm. The repaired entry here is about 10<sup>1,421</sup> against 2ⁿ; the two compare different algorithms under different analyses. Variables with more than 1,024 occurrences are first split into chains of copies, which adds no wires (each equality is one arity-two constraint); the root balance then pays for the larger unit degree, about 17 bits more than at three occurrences. The 2<sup>n/3</sup> and 1.1199ⁿ competitors exist only for three occurrences. Fable computed this entry independently for round 6’s steps (55,420 and 16,384; this page’s model gives 55,416 and 16,381 there).</p>
+  </section>
+
+  <section aria-labelledby="lim-h" class="col">
+    <h2 id="lim-h">Limits of this audit</h2>
+    <ul class="plain">
+      <li>Bounded-occurrence 3-CNF (clauses of width at most three, each variable in at most three clauses) is the algorithm’s best case. With exactly three distinct variables per clause and at most three occurrences every formula is satisfiable (Hall’s theorem), so the yes/no comparison needs width at most three. General formulas go through sparsification and parity tests (Sections 5–6), whose product degree is about 8k·n instead of 3n, so their thresholds are higher still. The Appendix D section gives entries for general formulas at clause densities 4.26 and 5, recomputed in round 12 after a correction found in review: 22,223 and 31,365 against 1.307ⁿ.</li>
+      <li>The chart, the break-even tables and the loop model the interpolation algorithm of Sections 2–6. The tensor-contraction algorithm of Appendix D has its own section and one row in the break-even table: a cost model, head proofs or proof sketches for thirteen new steps, toy-scale exact checks (including two recursion levels executed end to end) and, in rounds 5 to 11, code verified by the loop’s referee (round 12 changed only the model and the parameter search) on small formulas; no large run.</li>
+      <li>Only exponents are compared. Two kinds of cost are dropped: polynomial factors, and the evaluation of packet and chunk tensor entries (exp(O(Q log s)) per packet entry with Q = 2<sup>a</sup>, and 2<sup>O(L<sub>c</sub>)</sup> per chunk entry). The review’s scale for the second kind is 2<sup>a</sup>(<em class="math">log₂ n</em> + a) bits; at every Appendix D cell the margin n·(competitor’s exponent − e) is larger by a factor of at least 2<sup>46</sup>, so neither can plausibly move a cell, but a full finite-runtime comparison has to count them explicitly.</li>
+      <li>1.637ⁿ (#3-SAT) and 1.307ⁿ (3-SAT, decision only) are the best bounds as cited by the paper; both are for general formulas. For the class modelled here (every variable in at most three clauses) satisfiability is known to take 1.1199ⁿ (arXiv 2411.07389), the fair yes/no competitor, and counting takes 2<sup>n/3 + o(n)</sup> by dynamic programming over a path decomposition (Fomin and Høie, 2006, with the usual reduction to the degree-three vertices), the fair counting competitor; comparing with 2<sup>n/3</sup> without the o(n) is conservative here. A better counting bound for this class may exist; I did not find one.</li>
+      <li>The paper’s theorem is not yet independently confirmed. As of 31 October 2026 the review led by Ryan Williams with Russell Impagliazzo and Ramamohan Paturi had not reported, and OpenAI says the result was checked in Lean without saying which statement the formal proof covers. Every number on this page assumes that the paper’s construction is correct; the code here checks its identities on small instances, not the theorem.</li>
+      <li>The contraction steps of the loop (T12, T14) and the Appendix D steps trade the paper’s polynomial memory for exponential memory, tables of about 2<sup>0.36n</sup> entries at the break-even. PPSZ and the 1.1199ⁿ algorithm run in polynomial memory; the 2<sup>n/3</sup> counting method needs exponential memory as well.</li>
+      <li>The code tests the construction on small instances. It checks the mechanics; it does not prove the theorem.</li>
+      <li>The loop’s extensions (two-stage balancing, the δ tolerance, direct reads, grouping per U, clause units, chunk units, the yes/no count modulo a prime, per-point measurements, equal-pair windows, the small prime with interpolation points in GF(p²), the contraction of the group sums and the edge bits) rest on proof sketches written during the loop. The referee’s exact-count tests exercise the constructions and identities on small formulas, but not the asymptotic bounds.</li>
+    </ul>
+    <details>
+      <summary>Show the plotted values as a table</summary>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">log₂ n</th><th scope="col">As written</th><th scope="col">Re-tuned constants</th><th scope="col">Tighter accounting</th><th scope="col">After the loop, counting</th><th scope="col">After the loop, yes/no</th></tr></thead>
+          <tbody id="data-body"></tbody>
+        </table>
+      </div>
+    </details>
+  </section>
+
+  <footer>
+    Model: cost bound (2.11) with M = 3n and the paper’s parameters (2.19); the re-tuned versions search r, Q and R under the balancing condition 12D² ≤ M and exact binomial tails. Thresholds come from a grid search and are slightly conservative: a finer grid moves them down by a few percent. Binomial tails were cross-checked against an independent exact sum. The “After the loop” curve uses the accepted loop code’s own parameter choice at each size, scored with the referee’s copy of the loop’s cost model; its break-even sizes are the referee’s scores.
+  </footer>
+</main>
+
+<script>
+const DATA = {"rows":[{"lam":1000,"p":{"v":0},"a":{"e":1.5855,"t":1.585,"m":0.0,"g":0.0005,"r":4096,"Q":2,"R":3},"b":{"e":1.5852,"t":1.585,"m":0.0,"g":0.0002,"r":4096,"Q":2,"R":3},"c":{"e":0.5005,"t":0.5003,"m":0.0,"g":0.0002,"r":6444,"Q":35,"R":35},"d":{"e":0.5005,"t":0.5003,"m":0.0,"g":0.0002,"r":6434,"Q":35,"R":35}},{"lam":1329,"p":{"v":0},"a":{"e":1.5855,"t":1.585,"m":0.0,"g":0.0005,"r":4096,"Q":2,"R":3},"b":{"e":1.5852,"t":1.585,"m":0.0,"g":0.0002,"r":4096,"Q":2,"R":3},"c":{"e":0.5005,"t":0.5003,"m":0.0,"g":0.0002,"r":6444,"Q":48,"R":48},"d":{"e":0.5005,"t":0.5003,"m":0.0,"g":0.0002,"r":6434,"Q":48,"R":41}},{"lam":1767,"p":{"v":0},"a":{"e":1.5855,"t":1.585,"m":0.0,"g":0.0005,"r":4096,"Q":2,"R":3},"b":{"e":1.5852,"t":1.585,"m":0.0,"g":0.0002,"r":4096,"Q":2,"R":3},"c":{"e":0.5005,"t":0.5003,"m":1e-05,"g":0.0002,"r":6444,"Q":65,"R":64},"d":{"e":0.5005,"t":0.5003,"m":0.0,"g":0.0002,"r":6434,"Q":65,"R":47}},{"lam":2348,"p":{"v":0},"a":{"e":1.5855,"t":1.585,"m":0.0,"g":0.0005,"r":4096,"Q":2,"R":3},"b":{"e":1.5852,"t":1.585,"m":0.0,"g":0.0002,"r":4096,"Q":2,"R":3},"c":{"e":0.5005,"t":0.5003,"m":0.0,"g":0.0002,"r":6137,"Q":90,"R":91},"d":{"e":0.5005,"t":0.5003,"m":0.0,"g":0.0002,"r":6434,"Q":88,"R":59}},{"lam":3122,"p":{"v":0},"a":{"e":1.5855,"t":1.585,"m":0.0,"g":0.0005,"r":4096,"Q":2,"R":3},"b":{"e":1.5852,"t":1.585,"m":0.0,"g":0.0002,"r":4096,"Q":2,"R":3},"c":{"e":0.5005,"t":0.5003,"m":0.0,"g":0.0002,"r":6137,"Q":121,"R":99},"d":{"e":0.5005,"t":0.5003,"m":0.0,"g":0.0002,"r":6434,"Q":119,"R":61}},{"lam":4149,"p":{"v":0},"a":{"e":1.5855,"t":1.585,"m":0.0,"g":0.0005,"r":4096,"Q":2,"R":3},"b":{"e":1.5852,"t":1.585,"m":0.0,"g":0.0002,"r":4096,"Q":2,"R":3},"c":{"e":0.5005,"t":0.5003,"m":0.0,"g":0.0002,"r":6444,"Q":159,"R":108},"d":{"e":0.4766,"t":0.4292,"m":0.03198,"g":0.0154,"r":65,"Q":338,"R":47}},{"lam":5515,"p":{"v":0},"a":{"e":1.5855,"t":1.585,"m":0.0,"g":0.0005,"r":4096,"Q":2,"R":3},"b":{"e":1.5852,"t":1.585,"m":0.0,"g":0.0002,"r":4096,"Q":2,"R":3},"c":{"e":0.5005,"t":0.5003,"m":0.0,"g":0.0002,"r":6444,"Q":213,"R":127},"d":{"e":0.4473,"t":0.3961,"m":0.02842,"g":0.0227,"r":44,"Q":498,"R":58}},{"lam":7331,"p":{"v":0},"a":{"e":1.5855,"t":1.585,"m":0.0,"g":0.0005,"r":4096,"Q":2,"R":3},"b":{"e":1.5852,"t":1.585,"m":0.0,"g":0.0002,"r":4096,"Q":2,"R":3},"c":{"e":0.4934,"t":0.4732,"m":0.00932,"g":0.0109,"r":92,"Q":556,"R":98},"d":{"e":0.4181,"t":0.3666,"m":0.02878,"g":0.0227,"r":44,"Q":664,"R":67}},{"lam":9745,"p":{"v":0},"a":{"e":1.5855,"t":1.585,"m":0.0,"g":0.0005,"r":4096,"Q":2,"R":3},"b":{"e":1.5852,"t":1.585,"m":0.0,"g":0.0002,"r":4096,"Q":2,"R":3},"c":{"e":0.4703,"t":0.4446,"m":0.01099,"g":0.0147,"r":68,"Q":794,"R":118},"d":{"e":0.3897,"t":0.342,"m":0.02502,"g":0.0227,"r":44,"Q":885,"R":79}},{"lam":12953,"p":{"v":0},"a":{"e":1.5855,"t":1.585,"m":0.0,"g":0.0005,"r":4096,"Q":2,"R":3},"b":{"e":1.5148,"t":0.9973,"m":0.01745,"g":0.5,"r":2,"Q":3237,"R":245},"c":{"e":0.4446,"t":0.4165,"m":0.01031,"g":0.0179,"r":56,"Q":1108,"R":142},"d":{"e":0.3623,"t":0.315,"m":0.02727,"g":0.02,"r":50,"Q":1140,"R":89}},{"lam":17217,"p":{"v":0},"a":{"e":1.5855,"t":1.585,"m":0.0,"g":0.0005,"r":4096,"Q":2,"R":3},"b":{"e":1.4375,"t":0.8989,"m":0.03857,"g":0.5,"r":2,"Q":4303,"R":277},"c":{"e":0.418,"t":0.3893,"m":0.01026,"g":0.0185,"r":54,"Q":1489,"R":167},"d":{"e":0.3357,"t":0.2904,"m":0.02357,"g":0.0217,"r":46,"Q":1551,"R":106}},{"lam":22885,"p":{"v":0},"a":{"e":1.5826,"t":1.4468,"m":0.01079,"g":0.125,"r":16,"Q":1430,"R":216},"b":{"e":1.3599,"t":0.8463,"m":0.01365,"g":0.5,"r":2,"Q":5720,"R":336},"c":{"e":0.3914,"t":0.3601,"m":0.00961,"g":0.0217,"r":46,"Q":2064,"R":200},"d":{"e":0.3106,"t":0.2682,"m":0.02114,"g":0.0213,"r":47,"Q":2053,"R":124}},{"lam":30419,"p":{"v":0},"a":{"e":1.5,"t":1.3622,"m":0.01279,"g":0.125,"r":16,"Q":1901,"R":250},"b":{"e":1.2864,"t":0.9204,"m":0.03264,"g":0.3333,"r":3,"Q":4797,"R":320},"c":{"e":0.3652,"t":0.3352,"m":0.00914,"g":0.0208,"r":48,"Q":2716,"R":233},"d":{"e":0.2868,"t":0.2477,"m":0.01916,"g":0.02,"r":50,"Q":2687,"R":144}},{"lam":40434,"p":{"v":0},"a":{"e":1.4113,"t":1.2685,"m":0.01774,"g":0.125,"r":16,"Q":2527,"R":288},"b":{"e":1.2092,"t":1.0043,"m":0.03822,"g":0.1667,"r":6,"Q":3910,"R":299},"c":{"e":0.3397,"t":0.3108,"m":0.00897,"g":0.02,"r":50,"Q":3575,"R":271},"d":{"e":0.2642,"t":0.2272,"m":0.01782,"g":0.0192,"r":52,"Q":3539,"R":167}},{"lam":53745,"p":{"v":0},"a":{"e":1.3238,"t":1.1697,"m":0.02908,"g":0.125,"r":16,"Q":3358,"R":330},"b":{"e":1.1251,"t":0.9775,"m":0.02256,"g":0.125,"r":8,"Q":4478,"R":328},"c":{"e":0.3153,"t":0.2878,"m":0.00827,"g":0.0192,"r":52,"Q":4707,"R":316},"d":{"e":0.2431,"t":0.2084,"m":0.01749,"g":0.0172,"r":58,"Q":4580,"R":191}},{"lam":71439,"p":{"v":0},"a":{"e":1.2334,"t":1.0486,"m":0.01812,"g":0.1667,"r":12,"Q":4981,"R":407},"b":{"e":1.0432,"t":0.8539,"m":0.02266,"g":0.1667,"r":6,"Q":6908,"R":411},"c":{"e":0.292,"t":0.2655,"m":0.00724,"g":0.0192,"r":52,"Q":6259,"R":371},"d":{"e":0.2234,"t":0.1918,"m":0.0152,"g":0.0164,"r":61,"Q":6016,"R":223}},{"lam":94957,"p":{"v":0},"a":{"e":1.1504,"t":1.0164,"m":0.00904,"g":0.125,"r":16,"Q":5934,"R":461},"b":{"e":0.97,"t":0.8285,"m":0.01647,"g":0.125,"r":8,"Q":7912,"R":450},"c":{"e":0.2698,"t":0.2452,"m":0.00678,"g":0.0179,"r":56,"Q":8168,"R":430},"d":{"e":0.2049,"t":0.1771,"m":0.01351,"g":0.0143,"r":70,"Q":7739,"R":257}},{"lam":126219,"p":{"v":0},"a":{"e":1.0654,"t":0.9187,"m":0.02172,"g":0.125,"r":16,"Q":7888,"R":523},"b":{"e":0.9025,"t":0.7139,"m":0.02197,"g":0.1667,"r":6,"Q":12206,"R":559},"c":{"e":0.2489,"t":0.2257,"m":0.00624,"g":0.0169,"r":59,"Q":10721,"R":500},"d":{"e":0.1878,"t":0.1619,"m":0.01335,"g":0.0125,"r":80,"Q":9976,"R":293}},{"lam":167772,"p":{"v":0},"a":{"e":0.9908,"t":0.8912,"m":0.01632,"g":0.0833,"r":24,"Q":9147,"R":579},"b":{"e":0.8323,"t":0.6916,"m":0.01567,"g":0.125,"r":8,"Q":13980,"R":612},"c":{"e":0.2292,"t":0.208,"m":0.00599,"g":0.0152,"r":66,"Q":13871,"R":576},"d":{"e":0.1718,"t":0.1487,"m":0.01105,"g":0.012,"r":83,"Q":13152,"R":344}},{"lam":223005,"p":{"v":0},"a":{"e":0.9123,"t":0.7749,"m":0.01235,"g":0.125,"r":16,"Q":13937,"R":717},"b":{"e":0.7724,"t":0.6752,"m":0.01384,"g":0.0833,"r":12,"Q":15551,"R":658},"c":{"e":0.2107,"t":0.1908,"m":0.00515,"g":0.0147,"r":68,"Q":18310,"R":673},"d":{"e":0.157,"t":0.1359,"m":0.01026,"g":0.0109,"r":92,"Q":17086,"R":396}},{"lam":296422,"p":{"v":0},"a":{"e":0.8426,"t":0.7506,"m":0.00863,"g":0.0833,"r":24,"Q":16162,"R":794},"b":{"e":0.7136,"t":0.5688,"m":0.01982,"g":0.125,"r":8,"Q":24701,"R":824},"c":{"e":0.1934,"t":0.1756,"m":0.00464,"g":0.0132,"r":76,"Q":23715,"R":777},"d":{"e":0.1433,"t":0.124,"m":0.00939,"g":0.0099,"r":101,"Q":22253,"R":457}},{"lam":394009,"p":{"v":0},"a":{"e":0.7787,"t":0.6446,"m":0.00904,"g":0.125,"r":16,"Q":24625,"R":975},"b":{"e":0.6538,"t":0.5544,"m":0.01609,"g":0.0833,"r":12,"Q":27476,"R":885},"c":{"e":0.1773,"t":0.1609,"m":0.00427,"g":0.0122,"r":82,"Q":30981,"R":900},"d":{"e":0.1307,"t":0.1135,"m":0.00818,"g":0.009,"r":111,"Q":28989,"R":530}},{"lam":523722,"p":{"v":0},"a":{"e":0.7128,"t":0.6233,"m":0.0062,"g":0.0833,"r":24,"Q":28556,"R":1079},"b":{"e":0.601,"t":0.5309,"m":0.00769,"g":0.0625,"r":16,"Q":32732,"R":994},"c":{"e":0.1624,"t":0.1475,"m":0.00382,"g":0.011,"r":91,"Q":40231,"R":1040},"d":{"e":0.119,"t":0.1037,"m":0.00726,"g":0.0081,"r":124,"Q":37649,"R":612}},{"lam":696140,"p":{"v":0},"a":{"e":0.6601,"t":0.5952,"m":0.00243,"g":0.0625,"r":32,"Q":34806,"R":1234},"b":{"e":0.5561,"t":0.4491,"m":0.02365,"g":0.0833,"r":12,"Q":48545,"R":1179},"c":{"e":0.1485,"t":0.1349,"m":0.00344,"g":0.0101,"r":99,"Q":52498,"R":1204},"d":{"e":0.1083,"t":0.0944,"m":0.00661,"g":0.0073,"r":137,"Q":49031,"R":706}},{"lam":925320,"p":{"v":0},"a":{"e":0.6002,"t":0.5102,"m":0.00671,"g":0.0833,"r":24,"Q":50453,"R":1451},"b":{"e":0.5055,"t":0.4292,"m":0.01381,"g":0.0625,"r":16,"Q":57832,"R":1323},"c":{"e":0.1356,"t":0.123,"m":0.0031,"g":0.0094,"r":106,"Q":68761,"R":1396},"d":{"e":0.0984,"t":0.086,"m":0.00609,"g":0.0063,"r":158,"Q":63339,"R":810}},{"lam":1229951,"p":{"v":0},"a":{"e":0.5506,"t":0.4995,"m":0.00948,"g":0.0417,"r":48,"Q":55056,"R":1539},"b":{"e":0.4626,"t":0.4126,"m":0.00834,"g":0.0417,"r":24,"Q":67064,"R":1457},"c":{"e":0.1237,"t":0.1122,"m":0.00282,"g":0.0086,"r":116,"Q":89666,"R":1614},"d":{"e":0.0894,"t":0.0781,"m":0.00552,"g":0.0058,"r":172,"Q":82805,"R":936}},{"lam":1634870,"p":{"v":0},"a":{"e":0.5064,"t":0.4122,"m":0.01079,"g":0.0833,"r":24,"Q":89142,"R":1933},"b":{"e":0.4262,"t":0.3917,"m":0.00334,"g":0.0312,"r":32,"Q":81743,"R":1659},"c":{"e":0.1127,"t":0.1027,"m":0.00265,"g":0.0074,"r":135,"Q":115502,"R":1852},"d":{"e":0.0813,"t":0.0713,"m":0.00479,"g":0.0053,"r":190,"Q":107980,"R":1085}},{"lam":2173095,"p":{"v":0},"a":{"e":0.4588,"t":0.3917,"m":0.00466,"g":0.0625,"r":32,"Q":108654,"R":2204},"b":{"e":0.3907,"t":0.3166,"m":0.01158,"g":0.0625,"r":16,"Q":135818,"R":2096},"c":{"e":0.1026,"t":0.0933,"m":0.00238,"g":0.0069,"r":145,"Q":151325,"R":2146},"d":{"e":0.0737,"t":0.0645,"m":0.00423,"g":0.005,"r":202,"Q":141875,"R":1259}},{"lam":2888512,"p":{"v":0},"a":{"e":0.4185,"t":0.3815,"m":0.00577,"g":0.0312,"r":64,"Q":120354,"R":2359},"b":{"e":0.3509,"t":0.3113,"m":0.00837,"g":0.0312,"r":32,"Q":144425,"R":2181},"c":{"e":0.0935,"t":0.0853,"m":0.00198,"g":0.0063,"r":160,"Q":197245,"R":2486},"d":{"e":0.0666,"t":0.0586,"m":0.0039,"g":0.0041,"r":241,"Q":182514,"R":1439}},{"lam":3839456,"p":{"v":0},"a":{"e":0.3863,"t":0.363,"m":0.0025,"g":0.0208,"r":96,"Q":145765,"R":2679},"b":{"e":0.3214,"t":0.2876,"m":0.00248,"g":0.0312,"r":32,"Q":191972,"R":2622},"c":{"e":0.085,"t":0.0775,"m":0.00194,"g":0.0055,"r":182,"Q":255693,"R":2856},"d":{"e":0.0604,"t":0.053,"m":0.00352,"g":0.0039,"r":256,"Q":239961,"R":1668}},{"lam":5103465,"p":{"v":0},"a":{"e":0.3463,"t":0.2974,"m":0.00719,"g":0.0417,"r":48,"Q":228446,"R":3254},"b":{"e":0.2959,"t":0.274,"m":0.00114,"g":0.0208,"r":48,"Q":228446,"R":2934},"c":{"e":0.0771,"t":0.0707,"m":0.00158,"g":0.0049,"r":205,"Q":332274,"R":3302},"d":{"e":0.0547,"t":0.0478,"m":0.0031,"g":0.0037,"r":269,"Q":316138,"R":1937}},{"lam":6783607,"p":{"v":0},"a":{"e":0.3145,"t":0.2807,"m":0.00251,"g":0.0312,"r":64,"Q":282650,"R":3742},"b":{"e":0.2682,"t":0.225,"m":0.01193,"g":0.0312,"r":32,"Q":339180,"R":3404},"c":{"e":0.0699,"t":0.0641,"m":0.00148,"g":0.0043,"r":230,"Q":432320,"R":3804},"d":{"e":0.0494,"t":0.0435,"m":0.00279,"g":0.0031,"r":320,"Q":407569,"R":2221}},{"lam":9016878,"p":{"v":0},"a":{"e":0.2883,"t":0.2664,"m":0.00108,"g":0.0208,"r":96,"Q":342328,"R":4242},"b":{"e":0.2398,"t":0.2139,"m":0.00512,"g":0.0208,"r":48,"Q":403622,"R":3804},"c":{"e":0.0632,"t":0.0579,"m":0.00127,"g":0.0041,"r":245,"Q":568048,"R":4413},"d":{"e":0.0446,"t":0.0393,"m":0.00255,"g":0.0027,"r":365,"Q":529667,"R":2553}},{"lam":11985377,"p":{"v":0},"a":{"e":0.2628,"t":0.2154,"m":0.0058,"g":0.0417,"r":48,"Q":536502,"R":5098},"b":{"e":0.2187,"t":0.201,"m":0.00207,"g":0.0156,"r":64,"Q":499390,"R":4359},"c":{"e":0.0573,"t":0.0526,"m":0.00113,"g":0.0036,"r":281,"Q":736701,"R":5080},"d":{"e":0.0402,"t":0.0356,"m":0.00217,"g":0.0025,"r":403,"Q":692421,"R":2959}},{"lam":15931152,"p":{"v":0},"a":{"e":0.2354,"t":0.2081,"m":0.00642,"g":0.0208,"r":96,"Q":604830,"R":5509},"b":{"e":0.2011,"t":0.1849,"m":0.00056,"g":0.0156,"r":64,"Q":663797,"R":5227},"c":{"e":0.0519,"t":0.0476,"m":0.00104,"g":0.0033,"r":304,"Q":965762,"R":5875},"d":{"e":0.0362,"t":0.0321,"m":0.00197,"g":0.0021,"r":468,"Q":897993,"R":3396}},{"lam":21175940,"p":{"v":0},"a":{"e":0.2129,"t":0.1952,"m":0.00201,"g":0.0156,"r":128,"Q":756283,"R":6366},"b":{"e":0.1831,"t":0.1514,"m":0.01086,"g":0.0208,"r":48,"Q":947899,"R":5846},"c":{"e":0.0469,"t":0.0431,"m":0.00093,"g":0.0029,"r":346,"Q":1255293,"R":6767},"d":{"e":0.0327,"t":0.029,"m":0.00176,"g":0.002,"r":512,"Q":1176436,"R":3927}},{"lam":28147395,"p":{"v":0},"a":{"e":0.1953,"t":0.1841,"m":0.00074,"g":0.0104,"r":192,"Q":927736,"R":7266},"b":{"e":0.1632,"t":0.146,"m":0.00682,"g":0.0104,"r":96,"Q":1068623,"R":6305},"c":{"e":0.0424,"t":0.0391,"m":0.00086,"g":0.0024,"r":410,"Q":1621486,"R":7762},"d":{"e":0.0295,"t":0.0263,"m":0.00155,"g":0.0016,"r":614,"Q":1519489,"R":4509}},{"lam":37413963,"p":{"v":0},"a":{"e":0.1786,"t":0.1437,"m":0.00366,"g":0.0312,"r":64,"Q":1558915,"R":9017},"b":{"e":0.1464,"t":0.1339,"m":0.00209,"g":0.0104,"r":96,"Q":1420431,"R":7544},"c":{"e":0.0383,"t":0.0352,"m":0.00075,"g":0.0023,"r":435,"Q":2134308,"R":8999},"d":{"e":0.0265,"t":0.0236,"m":0.00137,"g":0.0015,"r":653,"Q":2000541,"R":5225}},{"lam":49731231,"p":{"v":0},"a":{"e":0.1575,"t":0.1382,"m":0.00366,"g":0.0156,"r":128,"Q":1776115,"R":9801},"b":{"e":0.1336,"t":0.125,"m":0.0008,"g":0.0078,"r":128,"Q":1776115,"R":8684},"c":{"e":0.0345,"t":0.0318,"m":0.00065,"g":0.0021,"r":486,"Q":2786117,"R":10390},"d":{"e":0.0238,"t":0.0213,"m":0.00119,"g":0.0014,"r":730,"Q":2614195,"R":6035}},{"lam":66103540,"p":{"v":0},"a":{"e":0.1419,"t":0.13,"m":0.00147,"g":0.0104,"r":192,"Q":2178769,"R":11167},"b":{"e":0.1226,"t":0.1146,"m":0.00019,"g":0.0078,"r":128,"Q":2360840,"R":10391},"c":{"e":0.0311,"t":0.0289,"m":0.00059,"g":0.0016,"r":614,"Q":3568494,"R":11865},"d":{"e":0.0214,"t":0.0191,"m":0.00106,"g":0.0012,"r":806,"Q":3423405,"R":6968}},{"lam":87865872,"p":{"v":0},"a":{"e":0.1295,"t":0.1213,"m":0.00038,"g":0.0078,"r":256,"Q":2745808,"R":12945},"b":{"e":0.1118,"t":0.0899,"m":0.00626,"g":0.0156,"r":64,"Q":3661077,"R":12066},"c":{"e":0.0282,"t":0.0252,"m":0.00053,"g":0.0025,"r":403,"Q":5076227,"R":14306},"d":{"e":0.0193,"t":0.0171,"m":0.00093,"g":0.0012,"r":806,"Q":4550445,"R":8110}},{"lam":116792709,"p":{"v":0},"a":{"e":0.1191,"t":0.1137,"m":0.00011,"g":0.0052,"r":384,"Q":3401083,"R":14841},"b":{"e":0.0979,"t":0.0846,"m":0.00287,"g":0.0104,"r":96,"Q":4434068,"R":13593},"c":{"e":0.0252,"t":0.0233,"m":0.00046,"g":0.0014,"r":691,"Q":6190941,"R":15935},"d":{"e":0.0173,"t":0.0155,"m":0.00087,"g":0.0009,"r":1075,"Q":5798968,"R":9208}},{"lam":155242717,"p":{"v":0},"a":{"e":0.106,"t":0.088,"m":0.00244,"g":0.0156,"r":128,"Q":5544382,"R":17796},"b":{"e":0.0876,"t":0.0808,"m":0.00157,"g":0.0052,"r":192,"Q":5116792,"R":14859},"c":{"e":0.0227,"t":0.021,"m":0.00042,"g":0.0013,"r":768,"Q":8098239,"R":18383},"d":{"e":0.0155,"t":0.0138,"m":0.00077,"g":0.0009,"r":1075,"Q":7708082,"R":10714}},{"lam":206351078,"p":{"v":0},"a":{"e":0.0937,"t":0.0839,"m":0.00202,"g":0.0078,"r":256,"Q":6448471,"R":19574},"b":{"e":0.0794,"t":0.0738,"m":0.00043,"g":0.0052,"r":192,"Q":6801321,"R":17735},"c":{"e":0.0204,"t":0.0189,"m":0.00035,"g":0.0011,"r":870,"Q":10565986,"R":21220},"d":{"e":0.0139,"t":0.0125,"m":0.00068,"g":0.0007,"r":1382,"Q":9889775,"R":12239}},{"lam":274285120,"p":{"v":0},"a":{"e":0.0844,"t":0.0785,"m":0.00072,"g":0.0052,"r":384,"Q":7987370,"R":22400},"b":{"e":0.0726,"t":0.0685,"m":0.00014,"g":0.0039,"r":256,"Q":8571409,"R":20479},"c":{"e":0.0183,"t":0.017,"m":0.00033,"g":0.001,"r":973,"Q":13816082,"R":24447},"d":{"e":0.0125,"t":0.0112,"m":0.00059,"g":0.0007,"r":1536,"Q":12956353,"R":14151}},{"lam":364584124,"p":{"v":0},"a":{"e":0.077,"t":0.0729,"m":0.00017,"g":0.0039,"r":512,"Q":10127336,"R":26015},"b":{"e":0.0665,"t":0.0625,"m":3e-05,"g":0.0039,"r":256,"Q":11393253,"R":24444},"c":{"e":0.0165,"t":0.0154,"m":0.00029,"g":0.0008,"r":1229,"Q":17761594,"R":27962},"d":{"e":0.0112,"t":0.0101,"m":0.00053,"g":0.0006,"r":1741,"Q":16932667,"R":16290}},{"lam":484610990,"p":{"v":0},"a":{"e":0.0706,"t":0.0667,"m":2e-05,"g":0.0039,"r":512,"Q":13461416,"R":31126},"b":{"e":0.06,"t":0.0498,"m":0.00501,"g":0.0052,"r":192,"Q":15972754,"R":26235},"c":{"e":0.0148,"t":0.0138,"m":0.00025,"g":0.0008,"r":1306,"Q":23409030,"R":32381},"d":{"e":0.01,"t":0.0091,"m":0.00046,"g":0.0005,"r":1946,"Q":22176358,"R":18825}},{"lam":644152600,"p":{"v":0},"a":{"e":0.0637,"t":0.0512,"m":0.00208,"g":0.0104,"r":192,"Q":21231238,"R":35997},"b":{"e":0.0519,"t":0.0461,"m":0.00193,"g":0.0039,"r":256,"Q":20129768,"R":30235},"c":{"e":0.0133,"t":0.0121,"m":0.00022,"g":0.001,"r":1048,"Q":32100336,"R":38291},"d":{"e":0.009,"t":0.0081,"m":0.0004,"g":0.0005,"r":2150,"Q":29094195,"R":21743}},{"lam":856217834,"p":{"v":0},"a":{"e":0.0554,"t":0.0486,"m":0.0016,"g":0.0052,"r":384,"Q":24933650,"R":39782},"b":{"e":0.0463,"t":0.0429,"m":0.00075,"g":0.0026,"r":384,"Q":24933650,"R":34477},"c":{"e":0.0119,"t":0.0109,"m":0.0002,"g":0.0008,"r":1206,"Q":41823786,"R":44054},"d":{"e":0.008,"t":0.0073,"m":0.00037,"g":0.0004,"r":2458,"Q":38009291,"R":24991}},{"lam":1138098302,"p":{"v":0},"a":{"e":0.0493,"t":0.045,"m":0.00042,"g":0.0039,"r":512,"Q":31613841,"R":46109},"b":{"e":0.0419,"t":0.0391,"m":0.0002,"g":0.0026,"r":384,"Q":33142203,"R":41053},"c":{"e":0.0107,"t":0.0099,"m":0.00018,"g":0.0005,"r":1822,"Q":52537435,"R":49744},"d":{"e":0.0072,"t":0.0065,"m":0.00032,"g":0.0004,"r":2765,"Q":49772232,"R":28854}},{"lam":1512778282,"p":{"v":0},"a":{"e":0.0446,"t":0.0418,"m":0.00013,"g":0.0026,"r":768,"Q":39457073,"R":52923},"b":{"e":0.0381,"t":0.0361,"m":6e-05,"g":0.002,"r":512,"Q":42021618,"R":47488},"c":{"e":0.0096,"t":0.0089,"m":0.00016,"g":0.0005,"r":2048,"Q":68762645,"R":57318},"d":{"e":0.0064,"t":0.0058,"m":0.00029,"g":0.0003,"r":3226,"Q":64895294,"R":33185}},{"lam":2010808843,"p":{"v":0},"a":{"e":0.0406,"t":0.0387,"m":2e-05,"g":0.002,"r":1024,"Q":50270221,"R":61525},"b":{"e":0.0348,"t":0.0328,"m":2e-05,"g":0.002,"r":512,"Q":55855801,"R":56546},"c":{"e":0.0086,"t":0.008,"m":0.00015,"g":0.0004,"r":2458,"Q":89263992,"R":65816},"d":{"e":0.0057,"t":0.0052,"m":0.00025,"g":0.0003,"r":3686,"Q":84859717,"R":38262}},{"lam":2672798951,"p":{"v":0},"a":{"e":0.0372,"t":0.0352,"m":0.0,"g":0.002,"r":1024,"Q":66819973,"R":73436},"b":{"e":0.0318,"t":0.0305,"m":0.0,"g":0.0013,"r":768,"Q":69713338,"R":64781},"c":{"e":0.0077,"t":0.0072,"m":0.00012,"g":0.0004,"r":2611,"Q":117740431,"R":76341},"d":{"e":0.0051,"t":0.0046,"m":0.00022,"g":0.0003,"r":3226,"Q":114657965,"R":44853}},{"lam":3552726683,"p":{"v":0},"a":{"e":0.0339,"t":0.0267,"m":0.002,"g":0.0052,"r":384,"Q":103457839,"R":82531},"b":{"e":0.0283,"t":0.0233,"m":0.00243,"g":0.0026,"r":384,"Q":103457839,"R":70675},"c":{"e":0.0069,"t":0.0064,"m":0.00011,"g":0.0003,"r":2918,"Q":154321926,"R":87937},"d":{"e":0.0046,"t":0.0042,"m":0.00019,"g":0.0002,"r":4301,"Q":147166208,"R":51163}},{"lam":4722340555,"p":{"v":0},"a":{"e":0.0291,"t":0.0246,"m":0.00056,"g":0.0039,"r":512,"Q":131176126,"R":95469},"b":{"e":0.0243,"t":0.0215,"m":0.00083,"g":0.002,"r":512,"Q":131176126,"R":81591},"c":{"e":0.0061,"t":0.0057,"m":0.0001,"g":0.0003,"r":3482,"Q":200682504,"R":101004},"d":{"e":0.0041,"t":0.0037,"m":0.00017,"g":0.0002,"r":4301,"Q":195615654,"R":59373}},{"lam":6277009833,"p":{"v":0},"a":{"e":0.0255,"t":0.0232,"m":0.00034,"g":0.002,"r":1024,"Q":156925245,"R":106564},"b":{"e":0.0215,"t":0.0202,"m":0.00037,"g":0.001,"r":1024,"Q":156925245,"R":90937},"c":{"e":0.0055,"t":0.0051,"m":9e-05,"g":0.0003,"r":3891,"Q":263166572,"R":116567},"d":{"e":0.0037,"t":0.0033,"m":0.00015,"g":0.0002,"r":4301,"Q":260015426,"R":69086}},{"lam":8343500852,"p":{"v":0},"a":{"e":0.0229,"t":0.0215,"m":0.0001,"g":0.0013,"r":1536,"Q":197060236,"R":122542},"b":{"e":0.0194,"t":0.0183,"m":0.0001,"g":0.001,"r":1024,"Q":208587521,"R":108024},"c":{"e":0.0049,"t":0.0046,"m":7e-05,"g":0.0002,"r":4301,"Q":345616623,"R":134868},"d":{"e":0.0033,"t":0.0029,"m":0.00013,"g":0.0002,"r":4301,"Q":345616623,"R":80142}},{"lam":11090313431,"p":{"v":1,"e":1.5179,"t":1.4959,"m":7e-05,"g":0.022,"r":91,"Q":2548325,"R":421244},"a":{"e":0.0207,"t":0.0198,"m":2e-05,"g":0.001,"r":2048,"Q":252052577,"R":142513},"b":{"e":0.0176,"t":0.0166,"m":2e-05,"g":0.001,"r":1024,"Q":277257835,"R":128322},"c":{"e":0.0044,"t":0.0041,"m":7e-05,"g":0.0002,"r":4301,"Q":459399088,"R":156471},"d":{"e":0.0029,"t":0.0026,"m":0.00011,"g":0.0002,"r":4301,"Q":459399088,"R":93224}},{"lam":14741420201,"p":{"v":1,"e":1.4351,"t":1.416,"m":6e-05,"g":0.019,"r":105,"Q":3387274,"R":485660},"a":{"e":0.0189,"t":0.0183,"m":0.0,"g":0.0007,"r":3072,"Q":318115406,"R":164388},"b":{"e":0.016,"t":0.0153,"m":1e-05,"g":0.0007,"r":1536,"Q":348168928,"R":147279},"c":{"e":0.0039,"t":0.0036,"m":5e-05,"g":0.0002,"r":4301,"Q":610640542,"R":182074},"d":{"e":0.0026,"t":0.0023,"m":0.0001,"g":0.0002,"r":4301,"Q":610640542,"R":108099}},{"lam":19594529126,"p":{"v":1,"e":1.3625,"t":1.3449,"m":5e-05,"g":0.0175,"r":114,"Q":4373778,"R":559924},"a":{"e":0.0172,"t":0.0166,"m":0.0,"g":0.0007,"r":3072,"Q":422844034,"R":195745},"b":{"e":0.0145,"t":0.0139,"m":0.0,"g":0.0007,"r":1536,"Q":462791651,"R":174953},"c":{"e":0.0035,"t":0.0032,"m":5e-05,"g":0.0002,"r":4301,"Q":811673078,"R":211528},"d":{"e":0.0024,"t":0.002,"m":9e-05,"g":0.0002,"r":4301,"Q":811673078,"R":125423}},{"lam":26045358347,"p":{"v":1,"e":1.2665,"t":1.2512,"m":5e-05,"g":0.0153,"r":131,"Q":5813696,"R":645544},"a":{"e":0.0157,"t":0.015,"m":0.0,"g":0.0007,"r":3072,"Q":562050985,"R":233082},"b":{"e":0.0132,"t":0.0126,"m":0.0,"g":0.0007,"r":1536,"Q":615149990,"R":207827},"c":{"e":0.0031,"t":0.0029,"m":5e-05,"g":0.0002,"r":4301,"Q":1078888708,"R":245055},"d":{"e":0.0021,"t":0.0018,"m":8e-05,"g":0.0002,"r":4301,"Q":1078888708,"R":145834}},{"lam":34619902680,"p":{"v":1,"e":1.189,"t":1.175,"m":4e-05,"g":0.014,"r":143,"Q":7512999,"R":744260},"a":{"e":0.0135,"t":0.0111,"m":0.0004,"g":0.002,"r":1024,"Q":865497566,"R":255518},"b":{"e":0.012,"t":0.0094,"m":0.00124,"g":0.0013,"r":768,"Q":902974390,"R":220446},"c":{"e":0.0028,"t":0.0025,"m":4e-05,"g":0.0002,"r":4301,"Q":1434075953,"R":284775},"d":{"e":0.0019,"t":0.0016,"m":7e-05,"g":0.0002,"r":4301,"Q":1434075953,"R":169536}},{"lam":46017322765,"p":{"v":1,"e":1.0933,"t":1.0811,"m":4e-05,"g":0.0121,"r":165,"Q":9986398,"R":858068},"a":{"e":0.0116,"t":0.0104,"m":0.00023,"g":0.001,"r":2048,"Q":1045848244,"R":286522},"b":{"e":0.01,"t":0.0088,"m":0.00053,"g":0.0007,"r":1536,"Q":1086856064,"R":246224},"c":{"e":0.0025,"t":0.0023,"m":3e-05,"g":0.0002,"r":4301,"Q":1906196464,"R":331241},"d":{"e":0.0017,"t":0.0014,"m":6e-05,"g":0.0002,"r":4301,"Q":1906196464,"R":196260}},{"lam":61166953993,"p":{"v":1,"e":1.0008,"t":0.9902,"m":3e-05,"g":0.0105,"r":190,"Q":13274078,"R":989280},"a":{"e":0.0103,"t":0.0096,"m":6e-05,"g":0.0007,"r":3072,"Q":1319964436,"R":329855},"b":{"e":0.0087,"t":0.0081,"m":0.00017,"g":0.0005,"r":2048,"Q":1390158045,"R":285171},"c":{"e":0.0023,"t":0.002,"m":3e-05,"g":0.0002,"r":4301,"Q":2533746521,"R":383911},"d":{"e":0.0015,"t":0.0013,"m":5e-05,"g":0.0002,"r":6198,"Q":2427724996,"R":223270}},{"lam":81304083679,"p":{"v":1,"e":0.9295,"t":0.9199,"m":3e-05,"g":0.0096,"r":208,"Q":17167247,"R":1140556},"a":{"e":0.0093,"t":0.0088,"m":1e-05,"g":0.0005,"r":4096,"Q":1693835076,"R":383579},"b":{"e":0.0078,"t":0.0074,"m":5e-05,"g":0.0003,"r":3072,"Q":1754517627,"R":327659},"c":{"e":0.002,"t":0.0018,"m":3e-05,"g":0.0002,"r":6229,"Q":3225127778,"R":436174},"d":{"e":0.0013,"t":0.0011,"m":5e-05,"g":0.0002,"r":6198,"Q":3226970503,"R":258652}},{"lam":108070675280,"p":{"v":1,"e":0.8455,"t":0.8371,"m":3e-05,"g":0.0083,"r":240,"Q":22818977,"R":1314968},"a":{"e":0.0085,"t":0.008,"m":0.0,"g":0.0005,"r":4096,"Q":2251472401,"R":455654},"b":{"e":0.007,"t":0.0067,"m":1e-05,"g":0.0003,"r":3072,"Q":2332132608,"R":388297},"c":{"e":0.0018,"t":0.0016,"m":2e-05,"g":0.0002,"r":6229,"Q":4286890907,"R":505428},"d":{"e":0.0012,"t":0.001,"m":4e-05,"g":0.0002,"r":6198,"Q":4289340285,"R":300425}},{"lam":143649252622,"p":{"v":1,"e":0.7814,"t":0.7738,"m":3e-05,"g":0.0076,"r":262,"Q":29533152,"R":1516044},"a":{"e":0.0077,"t":0.0072,"m":0.0,"g":0.0005,"r":4096,"Q":2992692762,"R":541272},"b":{"e":0.0064,"t":0.0061,"m":0.0,"g":0.0002,"r":4096,"Q":2992692762,"R":450594},"c":{"e":0.0016,"t":0.0014,"m":2e-05,"g":0.0002,"r":6229,"Q":5698203267,"R":587901},"d":{"e":0.0011,"t":0.0009,"m":4e-05,"g":0.0002,"r":6198,"Q":5701459020,"R":348900}},{"lam":190940860925,"p":{"v":1,"e":0.7074,"t":0.7007,"m":2e-05,"g":0.0066,"r":302,"Q":39255933,"R":1747872},"a":{"e":0.007,"t":0.0065,"m":0.0,"g":0.0005,"r":4096,"Q":3977934602,"R":642978},"b":{"e":0.0058,"t":0.0055,"m":0.0,"g":0.0002,"r":4096,"Q":3977934602,"R":533982},"c":{"e":0.0015,"t":0.0012,"m":2e-05,"g":0.0002,"r":4301,"Q":7909430027,"R":697132},"d":{"e":0.001,"t":0.0008,"m":3e-05,"g":0.0002,"r":6198,"Q":7578469599,"R":403983}},{"lam":253801615430,"p":{"v":1,"e":0.639,"t":0.6332,"m":2e-05,"g":0.0057,"r":348,"Q":52179608,"R":2015152},"a":{"e":0.0064,"t":0.0059,"m":0.0,"g":0.0005,"r":4096,"Q":5287533654,"R":763795},"b":{"e":0.0052,"t":0.005,"m":0.0,"g":0.0002,"r":4096,"Q":5287533654,"R":632803},"c":{"e":0.0013,"t":0.0011,"m":2e-05,"g":0.0002,"r":4301,"Q":10513339620,"R":809152},"d":{"e":0.0009,"t":0.0007,"m":3e-05,"g":0.0002,"r":6198,"Q":10073421780,"R":469030}},{"lam":337357125567,"p":{"v":1,"e":0.5873,"t":0.582,"m":2e-05,"g":0.0052,"r":381,"Q":67579552,"R":2323300},"a":{"e":0.0057,"t":0.0044,"m":0.00039,"g":0.001,"r":2048,"Q":7667207399,"R":789872},"b":{"e":0.0047,"t":0.0045,"m":0.0,"g":0.0002,"r":4096,"Q":7028273449,"R":749912},"c":{"e":0.0012,"t":0.001,"m":1e-05,"g":0.0002,"r":4301,"Q":13974497477,"R":939418},"d":{"e":0.0008,"t":0.0006,"m":2e-05,"g":0.0002,"r":6198,"Q":13389751720,"R":544477}},{"lam":448420432542,"p":{"v":1,"e":0.5287,"t":0.5241,"m":2e-05,"g":0.0045,"r":440,"Q":89827811,"R":2678572},"a":{"e":0.0048,"t":0.0041,"m":0.00021,"g":0.0005,"r":4096,"Q":9342092344,"R":888694},"b":{"e":0.0043,"t":0.0041,"m":0.0,"g":0.0002,"r":4096,"Q":9342092344,"R":888694},"c":{"e":0.0011,"t":0.0009,"m":1e-05,"g":0.0002,"r":4301,"Q":18575123301,"R":1088014},"d":{"e":0.0007,"t":0.0005,"m":2e-05,"g":0.0002,"r":6198,"Q":17797869982,"R":631972}},{"lam":596047538593,"p":{"v":1,"e":0.4844,"t":0.4803,"m":1e-05,"g":0.0041,"r":482,"Q":116415534,"R":3088168},"a":{"e":0.0042,"t":0.0037,"m":2e-05,"g":0.0005,"r":4096,"Q":12417657053,"R":1053160},"b":{"e":0.0038,"t":0.003,"m":0.00048,"g":0.0003,"r":3072,"Q":12862526282,"R":884428},"c":{"e":0.001,"t":0.0008,"m":1e-05,"g":0.0002,"r":4301,"Q":24690347985,"R":1264580},"d":{"e":0.0007,"t":0.0005,"m":2e-05,"g":0.0002,"r":6198,"Q":23657210568,"R":733424}},{"lam":792275825275,"p":{"v":1,"e":0.4349,"t":0.4313,"m":1e-05,"g":0.0036,"r":556,"Q":154741372,"R":3560396},"a":{"e":0.0038,"t":0.0033,"m":0.0,"g":0.0005,"r":4096,"Q":16505746359,"R":1248062},"b":{"e":0.0032,"t":0.0028,"m":0.00015,"g":0.0002,"r":4096,"Q":16505746359,"R":1024174},"c":{"e":0.0009,"t":0.0007,"m":0.0,"g":0.0002,"r":4679,"Q":32491667960,"R":1507138},"d":{"e":0.0006,"t":0.0004,"m":2e-05,"g":0.0002,"r":6198,"Q":31445538843,"R":851039}},{"lam":1053105570736,"p":{"v":1,"e":0.3899,"t":0.3868,"m":1e-05,"g":0.0031,"r":641,"Q":205684681,"R":4104840},"a":{"e":0.0035,"t":0.003,"m":0.0,"g":0.0005,"r":4096,"Q":21939699390,"R":1479033},"b":{"e":0.0028,"t":0.0025,"m":4e-05,"g":0.0002,"r":4096,"Q":21939699390,"R":1210812},"c":{"e":0.0008,"t":0.0006,"m":1e-05,"g":0.0002,"r":4301,"Q":43623270502,"R":1703537},"d":{"e":0.0005,"t":0.0004,"m":1e-05,"g":0.0002,"r":6198,"Q":41797908096,"R":987368}},{"lam":1399804598014,"p":{"v":1,"e":0.356,"t":0.3532,"m":1e-05,"g":0.0028,"r":703,"Q":266731059,"R":4732536},"a":{"e":0.0032,"t":0.0027,"m":0.0,"g":0.0005,"r":4096,"Q":29162595791,"R":1752749},"b":{"e":0.0025,"t":0.0022,"m":1e-05,"g":0.0002,"r":4096,"Q":29162595791,"R":1431463},"c":{"e":0.0007,"t":0.0006,"m":0.0,"g":0.0002,"r":6229,"Q":55526715203,"R":2088167},"d":{"e":0.0005,"t":0.0003,"m":1e-05,"g":0.0002,"r":6198,"Q":55558441212,"R":1145361}},{"lam":1860642434216,"p":{"v":1,"e":0.3185,"t":0.3161,"m":1e-05,"g":0.0025,"r":811,"Q":354543146,"R":5456216},"a":{"e":0.0029,"t":0.0024,"m":0.0,"g":0.0005,"r":4096,"Q":38763384046,"R":2077120},"b":{"e":0.0023,"t":0.002,"m":0.0,"g":0.0002,"r":4096,"Q":38763384046,"R":1692323},"c":{"e":0.0007,"t":0.0005,"m":0.0,"g":0.0002,"r":6229,"Q":73806988981,"R":2483117},"d":{"e":0.0005,"t":0.0003,"m":1e-05,"g":0.0002,"r":6198,"Q":73849159694,"R":1324224}},{"lam":2473195382353,"p":{"v":1,"e":0.2902,"t":0.288,"m":1e-05,"g":0.0022,"r":891,"Q":460043783,"R":6290560},"a":{"e":0.0027,"t":0.0022,"m":0.0,"g":0.0005,"r":4096,"Q":51524903798,"R":2461521},"b":{"e":0.0021,"t":0.0018,"m":0.0,"g":0.0002,"r":4096,"Q":51524903798,"R":2000721},"c":{"e":0.0006,"t":0.0004,"m":1e-05,"g":0.0002,"r":4301,"Q":102448295948,"R":2652078},"d":{"e":0.0004,"t":0.0003,"m":1e-05,"g":0.0002,"r":6198,"Q":98161472291,"R":1535570}},{"lam":3287410459319,"p":{"v":1,"e":0.2592,"t":0.2572,"m":1e-05,"g":0.0019,"r":1027,"Q":611497481,"R":7252488},"a":{"e":0.0025,"t":0.002,"m":0.0,"g":0.0005,"r":4096,"Q":68487717902,"R":2917060},"b":{"e":0.0019,"t":0.0016,"m":0.0,"g":0.0002,"r":4096,"Q":68487717902,"R":2365320},"c":{"e":0.0006,"t":0.0004,"m":0.0,"g":0.0002,"r":4301,"Q":136175896997,"R":3082412},"d":{"e":0.0004,"t":0.0002,"m":1e-05,"g":0.0002,"r":6198,"Q":130477783121,"R":1786151}},{"lam":4369678030757,"p":{"v":1,"e":0.2312,"t":0.2296,"m":1e-05,"g":0.0017,"r":1185,"Q":812812133,"R":8361512},"a":{"e":0.0023,"t":0.0018,"m":0.0,"g":0.0005,"r":4096,"Q":91034958974,"R":3456903},"b":{"e":0.0017,"t":0.0015,"m":0.0,"g":0.0002,"r":4096,"Q":91034958974,"R":2796360},"c":{"e":0.0006,"t":0.0003,"m":0.0,"g":0.0002,"r":4301,"Q":181007158308,"R":3572074},"d":{"e":0.0004,"t":0.0002,"m":1e-05,"g":0.0002,"r":6198,"Q":173433135128,"R":2070615}},{"lam":5808245221814,"p":{"v":1,"e":0.2102,"t":0.2086,"m":1e-05,"g":0.0015,"r":1303,"Q":1055277111,"R":9640124},"a":{"e":0.0019,"t":0.0013,"m":0.00014,"g":0.0005,"r":4096,"Q":121005108787,"R":3305950},"b":{"e":0.0016,"t":0.0013,"m":0.0,"g":0.0002,"r":4096,"Q":121005108787,"R":3305950},"c":{"e":0.0005,"t":0.0003,"m":0.0,"g":0.0002,"r":6229,"Q":230398427562,"R":4965071},"d":{"e":0.0003,"t":0.0002,"m":1e-05,"g":0.0002,"r":6198,"Q":230530069108,"R":2399968}},{"lam":7720411508415,"p":{"v":1,"e":0.1872,"t":0.1859,"m":1e-05,"g":0.0013,"r":1502,"Q":1402691044,"R":11114252},"a":{"e":0.0017,"t":0.0012,"m":2e-05,"g":0.0005,"r":4096,"Q":160841906425,"R":3908405},"b":{"e":0.0014,"t":0.0012,"m":0.0,"g":0.0002,"r":4096,"Q":160841906425,"R":3908405},"c":{"e":0.0005,"t":0.0003,"m":0.0,"g":0.0002,"r":6229,"Q":306249237723,"R":5904152},"d":{"e":0.0003,"t":0.0002,"m":1e-05,"g":0.0002,"r":6198,"Q":306424217750,"R":2781212}},{"lam":10262093211115,"p":{"v":1,"e":0.1699,"t":0.1687,"m":0.0,"g":0.0012,"r":1654,"Q":1822104618,"R":12813804},"a":{"e":0.0016,"t":0.0011,"m":0.0,"g":0.0005,"r":4096,"Q":213793608564,"R":4620647},"b":{"e":0.0013,"t":0.0011,"m":0.0,"g":0.0002,"r":4096,"Q":213793608564,"R":4620647},"c":{"e":0.0004,"t":0.0003,"m":0.0,"g":0.0002,"r":6229,"Q":407071335503,"R":7020848},"d":{"e":0.0003,"t":0.0001,"m":0.0,"g":0.0002,"r":6198,"Q":407303921725,"R":3222432}},{"lam":13640536771755,"p":{"v":1,"e":0.1511,"t":0.1501,"m":0.0,"g":0.001,"r":1907,"Q":2421970307,"R":14773240},"a":{"e":0.0014,"t":0.001,"m":0.0,"g":0.0005,"r":4096,"Q":284177849411,"R":5462683},"b":{"e":0.0012,"t":0.001,"m":0.0,"g":0.0002,"r":4096,"Q":284177849411,"R":5462683},"c":{"e":0.0004,"t":0.0003,"m":0.0,"g":0.0002,"r":6229,"Q":541085664146,"R":8348753},"d":{"e":0.0003,"t":0.0001,"m":0.0,"g":0.0002,"r":6198,"Q":541394821436,"R":3732945}},{"lam":18131217442077,"p":{"v":1,"e":0.1369,"t":0.136,"m":0.0,"g":0.001,"r":2102,"Q":3147780805,"R":17032308},"a":{"e":0.0013,"t":0.0009,"m":0.0,"g":0.0005,"r":4096,"Q":377733696709,"R":6458167},"b":{"e":0.001,"t":0.0007,"m":0.0001,"g":0.0002,"r":4096,"Q":377733696709,"R":5162047},"c":{"e":0.0004,"t":0.0002,"m":0.0,"g":0.0002,"r":6229,"Q":719219631574,"R":9927814},"d":{"e":0.0003,"t":0.0001,"m":0.0,"g":0.0002,"r":6198,"Q":719630568338,"R":4323504}},{"lam":24100301288187,"p":{"v":1,"e":0.1217,"t":0.1208,"m":0.0,"g":0.0008,"r":2424,"Q":4184080084,"R":19636824},"a":{"e":0.0013,"t":0.0008,"m":0.0,"g":0.0005,"r":4096,"Q":502089610170,"R":7635061},"b":{"e":0.0009,"t":0.0006,"m":3e-05,"g":0.0002,"r":4096,"Q":502089610170,"R":6088168},"c":{"e":0.0004,"t":0.0002,"m":0.0,"g":0.0002,"r":6229,"Q":955998121401,"R":11805535},"d":{"e":0.0003,"t":0.0001,"m":0.0,"g":0.0002,"r":6198,"Q":956544345053,"R":5024376}},{"lam":32034502042509,"p":{"v":1,"e":0.1081,"t":0.1073,"m":0.0,"g":0.0007,"r":2795,"Q":5561545493,"R":22639616},"a":{"e":0.0012,"t":0.0007,"m":0.0,"g":0.0005,"r":4096,"Q":667385459218,"R":9026424},"b":{"e":0.0008,"t":0.0006,"m":1e-05,"g":0.0002,"r":4096,"Q":667385459218,"R":7180443},"c":{"e":0.0003,"t":0.0002,"m":0.0,"g":0.0002,"r":6229,"Q":1270727838896,"R":14038404},"d":{"e":0.0002,"t":0.0001,"m":0.0,"g":0.0002,"r":6198,"Q":1271453888023,"R":5817199}},{"lam":42580767304122,"p":{"v":1,"e":0.0977,"t":0.0971,"m":0.0,"g":0.0006,"r":3083,"Q":7231787925,"R":26101580},"a":{"e":0.0011,"t":0.0006,"m":0.0,"g":0.0005,"r":4096,"Q":887099318835,"R":10671340},"b":{"e":0.0007,"t":0.0005,"m":0.0,"g":0.0002,"r":4096,"Q":887099318835,"R":8468682},"c":{"e":0.0003,"t":0.0002,"m":0.0,"g":0.0002,"r":6229,"Q":1689071562378,"R":16693592},"d":{"e":0.0002,"t":0.0001,"m":0.0,"g":0.0002,"r":6198,"Q":1690036638374,"R":6733721}},{"lam":56599030064577,"p":{"v":1,"e":0.0867,"t":0.0861,"m":0.0,"g":0.0006,"r":3555,"Q":9612607008,"R":30092932},"a":{"e":0.001,"t":0.0006,"m":0.0,"g":0.0005,"r":4096,"Q":1179146459678,"R":12616015},"b":{"e":0.0007,"t":0.0004,"m":0.0,"g":0.0002,"r":4096,"Q":1179146459678,"R":9988044},"c":{"e":0.0003,"t":0.0002,"m":0.0,"g":0.0002,"r":6229,"Q":2245140663097,"R":19850974},"d":{"e":0.0002,"t":0.0001,"m":0.0,"g":0.0002,"r":6198,"Q":2246423457389,"R":7821941}},{"lam":75232326871218,"p":{"v":1,"e":0.0783,"t":0.0778,"m":0.0,"g":0.0005,"r":3926,"Q":12505373482,"R":34694632},"a":{"e":0.001,"t":0.0005,"m":0.0,"g":0.0005,"r":4096,"Q":1567340143150,"R":14915075},"b":{"e":0.0006,"t":0.0004,"m":0.0,"g":0.0002,"r":4096,"Q":1567340143150,"R":11779994},"c":{"e":0.0003,"t":0.0001,"m":0.0,"g":0.0002,"r":6229,"Q":2984276515787,"R":23605537},"d":{"e":0.0002,"t":0.0001,"m":0.0,"g":0.0002,"r":6198,"Q":2985981626271,"R":9050879}},{"lam":100000000000000,"p":{"v":1,"e":0.0694,"t":0.069,"m":0.0,"g":0.0004,"r":4526,"Q":16622340425,"R":40000000},"a":{"e":0.0009,"t":0.0004,"m":0.0,"g":0.0005,"r":4096,"Q":2083333333333,"R":17633101},"b":{"e":0.0006,"t":0.0004,"m":0.0,"g":0.0002,"r":4096,"Q":2083333333333,"R":13893437},"c":{"e":0.0003,"t":0.0001,"m":0.0,"g":0.0002,"r":6229,"Q":3966747593618,"R":28070227},"d":{"e":0.0002,"t":0.0001,"m":0.0,"g":0.0002,"r":6198,"Q":3969014053470,"R":10510496}}],"switch":{"lam":10909489152,"e":1.5223,"r":90,"Q":2506776,"R":417796},"th":{"p":{"brute force 2^n":61312066560,"best #3-SAT 1.637^n":188162035456,"best 3-SAT 1.307^n":1079006351365,"best SAT 3-occ 1.1199^n":11286760004638,"best #SAT 3-occ 2^(n/3)":1657235219208},"a":{"brute force 2^n":162512,"best #3-SAT 1.637^n":528502,"best 3-SAT 1.307^n":3838442,"best SAT 3-occ 1.1199^n":45427710,"best #SAT 3-occ 2^(n/3)":5710562},"b":{"brute force 2^n":84505,"best #3-SAT 1.637^n":304471,"best 3-SAT 1.307^n":2224173,"best SAT 3-occ 1.1199^n":27675951,"best #SAT 3-occ 2^(n/3)":3389953},"c":{"brute force 2^n":57,"best #3-SAT 1.637^n":61,"best 3-SAT 1.307^n":24174,"best SAT 3-occ 1.1199^n":513356,"best #SAT 3-occ 2^(n/3)":43518},"d":{"best 3-SAT 1.307^n":10086,"best SAT 3-occ 1.1199^n":196722}}};
+const SERIES = [
+  { key: "p", name: "As written", color: "--s1" },
+  { key: "a", name: "Re-tuned constants", color: "--s2" },
+  { key: "b", name: "Tighter accounting", color: "--s3" },
+  { key: "c", name: "After the loop, counting", color: "--s4" },
+  { key: "d", name: "After the loop, yes/no", color: "--s4", dash: true },
+];
+function paintKey(k, s) {
+  k.style.background = s.dash ? `repeating-linear-gradient(90deg, var(${s.color}) 0 5px, transparent 5px 8px)` : `var(${s.color})`;
+}
+const REFS = [
+  { e: 1.0, label: "2ⁿ brute force" },
+  { e: Math.log2(1.637), label: "1.637ⁿ best #3-SAT" },
+  { e: Math.log2(1.307031578), label: "1.307ⁿ best 3-SAT" },
+  { e: 1 / 3, label: "1.26ⁿ best counting, ≤ 3 occurrences", below: true },
+  { e: Math.log2(1.1199), label: "1.1199ⁿ best SAT, ≤ 3 occurrences" },
+];
+const SUP = { "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "-": "⁻" };
+const sup = (s) => String(s).split("").map((ch) => SUP[ch] || ch).join("");
+function sci(x, digits = 3) {
+  const k = Math.floor(Math.log10(x));
+  const m = x / Math.pow(10, k);
+  return `${m.toFixed(digits - 1)} × 10${sup(k)}`;
+}
+const fmtInt = (x) => x.toLocaleString("en-US");
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const el = (tag, attrs = {}, text) => {
+  const ns = ["svg", "line", "path", "text", "g", "circle", "rect"].includes(tag) ? "http://www.w3.org/2000/svg" : null;
+  const node = ns ? document.createElementNS(ns, tag) : document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+
+/* ---------- summary table ---------- */
+(function summary() {
+  const tb = document.getElementById("sum-body");
+  const cols = ["best #3-SAT 1.637^n", "best #SAT 3-occ 2^(n/3)", "best 3-SAT 1.307^n", "best SAT 3-occ 1.1199^n"];
+  const group = (text) => { const g = el("tr", { class: "group" }); g.append(el("th", { colspan: "5", scope: "rowgroup" }, text)); tb.append(g); };
+  group("Main algorithm (Sections 2–4), loop of 31 October");
+  SERIES.forEach((s) => {
+    const tr = el("tr", s.key === "d" ? { class: "best" } : {});
+    const td = el("td");
+    const key = el("span", { class: "key" });
+    paintKey(key, s);
+    td.append(key, document.createTextNode(s.name));
+    tr.append(td);
+    cols.forEach((c) => tr.append(el("td", { class: "num" }, DATA.th[s.key][c] ? sci(DATA.th[s.key][c]) + (s.key === "c" && c === "best #3-SAT 1.637^n" ? " †" : "") : "–")));
+    tb.append(tr);
+  });
+  group("Second algorithm (Appendix D), rounds 5 to 12");
+  const ad = el("tr");
+  const adName = el("td");
+  const adKey = el("span", { class: "key" });
+  adKey.style.boxShadow = "inset 0 0 0 1.5px currentColor";
+  adName.append(adKey, document.createTextNode("Appendix D route after round 12 (counting; see its section)"));
+  ad.append(adName);
+  [147, 524, 403, 2032].forEach((v) => ad.append(el("td", { class: "num" }, sci(v))));
+  tb.append(ad);
+  const best = DATA.th.d["best 3-SAT 1.307^n"];
+  const digits = Math.round(best * Math.log10(2));
+  document.getElementById("scale-note").textContent =
+    `For scale: the best yes/no version after the loop, log₂ n ≈ ${sci(best)}, means a formula with n = 2^(${fmtInt(best)}) variables, a number about ${fmtInt(digits)} digits long. ` +
+    `As written, the algorithm’s own checks first pass at log₂ n = ${sci(DATA.switch.lam)}, and even there its cost exponent is ${DATA.switch.e.toFixed(2)}, worse than brute force.`;
+})();
+
+/* ---------- legend ---------- */
+(function legend() {
+  const lg = document.getElementById("legend");
+  SERIES.forEach((s) => {
+    const span = el("span");
+    const key = el("span", { class: "key" });
+    paintKey(key, s);
+    span.append(key, document.createTextNode(s.name));
+    lg.append(span);
+  });
+})();
+
+/* ---------- data table ---------- */
+(function dataTable() {
+  const tb = document.getElementById("data-body");
+  DATA.rows.forEach((r, i) => {
+    if (i % 3 !== 0) return;
+    const tr = el("tr");
+    tr.append(el("td", { class: "num" }, sci(r.lam)));
+    tr.append(el("td", { class: "num" }, r.p.v ? r.p.e.toFixed(3) : "checks fail (2ⁿ)"));
+    tr.append(el("td", { class: "num" }, r.a ? r.a.e.toFixed(3) : "–"));
+    tr.append(el("td", { class: "num" }, r.b ? r.b.e.toFixed(3) : "–"));
+    tr.append(el("td", { class: "num" }, r.c ? r.c.e.toFixed(3) : "–"));
+    tr.append(el("td", { class: "num" }, r.d ? r.d.e.toFixed(3) : "–"));
+    tb.append(tr);
+  });
+})();
+
+/* ---------- chart ---------- */
+const chartBox = document.getElementById("chart");
+const slider = document.getElementById("size");
+const sizeOut = document.getElementById("size-out");
+const X0 = 3, X1 = 14, Y0 = 0, Y1 = 1.6;
+let geom = null, cursor = null, tipEl = null;
+const pts = DATA.rows.map((r) => ({ x: Math.log10(r.lam), r }));
+const swX = Math.log10(DATA.switch.lam);
+
+function seriesValue(row, key) {
+  const v = row[key];
+  if (!v) return null;
+  if (key === "p") return v.v ? v.e : null;
+  return v.e;
+}
+
+function render() {
+  const W = Math.max(300, chartBox.clientWidth);
+  const narrow = W < 560;
+  const H = narrow ? 300 : 380;
+  const m = { l: 40, r: 12, t: 12, b: 34 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const sx = (x) => m.l + ((x - X0) / (X1 - X0)) * iw;
+  const sy = (y) => m.t + (1 - (Math.min(y, Y1) - Y0) / (Y1 - Y0)) * ih;
+  geom = { W, H, m, iw, ih, sx, sy };
+
+  chartBox.textContent = "";
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H });
+  const grid = css("--grid"), axis = css("--axis");
+
+  // y grid
+  [0, 0.5, 1.0, 1.5].forEach((y) => {
+    svg.append(el("line", { x1: m.l, x2: m.l + iw, y1: sy(y), y2: sy(y), stroke: grid, "stroke-width": 1 }));
+    svg.append(el("text", { x: m.l - 8, y: sy(y) + 4, "text-anchor": "end" }, y.toFixed(1)));
+  });
+  // x ticks
+  for (let k = X0; k <= X1; k++) {
+    if (narrow && k % 2 === 0) continue;
+    svg.append(el("line", { x1: sx(k), x2: sx(k), y1: m.t + ih, y2: m.t + ih + 5, stroke: axis, "stroke-width": 1 }));
+    svg.append(el("text", { x: sx(k), y: m.t + ih + 20, "text-anchor": "middle" }, `10${sup(k)}`));
+  }
+  svg.append(el("line", { x1: m.l, x2: m.l + iw, y1: m.t + ih, y2: m.t + ih, stroke: axis, "stroke-width": 1 }));
+  svg.append(el("text", { x: m.l + iw, y: m.t + ih + 32, "text-anchor": "end", class: "anno" }, "log₂ n →"));
+
+  // reference lines
+  REFS.forEach((ref, i) => {
+    svg.append(el("line", { x1: m.l, x2: m.l + iw, y1: sy(ref.e), y2: sy(ref.e), stroke: css("--muted"), "stroke-width": 1, "stroke-opacity": 0.55 }));
+    svg.append(el("text", { x: m.l + iw - 4, y: sy(ref.e) + (ref.below ? 14 : -6), "text-anchor": "end", class: "ref-label" }, ref.label));
+  });
+
+  // switch-on marker
+  svg.append(el("line", { x1: sx(swX), x2: sx(swX), y1: sy(DATA.switch.e) , y2: m.t + ih, stroke: css("--s1"), "stroke-width": 1, "stroke-opacity": 0.5 }));
+  const annX = sx(swX) - 6;
+  svg.append(el("text", { x: annX, y: sy(DATA.switch.e) + 4, "text-anchor": "end", class: "anno" }, narrow ? "as written: checks pass" : "as written: checks first pass here"));
+  svg.append(el("text", { x: sx(swX) - 8, y: sy(1.0) + 16, "text-anchor": "end", class: "anno" }, narrow ? "before: brute force" : "before that: checks fail, brute force"));
+
+  // series paths
+  SERIES.forEach((s) => {
+    let d = "";
+    if (s.key === "p") {
+      // fallback at e = 1 until the switch-on point, then the paper's own exponent
+      d = `M${sx(X0)},${sy(1)} L${sx(swX)},${sy(1)} L${sx(swX)},${sy(DATA.switch.e)}`;
+      pts.forEach((p) => { const v = seriesValue(p.r, "p"); if (v !== null && p.x > swX) d += ` L${sx(p.x)},${sy(v)}`; });
+    } else {
+      let started = false;
+      pts.forEach((p) => {
+        const v = seriesValue(p.r, s.key);
+        if (v === null) return;
+        d += `${started ? " L" : "M"}${sx(p.x)},${sy(v)}`;
+        started = true;
+      });
+    }
+    svg.append(el("path", Object.assign({ d, fill: "none", stroke: css(s.color), "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, s.dash ? { "stroke-dasharray": "7 5" } : {})));
+  });
+  // switch-on dot
+  svg.append(el("circle", { cx: sx(swX), cy: sy(DATA.switch.e), r: 4.5, fill: css("--s1"), stroke: css("--surface"), "stroke-width": 2 }));
+
+  // break-even dots on the 1.307^n line
+  const ppsz = REFS[2].e;
+  SERIES.forEach((s) => {
+    const lam = DATA.th[s.key]["best 3-SAT 1.307^n"];
+    svg.append(el("circle", { cx: sx(Math.log10(lam)), cy: sy(ppsz), r: 4.5, fill: css(s.color), stroke: css("--surface"), "stroke-width": 2 }));
+  });
+
+  // cursor
+  cursor = el("g", {});
+  cursor.append(el("line", { x1: 0, x2: 0, y1: m.t, y2: m.t + ih, stroke: css("--ink-2"), "stroke-width": 1, "stroke-opacity": 0.6 }));
+  SERIES.forEach((s) => cursor.append(el("circle", { r: 4.5, fill: css(s.color), stroke: css("--surface"), "stroke-width": 2, "data-k": s.key })));
+  svg.append(cursor);
+
+  // hit layer
+  const hit = el("rect", { x: m.l, y: m.t, width: iw, height: ih, fill: "transparent" });
+  svg.append(hit);
+  chartBox.append(svg);
+  tipEl = el("div", { class: "tip", hidden: "" });
+  chartBox.append(tipEl);
+
+  const onMove = (ev) => {
+    const rect = svg.getBoundingClientRect();
+    const px = (ev.clientX - rect.left) * (W / rect.width);
+    const xv = X0 + ((px - m.l) / iw) * (X1 - X0);
+    let best = 0, bd = Infinity;
+    pts.forEach((p, i) => { const dd = Math.abs(p.x - xv); if (dd < bd) { bd = dd; best = i; } });
+    slider.value = best;
+    update(best, true);
+  };
+  hit.addEventListener("pointermove", onMove);
+  hit.addEventListener("pointerdown", onMove);
+  hit.addEventListener("pointerleave", () => { tipEl.hidden = true; });
+  update(+slider.value, false);
+}
+
+function statusChip(e, fallback) {
+  if (fallback) return { cls: "fb", text: "Checks fail, brute force" };
+  if (e < REFS[3].e) return { cls: "ok", text: "Beats 1.1199ⁿ" };
+  if (e < REFS[2].e) return { cls: "ok", text: "Beats 1.307ⁿ" };
+  if (e < REFS[1].e) return { cls: "ok", text: "Beats 1.637ⁿ" };
+  if (e < 1) return { cls: "part", text: "Beats 2ⁿ only" };
+  return { cls: "no", text: "Slower than 2ⁿ" };
+}
+
+function update(i, showTip) {
+  const p = pts[i];
+  sizeOut.textContent = `log₂ n ≈ ${sci(p.r.lam)}`;
+  const { sx, sy, m, ih, W } = geom;
+  const x = sx(p.x);
+  cursor.querySelector("line").setAttribute("x1", x);
+  cursor.querySelector("line").setAttribute("x2", x);
+  cursor.querySelectorAll("circle").forEach((c) => {
+    const k = c.getAttribute("data-k");
+    let v = seriesValue(p.r, k);
+    if (k === "p" && v === null) v = 1;
+    if (v === null) { c.setAttribute("visibility", "hidden"); return; }
+    c.setAttribute("visibility", "visible");
+    c.setAttribute("cx", x);
+    c.setAttribute("cy", sy(v));
+  });
+
+  // breakdown table
+  const tb = document.getElementById("bd-body");
+  tb.textContent = "";
+  SERIES.forEach((s) => {
+    const v = p.r[s.key];
+    const tr = el("tr");
+    const name = el("td");
+    const key = el("span", { class: "key" });
+    paintKey(key, s);
+    name.append(key, document.createTextNode(s.name));
+    tr.append(name);
+    const fallback = s.key === "p" && !v.v;
+    const e = fallback ? 1 : v.e;
+    tr.append(el("td", { class: "num" }, e.toFixed(3)));
+    const st = statusChip(e, fallback);
+    const stTd = el("td");
+    stTd.append(el("span", { class: `chip ${st.cls}` }, st.text));
+    tr.append(stTd);
+    if (fallback) {
+      ["–", "–", "–", "–", "–", "–"].forEach((t) => tr.append(el("td", { class: "num" }, t)));
+    } else {
+      [v.t.toFixed(3), v.m < 0.001 ? "<0.001" : v.m.toFixed(3), v.g.toFixed(3), fmtInt(v.r), fmtInt(v.Q), fmtInt(v.R)].forEach((t) => tr.append(el("td", { class: "num" }, t)));
+    }
+    tb.append(tr);
+  });
+
+  // tooltip
+  if (!showTip) { tipEl.hidden = true; return; }
+  tipEl.textContent = "";
+  tipEl.append(el("div", { class: "t-head" }, `log₂ n ≈ ${sci(p.r.lam)}`));
+  SERIES.forEach((s) => {
+    const row = el("div", { class: "t-row" });
+    const keyl = el("span", { class: "key" });
+    paintKey(keyl, s);
+    keyl.style.width = "14px";
+    keyl.style.margin = "0";
+    let v = seriesValue(p.r, s.key);
+    const txt = v === null ? "1.000" : v.toFixed(3);
+    row.append(keyl, el("b", {}, txt), el("span", { class: "n" }, s.key === "p" && v === null ? `${s.name} (brute force)` : s.name));
+    tipEl.append(row);
+  });
+  tipEl.hidden = false;
+  const tw = tipEl.offsetWidth;
+  const scale = chartBox.clientWidth / W;
+  let left = x * scale + 14;
+  if (left + tw > chartBox.clientWidth) left = x * scale - tw - 14;
+  tipEl.style.left = `${Math.max(0, left)}px`;
+  tipEl.style.top = `${m.t * scale + 8}px`;
+}
+
+slider.max = pts.length - 1;
+// start at the size where the version after the loop first beats 1.307^n
+(function initSlider() {
+  const i = pts.findIndex((p) => p.r.d && p.r.d.e < REFS[2].e);
+  slider.value = i >= 0 ? i : 0;
+})();
+slider.addEventListener("input", () => update(+slider.value, false));
+render();
+let rt, lastW = chartBox.clientWidth;
+new ResizeObserver(() => {
+  const w = chartBox.clientWidth;
+  if (w === lastW) return;
+  lastW = w;
+  clearTimeout(rt);
+  rt = setTimeout(render, 80);
+}).observe(chartBox);
+const mq = window.matchMedia("(prefers-color-scheme: dark)");
+mq.addEventListener("change", render);
+new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+</script>

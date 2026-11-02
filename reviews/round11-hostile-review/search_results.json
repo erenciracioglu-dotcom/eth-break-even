@@ -1,0 +1,498 @@
+{
+  "third": {
+    "required_lambda": 531.3430629180086,
+    "lam": 532,
+    "params": {
+      "levels": 3,
+      "r": [
+        8,
+        9,
+        11
+      ],
+      "u": [
+        79,
+        63,
+        38
+      ],
+      "delta": 0.002933227069905141,
+      "Lc": 512,
+      "a": [
+        101,
+        166,
+        206
+      ],
+      "kappa": [
+        10,
+        10,
+        10
+      ],
+      "memo": true,
+      "modedp": true,
+      "chunks": true,
+      "perclass": true,
+      "leafvars": false,
+      "labelfree": true,
+      "newton": true,
+      "ldu": true,
+      "shellmm": true,
+      "guarded": true,
+      "bincross": true,
+      "profile": true
+    },
+    "e": 0.3333333333082197,
+    "checks": [
+      [
+        530.2329020975709,
+        517.8345556242296
+      ],
+      [
+        531.3430629180086,
+        522.393000021144
+      ],
+      [
+        461.41174910262475,
+        448.2589309315257
+      ]
+    ]
+  },
+  "occ3sat": {
+    "required_lambda": 2032.632101580934,
+    "lam": 2033,
+    "params": {
+      "levels": 3,
+      "r": [
+        8,
+        9,
+        16
+      ],
+      "u": [
+        323,
+        257,
+        173
+      ],
+      "delta": 0.00041734867719470635,
+      "Lc": 1048576,
+      "a": [
+        349,
+        608,
+        783
+      ],
+      "kappa": [
+        10,
+        10,
+        10
+      ],
+      "memo": true,
+      "modedp": true,
+      "chunks": true,
+      "perclass": true,
+      "leafvars": false,
+      "labelfree": true,
+      "newton": true,
+      "ldu": true,
+      "shellmm": true,
+      "guarded": true,
+      "bincross": true,
+      "profile": true
+    },
+    "e": 0.1633699139924062,
+    "checks": [
+      [
+        2023.8647771389078,
+        2030.112233271332
+      ],
+      [
+        2016.9350726305847,
+        2032.632101580934
+      ],
+      [
+        2032.5274998804098,
+        2024.5262503807007
+      ]
+    ]
+  },
+  "ppsz": {
+    "required_lambda": 410.71333685156145,
+    "lam": 411,
+    "params": {
+      "levels": 3,
+      "r": [
+        8,
+        9,
+        11
+      ],
+      "u": [
+        59,
+        47,
+        29
+      ],
+      "delta": 0.002158226765440927,
+      "Lc": 512,
+      "a": [
+        81,
+        130,
+        161
+      ],
+      "kappa": [
+        10,
+        10,
+        10
+      ],
+      "memo": true,
+      "modedp": true,
+      "chunks": true,
+      "perclass": true,
+      "leafvars": false,
+      "labelfree": true,
+      "newton": true,
+      "ldu": true,
+      "shellmm": true,
+      "guarded": true,
+      "bincross": true,
+      "profile": true
+    },
+    "e": 0.3862939964035282,
+    "checks": [
+      [
+        410.71333685156145,
+        394.87869789702273
+      ],
+      [
+        410.3691716533409,
+        398.96710803153826
+      ],
+      [
+        363.63954855217554,
+        349.30425665899827
+      ]
+    ]
+  },
+  "sharp3sat": {
+    "required_lambda": 156.56666774439873,
+    "lam": 157,
+    "params": {
+      "levels": 1,
+      "r": [
+        8
+      ],
+      "u": [
+        19
+      ],
+      "delta": 0.021165501253430752,
+      "Lc": 64,
+      "a": [
+        38
+      ],
+      "kappa": [
+        10
+      ],
+      "memo": true,
+      "modedp": true,
+      "chunks": true,
+      "perclass": true,
+      "leafvars": true,
+      "labelfree": true,
+      "newton": true,
+      "ldu": true,
+      "shellmm": true,
+      "guarded": true,
+      "bincross": true,
+      "profile": true
+    },
+    "e": 0.711054321810499,
+    "checks": [
+      [
+        156.56666774439873,
+        141.76834874836533
+      ]
+    ]
+  },
+  "brute": {
+    "required_lambda": 99.93794900961953,
+    "lam": 100,
+    "params": {
+      "levels": 1,
+      "r": [
+        7
+      ],
+      "u": [
+        11
+      ],
+      "delta": 0.036699572636145254,
+      "Lc": 32,
+      "a": [
+        29
+      ],
+      "kappa": [
+        10
+      ],
+      "memo": true,
+      "modedp": true,
+      "chunks": true,
+      "perclass": true,
+      "leafvars": true,
+      "labelfree": true,
+      "newton": true,
+      "ldu": true,
+      "shellmm": true,
+      "guarded": true,
+      "bincross": true,
+      "profile": true
+    },
+    "e": 0.9999999999564664,
+    "checks": [
+      [
+        99.93794900961953,
+        86.60460294996244
+      ]
+    ]
+  },
+  "third_matching": {
+    "required_lambda": 525.8505703018385,
+    "lam": 526,
+    "params": {
+      "levels": 3,
+      "r": [
+        9,
+        7,
+        11
+      ],
+      "u": [
+        76,
+        57,
+        43
+      ],
+      "delta": 0.003163871799068683,
+      "Lc": 512,
+      "a": [
+        98,
+        157,
+        201
+      ],
+      "kappa": [
+        10,
+        10,
+        10
+      ],
+      "memo": true,
+      "modedp": true,
+      "chunks": true,
+      "perclass": true,
+      "leafvars": false,
+      "labelfree": true,
+      "newton": true,
+      "ldu": true,
+      "shellmm": true,
+      "guarded": true,
+      "bincross": true,
+      "profile": true
+    },
+    "e": 0.33333333333212345,
+    "checks": [
+      [
+        525.8505703018385,
+        523.682113447504
+      ],
+      [
+        448.60253519837283,
+        441.48587638857555
+      ],
+      [
+        486.7726892072645,
+        473.1783905891642
+      ]
+    ]
+  },
+  "occ3sat_matching": {
+    "required_lambda": 2032.6370050848207,
+    "lam": 2033,
+    "params": {
+      "levels": 3,
+      "r": [
+        8,
+        9,
+        16
+      ],
+      "u": [
+        323,
+        257,
+        173
+      ],
+      "delta": 0.00041593277161463264,
+      "Lc": 524288,
+      "a": [
+        349,
+        608,
+        783
+      ],
+      "kappa": [
+        10,
+        10,
+        10
+      ],
+      "memo": true,
+      "modedp": true,
+      "chunks": true,
+      "perclass": true,
+      "leafvars": false,
+      "labelfree": true,
+      "newton": true,
+      "ldu": true,
+      "shellmm": true,
+      "guarded": true,
+      "bincross": true,
+      "profile": true
+    },
+    "e": 0.16336975571105566,
+    "checks": [
+      [
+        1999.8529993935404,
+        2030.1171347333495
+      ],
+      [
+        2016.9448789723483,
+        2032.6370050848207
+      ],
+      [
+        2032.5373082640428,
+        2024.531155926457
+      ]
+    ]
+  },
+  "ppsz_matching": {
+    "required_lambda": 402.80396943511903,
+    "lam": 403,
+    "params": {
+      "levels": 3,
+      "r": [
+        8,
+        9,
+        10
+      ],
+      "u": [
+        60,
+        46,
+        36
+      ],
+      "delta": 0.00461152974048299,
+      "Lc": 512,
+      "a": [
+        82,
+        130,
+        168
+      ],
+      "kappa": [
+        10,
+        10,
+        10
+      ],
+      "memo": true,
+      "modedp": true,
+      "chunks": true,
+      "perclass": true,
+      "leafvars": false,
+      "labelfree": true,
+      "newton": true,
+      "ldu": true,
+      "shellmm": true,
+      "guarded": true,
+      "bincross": true,
+      "profile": true
+    },
+    "e": 0.3862939967180915,
+    "checks": [
+      [
+        402.53272140138233,
+        399.95322395354594
+      ],
+      [
+        402.80396943511903,
+        392.376328560411
+      ],
+      [
+        400.22691458157345,
+        388.0433230798148
+      ]
+    ]
+  },
+  "sharp3sat_matching": {
+    "required_lambda": 147.57236355898357,
+    "lam": 148,
+    "params": {
+      "levels": 1,
+      "r": [
+        8
+      ],
+      "u": [
+        19
+      ],
+      "delta": 0.021165501219179067,
+      "Lc": 64,
+      "a": [
+        38
+      ],
+      "kappa": [
+        10
+      ],
+      "memo": true,
+      "modedp": true,
+      "chunks": true,
+      "perclass": true,
+      "leafvars": true,
+      "labelfree": true,
+      "newton": true,
+      "ldu": true,
+      "shellmm": true,
+      "guarded": true,
+      "bincross": true,
+      "profile": true
+    },
+    "e": 0.7110543217870022,
+    "checks": [
+      [
+        147.57236355898357,
+        141.7683487507
+      ]
+    ]
+  },
+  "brute_matching": {
+    "required_lambda": 91.92559326761052,
+    "lam": 92,
+    "params": {
+      "levels": 1,
+      "r": [
+        7
+      ],
+      "u": [
+        11
+      ],
+      "delta": 0.0533404349707789,
+      "Lc": 64,
+      "a": [
+        29
+      ],
+      "kappa": [
+        10
+      ],
+      "memo": true,
+      "modedp": true,
+      "chunks": true,
+      "perclass": true,
+      "leafvars": true,
+      "labelfree": true,
+      "newton": true,
+      "ldu": true,
+      "shellmm": true,
+      "guarded": true,
+      "bincross": true,
+      "profile": true
+    },
+    "e": 0.9999999998171283,
+    "checks": [
+      [
+        91.92559326761052,
+        86.08716292981865
+      ]
+    ]
+  }
+}

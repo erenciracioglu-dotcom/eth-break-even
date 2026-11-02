@@ -1,0 +1,260 @@
+{
+ "verify_ok": true,
+ "implemented": true,
+ "verified_flags": {
+  "memo": true,
+  "modedp": true,
+  "chunks": true,
+  "leafvars": true,
+  "newton": true,
+  "ldu": true,
+  "shellmm": true,
+  "guarded": true,
+  "bincross": true,
+  "bc_fast": true,
+  "profile": true
+ },
+ "verify": {
+  "counts": {
+   "paper": 21,
+   "memo": 21,
+   "dp": 21,
+   "byvars": 91,
+   "e2e": 10,
+   "newton_modes": 18,
+   "newton_paper": 18,
+   "newton_memo": 18,
+   "newton_dp": 18,
+   "newton_byvars": 54,
+   "newton_e2e": 8,
+   "ldu_modes": 18,
+   "ldu_paper": 18,
+   "ldu_memo": 18,
+   "ldu_dp": 18,
+   "ldu_byvars": 52,
+   "ldu_e2e": 8,
+   "mm_matmul": 11,
+   "mm_node": 39,
+   "mm_e2e": 8,
+   "gd_modes": 21,
+   "gd_dp": 21,
+   "gd_mm": 21,
+   "gd_byvars": 42,
+   "gd_e2e": 8,
+   "bc_fast": 20,
+   "bc_node": 15,
+   "bc_e2e": 1,
+   "pf_choose": 160,
+   "pf_node": 14,
+   "pf_e2e": 2
+  },
+  "error": null,
+  "seconds": 273.3
+ },
+ "verify_failures": [],
+ "thresholds": {
+  "third": 533,
+  "occ3sat": 2034,
+  "ppsz": 413,
+  "sharp3sat": 159,
+  "brute": 103
+ },
+ "certificates": {
+  "third": {
+   "lam": 533,
+   "params": {
+    "levels": 3,
+    "r": [
+     8,
+     9,
+     10
+    ],
+    "u": [
+     79,
+     63,
+     50
+    ],
+    "a": [
+     101,
+     166,
+     218
+    ],
+    "delta": 0.003,
+    "Lc": 1024,
+    "perclass": true,
+    "labelfree": true,
+    "memo": true,
+    "modedp": true,
+    "chunks": true,
+    "leafvars": false,
+    "newton": true,
+    "ldu": true,
+    "shellmm": true,
+    "guarded": true,
+    "bincross": true,
+    "profile": true,
+    "kappa": [
+     10,
+     10,
+     10
+    ]
+   },
+   "e": 0.3330366656244391
+  },
+  "occ3sat": {
+   "lam": 2034,
+   "params": {
+    "levels": 3,
+    "r": [
+     8,
+     9,
+     16
+    ],
+    "u": [
+     323,
+     257,
+     173
+    ],
+    "a": [
+     349,
+     608,
+     783
+    ],
+    "delta": 0.0003,
+    "Lc": 1048576,
+    "perclass": true,
+    "labelfree": true,
+    "memo": true,
+    "modedp": true,
+    "chunks": true,
+    "leafvars": false,
+    "newton": true,
+    "ldu": true,
+    "shellmm": true,
+    "guarded": true,
+    "bincross": true,
+    "profile": true,
+    "kappa": [
+     10,
+     10,
+     10
+    ]
+   },
+   "e": 0.16334388309514064
+  },
+  "ppsz": {
+   "lam": 413,
+   "params": {
+    "levels": 3,
+    "r": [
+     8,
+     9,
+     10
+    ],
+    "u": [
+     60,
+     47,
+     37
+    ],
+    "a": [
+     82,
+     131,
+     170
+    ],
+    "delta": 0.005,
+    "Lc": 256,
+    "perclass": true,
+    "labelfree": true,
+    "memo": true,
+    "modedp": true,
+    "chunks": true,
+    "leafvars": false,
+    "newton": true,
+    "ldu": true,
+    "shellmm": true,
+    "guarded": true,
+    "bincross": true,
+    "profile": true,
+    "kappa": [
+     10,
+     10,
+     10
+    ]
+   },
+   "e": 0.3860517653259298
+  },
+  "sharp3sat": {
+   "lam": 159,
+   "params": {
+    "levels": 1,
+    "r": [
+     8
+    ],
+    "u": [
+     19
+    ],
+    "a": [
+     38
+    ],
+    "delta": 0.01,
+    "Lc": 64,
+    "perclass": true,
+    "labelfree": true,
+    "memo": true,
+    "modedp": true,
+    "chunks": true,
+    "leafvars": true,
+    "newton": true,
+    "ldu": true,
+    "shellmm": true,
+    "guarded": true,
+    "bincross": true,
+    "profile": true,
+    "kappa": [
+     10
+    ]
+   },
+   "e": 0.7033646636737405
+  },
+  "brute": {
+   "lam": 103,
+   "params": {
+    "levels": 1,
+    "r": [
+     7
+    ],
+    "u": [
+     11
+    ],
+    "a": [
+     29
+    ],
+    "delta": 0.03,
+    "Lc": 64,
+    "perclass": true,
+    "labelfree": true,
+    "memo": true,
+    "modedp": true,
+    "chunks": true,
+    "leafvars": true,
+    "newton": true,
+    "ldu": true,
+    "shellmm": true,
+    "guarded": true,
+    "bincross": true,
+    "profile": true,
+    "kappa": [
+     10
+    ]
+   },
+   "e": 0.978682293713792
+  }
+ },
+ "score_summary": {
+  "choose_params_avg_s": 2.0907215124940217,
+  "calls": 73,
+  "error": null,
+  "seconds": 152.6
+ },
+ "seconds": 426.1
+}
