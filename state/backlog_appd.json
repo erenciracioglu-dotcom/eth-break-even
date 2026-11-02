@@ -268,5 +268,53 @@
   "attempts": 1,
   "result": "third threshold 663 -> 646 (2.56% lower threshold)",
   "done_iter": 12
+ },
+ {
+  "id": "T26",
+  "title": "Profile-adaptive contraction orders: pf_cost, pf_choose and NodeExpansion.sum_prof (appd-profile)",
+  "kind": "code",
+  "files": [
+   "appd_core.py"
+  ],
+  "spec": "Round 11. Read NOTES.md, section 'Round 11' (its pseudo-code is the spec). Add to appd_core.py, after the round-10 code; change nothing else (smoke_appd.py must still print SMOKE OK).\n1. Module-level pf_cost(order, bits, r) and pf_choose(bits, r, menu=None) exactly as in NOTES; menu None means PF_MENUS[r] of appd_assembly_public (import appd_assembly_public at the top of the module). bits is a dict {(i, j): b} with i < j over all edges.\n2. The method NodeExpansion.sum_prof(self) -> (series, records, child_calls) (inside the class, or as a module-level function followed by NodeExpansion.sum_prof = sum_prof). Edges (i, j), i < j positions in self.r_groups, in lexicographic order, each with the sorted modes k whose {modes[k]['src'], modes[k]['tgt']} is {r_groups[i], r_groups[j]}; shells of an edge = self.shells(its modes). Profiles depth first as in NOTES (edges in order, shells in increasing weight, stop at a shell whose weight reaches the remaining budget p - chosen weights). Per profile call pf_choose(bits, r, menu) by that module-level name exactly once (the referee replaces it), contract in the order menu[j] with one call of the module-level matmul(Am, Bm, q, 2^p) per step (rows = AC combinations, inner = AB, cols = BC; itertools.product in edge order), and append dict(weights, sizes, order, costs, shapes, value) as in NOTES. It must not call sum_paper, sum_memo, sum_dp, sum_mm or sum_cross (the referee blocks them while it runs).\n3. node_value(..., method='prof'): ser, records, calls = ne.sum_prof(); stats = {'records': records, 'child_calls': calls, 'modes': len(ne.modes)}. count_e2e(..., method='prof'): at every node ne.sum_prof() when len(ne.r_groups) is a key of PF_MENUS, otherwise ne.sum_dp().\nPitfalls: build every table key with self.key(dict) of the merged tuples (it sorts the modes; never join key tuples); a missing key in tables[g] is a bug, so index tables[g][key]; keep every series mod 2^p; the alphabet of an edge is the shell list in the order self.shells returns it; open edges stay in edge order; when a product over an empty edge list is needed, itertools.product() gives one empty combination.\ncheck_t26.py compares pf_choose, the node values, every record and the matmul call shapes on public nodes with the head's reference, and runs count_e2e with method 'prof'.",
+  "stop": "check_t26.py prints T26 OK and smoke_appd.py prints SMOKE OK",
+  "needs_flags": [
+   "profile"
+  ],
+  "after": [
+   "T25"
+  ],
+  "status": "open",
+  "priority": 44,
+  "max_attempts": 3,
+  "steps": 60
+ },
+ {
+  "id": "T27",
+  "title": "Switch on the verified profile flag in the parameter search",
+  "kind": "score",
+  "files": [
+   "appd_params.py"
+  ],
+  "spec": "Round 11, part 2. The frozen model (appd_assembly_public.py, version 7) has the code flag profile: with shellmm and profile the mode fraction of a level with r groups is at most PF_EPS[r] for 4 <= r <= 16 (NOTES.md, section 'Round 11'). Change only appd_params.py: (1) in choose_params add profile=False to the base flags dict and profile=True to the flags.update(...) that switches on the code flags; (2) give eps_cached a last parameter profile=False, key the cache by (r, shellmm, bincross, profile) and pass 'profile': profile to A.eps_mode; give rank_e a last parameter profile=False and call eps_cached(r[d], shellmm, bincross, profile); (3) where choose_params calls rank_e, pass flags['profile'] after flags['bincross']. Nothing else changes; one call must stay under 3 s.",
+  "stop": "check_t27.py prints T27 OK",
+  "needs_flags": [
+   "memo",
+   "modedp",
+   "chunks",
+   "newton",
+   "ldu",
+   "shellmm",
+   "guarded",
+   "bincross",
+   "profile"
+  ],
+  "after": [
+   "T26"
+  ],
+  "status": "open",
+  "priority": 45,
+  "max_attempts": 3,
+  "steps": 30
  }
 ]

@@ -1,4 +1,4 @@
-"""FROZEN gates of referee_appd version 6 (round 10). Usage: python appd_gates.py <candidate_dir> <verify|score> <out_json> [verified_flags_json]
+"""FROZEN gates of referee_appd version 7 (round 11). Usage: python appd_gates.py <candidate_dir> <verify|score> <out_json> [verified_flags_json]
 
 verify: the agent's appd_core.py against the frozen reference appd_ref.py on hidden cases (cases_appd.json):
   node   - node_value(method = paper, memo, dp) equals F(t + alpha z) mod (2^p, z^q) from the frozen direct
@@ -32,10 +32,20 @@ verify: the agent's appd_core.py against the frozen reference appd_ref.py on hid
            the agent's NodeExpansion are blocked and bc_left / bc_right are called (bc_node);
            count_e2e(..., basis="ldu", method="cross") equals the brute-force count and calls sum_cross at exactly
            the nodes with at least four groups (bc_e2e).
+  profile (version 7; decides only the profile flag) - the module-level pf_choose(bits, r) equals the reference rule
+           (cheapest order of the frozen menu PF_MENUS[r], costs max_k 125 (X + Y + Z) - 24 min(X, Y, Z), ties to the
+           smaller index) on 160 random edge-bit dicts for r = 4..16 (pf_choose); node_value(..., method="prof") on
+           hidden nodes with four to six groups equals (D.8) / the reference value and returns the reference
+           per-profile records (shell weights, alphabet sizes, menu index, costs, step shapes, exact value) while
+           sum_paper, sum_memo, sum_dp, sum_mm and sum_cross are blocked; every step is one matmul call of the recorded
+           shape; the same holds when the referee replaces pf_choose by a chooser that cycles through the menu
+           (pf_node); count_e2e(..., basis="ldu", method="prof") equals the brute-force count and calls sum_prof at
+           exactly the nodes with 4 to 16 groups (pf_e2e).
   direct_taylor_mod and F_poly of the agent module are blocked while it runs.
   Verified flags: memo (every memo item), modedp (every dp item), chunks (every item on a chunk network and every
   chunk end-to-end count), leafvars (every byvars item), newton (every newton item), ldu (every ldu item),
-  shellmm (every mm item), guarded (every gd item), bc_fast (every bc_fast item), bincross (every bc item).
+  shellmm (every mm item), guarded (every gd item), bc_fast (every bc_fast item), bincross (every bc item),
+  profile (every pf item).
   With IMPLEMENTED = False
   nothing is tried and no code flag is verified (the gate still passes).
 score: break-even sizes from the agent's appd_params.choose_params(lam, target), re-scored here with the frozen
@@ -450,6 +460,149 @@ def bc_items(C, cases):
     return items
 
 
+PF_KINDS = ("pf_choose", "pf_node", "pf_e2e")
+
+
+def _pf_canon(recs, mod):
+    out = []
+    for d in recs:
+        out.append((tuple(int(x) for x in d.get("weights", [])), tuple(int(x) for x in d.get("sizes", [])),
+                    int(d.get("order", -1)), tuple(int(x) for x in d.get("costs", [])),
+                    tuple(tuple(int(v) for v in sh) for sh in d.get("shapes", [])),
+                    tuple(int(x) % mod for x in d.get("value", []))))
+    return out
+
+
+def _pf_cycler(ref_choose):
+    """A chooser that returns the menu indices 0, 1, 2, ... in turn (one call per profile) with the reference costs."""
+    cnt = [0]
+
+    def ch(bits, r, menu=None):
+        menu = menu or A.PF_MENUS[r]
+        _j, costs = ref_choose(dict(bits), r, menu)
+        j = cnt[0] % len(menu)
+        cnt[0] += 1
+        return j, list(costs)
+    return ch
+
+
+def _pf_shapes(recs):
+    return sorted(tuple(int(v) for v in sh) for d in recs for sh in d["shapes"])
+
+
+def pf_items(C, cases):
+    """Round 11 (profile): Astra's profile-adaptive contraction orders. pf_choose: the module-level selection rule;
+    pf_node: node values and per-profile records through NodeExpansion.sum_prof with the other sums blocked, with
+    the frozen rule and with a cycling chooser; pf_e2e: end-to-end counts with sum_prof at the nodes with 4 to 16
+    groups."""
+    NEc = getattr(C, "NodeExpansion", None)
+    if not callable(getattr(C, "pf_choose", None)) or not callable(getattr(NEc, "sum_prof", None)):
+        return [dict(kind=k, ok=False, error="appd_core has no pf_choose / NodeExpansion.sum_prof (round 11 not "
+                                             "implemented)") for k in PF_KINDS]
+    items = []
+    rng = random.Random(111111)
+    ref_choose = R.pf_choose
+    for rep_ in range(160):
+        r = rng.choice([4, 5, 6, 7, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
+        bits = {(i, j): (rng.choice([0, 0, 1, 1, 2, 3, 5, 8]) if rng.random() < 0.8 else 0)
+                for i in range(r) for j in range(i + 1, r)}
+        it = dict(kind="pf_choose", r=r)
+        try:
+            got = C.pf_choose(dict(bits), r)
+            want = ref_choose(bits, r, A.PF_MENUS[r])
+            it.update(ok=bool(int(got[0]) == want[0] and [int(x) for x in got[1]] == list(want[1])))
+        except Exception:  # noqa: BLE001
+            it.update(ok=False, error=traceback.format_exc()[-400:])
+        items.append(it)
+    choose_bad = any(not i["ok"] for i in items)
+    for cs in cases.get("profile_node", []):
+        rng = random.Random(cs["seed"])
+        n_, cls, net, labels, pk = R.setup(rng, cs["n"], cs["m"], cs["a"], cs["r"], chunks=cs["chunks"], Lc=cs["Lc"])
+        M = len(net.wires)
+        C._WIREMAP.update({k: v for k, v in R._WIREMAP.items() if k[0] == id(net)})
+        nodes = [x for x in pk.S if x and R.v2(x) < pk.a]
+        t = nodes[int(cs["tpick"] * len(nodes)) % len(nodes)]
+        p, q, w, basis = cs["p"], cs["q"], cs["weights"], cs["basis"]
+        mod = 1 << p
+        it = dict(kind="pf_node", seed=cs["seed"], chunks=cs["chunks"], M=M, t=t, p=p, q=q, basis=basis)
+        if choose_bad:
+            it.update(ok=False, error="not run: a pf_choose check failed")
+            items.append(it)
+            continue
+        ref = R.NodeExpansion(net, pk, labels, t, p, q, weights=w, basis=basis)
+        want_ser, want_recs, _ = ref.sum_prof()
+        R.pf_choose = _pf_cycler(ref_choose)
+        try:
+            _, want_cyc, _ = ref.sum_prof()
+        finally:
+            R.pf_choose = ref_choose
+        it.update(groups=len(ref.r_groups), modes=len(ref.modes), profiles=len(want_recs))
+        saved = {k: getattr(C.NodeExpansion, k, None) for k in ("sum_paper", "sum_memo", "sum_dp", "sum_mm", "sum_cross")}
+        log = []
+        orig_mm, orig_ch = C.matmul, C.pf_choose
+
+        def logging_mm(Am, Bm, qq, mm, _o=orig_mm):
+            log.append((len(Am), len(Bm), len(Bm[0]) if Bm else 0))
+            return _o(Am, Bm, qq, mm)
+        try:
+            for k in saved:
+                setattr(C.NodeExpansion, k, _blocked)
+            C.matmul = logging_mm
+            ser, st = C.node_value(net, pk, labels, t, p, q, weights=w, method="prof", basis=basis)
+            ok_v = _bc_norm(ser, mod) == _bc_norm(want_ser, mod) == [int(x) for x in cs["value"]]
+            ok_r = _pf_canon(st.get("records", []), mod) == _pf_canon(want_recs, mod)
+            ok_m = sorted(log) == _pf_shapes(want_recs)
+            del log[:]
+            C.pf_choose = _pf_cycler(ref_choose)
+            ser2, st2 = C.node_value(net, pk, labels, t, p, q, weights=w, method="prof", basis=basis)
+            ok_c = (_bc_norm(ser2, mod) == _bc_norm(want_ser, mod)
+                    and _pf_canon(st2.get("records", []), mod) == _pf_canon(want_cyc, mod)
+                    and sorted(log) == _pf_shapes(want_cyc))
+            it.update(ok=bool(ok_v and ok_r and ok_m and ok_c), value=ok_v, records=ok_r, matmul=ok_m, cycled=ok_c)
+        except Exception:  # noqa: BLE001
+            it.update(ok=False, error=traceback.format_exc()[-400:])
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    try:
+                        delattr(C.NodeExpansion, k)
+                    except AttributeError:
+                        pass
+                else:
+                    setattr(C.NodeExpansion, k, v)
+            C.matmul, C.pf_choose = orig_mm, orig_ch
+        items.append(it)
+    node_bad = choose_bad or any(i["kind"] == "pf_node" and not i["ok"] for i in items)
+    for cs in cases.get("profile_e2e", []):
+        rng = random.Random(cs["seed"])
+        n = cs["n"]
+        cls = R.random_formula(n, cs["m"], rng)
+        it = dict(kind="pf_e2e", seed=cs["seed"], chunks=cs["chunks"], a=cs["a"], u=cs["u"], r=cs["r"])
+        if node_bad:
+            it.update(ok=False, error="not run: a profile node check failed")
+            items.append(it)
+            continue
+        cnt = [0]
+        orig_sp = C.NodeExpansion.sum_prof
+
+        def counting_sp(self, *a, _o=orig_sp, **k):
+            cnt[0] += 1
+            return _o(self, *a, **k)
+        try:
+            C.NodeExpansion.sum_prof = counting_sp
+            got = C.count_e2e(n, cls, chunks=cs["chunks"], Lc=cs["Lc"], r=cs["r"], seed=cs["seed"], a=cs["a"],
+                              u=cs["u"], basis="ldu", method="prof")
+            want_c = R.count_sat(n, cls)
+            it.update(ok=int(got) == want_c and cnt[0] == cs["prof_nodes"], got=int(got), want=want_c,
+                      sum_prof_calls=[cnt[0], cs["prof_nodes"]])
+        except Exception:  # noqa: BLE001
+            it.update(ok=False, error=traceback.format_exc()[-400:])
+        finally:
+            C.NodeExpansion.sum_prof = orig_sp
+        items.append(it)
+    return items
+
+
 def verify(cand):
     sys.path.insert(0, cand)
     import appd_core as C  # noqa: E402
@@ -519,11 +672,13 @@ def verify(cand):
     items += mm_items(C, cases)
     items += guarded_items(C, cases)
     items += bc_items(C, cases)
+    items += pf_items(C, cases)
     nk = ("newton_modes", "newton_paper", "newton_memo", "newton_dp", "newton_byvars", "newton_e2e")
     lk = tuple("ldu" + k[len("newton"):] for k in nk)
     mk = ("mm_matmul", "mm_node", "mm_e2e")
     gk = GUARD_KINDS
     bk = BC_KINDS
+    pk_ = PF_KINDS
     core = ("paper", "memo", "dp", "byvars", "e2e")       # the newton items only decide the newton flag
     flags = {
         "memo": all(i["ok"] for i in items if i["kind"] == "memo") and any(i["kind"] == "memo" for i in items),
@@ -537,9 +692,10 @@ def verify(cand):
         "guarded": all(i["ok"] for i in items if i["kind"] in gk) and all(any(i["kind"] == k for i in items) for k in gk),
         "bincross": all(i["ok"] for i in items if i["kind"] in bk) and all(any(i["kind"] == k for i in items) for k in bk),
         "bc_fast": all(i["ok"] for i in items if i["kind"] == "bc_fast") and any(i["kind"] == "bc_fast" for i in items),
+        "profile": all(i["ok"] for i in items if i["kind"] in pk_) and all(any(i["kind"] == k for i in items) for k in pk_),
     }
     return {"ok": all(i["ok"] for i in items if i["kind"] in core), "implemented": True, "items": items, "flags": flags,
-            "counts": {k: sum(1 for i in items if i["kind"] == k) for k in ("paper", "memo", "dp", "byvars", "e2e") + nk + lk + mk + gk + bk}}
+            "counts": {k: sum(1 for i in items if i["kind"] == k) for k in ("paper", "memo", "dp", "byvars", "e2e") + nk + lk + mk + gk + bk + pk_}}
 
 
 def score(cand, verified):

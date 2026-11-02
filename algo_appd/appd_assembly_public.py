@@ -1,4 +1,4 @@
-"""FROZEN Appendix D assembly, referee_appd version 6 (2026-11-02, round 10: bincross flag).
+"""FROZEN Appendix D assembly, referee_appd version 7 (2026-11-02, round 11: profile flag).
 
 Cost exponent e (cost ~ 2^(e n), lam = log2 n, polynomial factors ignored) of the tensor-contraction algorithm
 of Appendix D (Theorem D.1) on 3-CNF with at most three occurrences per variable, with the head-audited steps of
@@ -8,8 +8,8 @@ appd-labelfree, appd-newton, appd-ldu, appd-shellmm, appd-guarded, appd-bincross
 params = {"levels": L in 1..3, "r": [r_0..r_{L-1}] groups per level, "u": [u_d] retained valuation levels
 (integers >= 2), "a": [a_d] packet coordinates (L_d = 2^a_d, integers), "delta": balance tolerance,
 "Lc": chunk size, and boolean flags memo, modedp, chunks, perclass, leafvars, labelfree, newton, ldu,
-shellmm, guarded, bincross} plus, with guarded, "kappa": [kappa_d] (guard width H_d = 2^(a_d - kappa_d), 2 <= kappa_d <= 30).
-Flags memo, modedp, chunks, leafvars, newton, ldu, shellmm, guarded and bincross count only when the verify gate confirmed the agent's code
+shellmm, guarded, bincross, profile} plus, with guarded, "kappa": [kappa_d] (guard width H_d = 2^(a_d - kappa_d), 2 <= kappa_d <= 30).
+Flags memo, modedp, chunks, leafvars, newton, ldu, shellmm, guarded, bincross and profile count only when the verify gate confirmed the agent's code
 for them (see referee.py); perclass and labelfree are accounting facts (audited) and need no code.
 newton (appd-newton): crossing entries expanded in binomial moments, source forms sum_j binom(j, b) X_(y0 + c j);
 the weight of mode b grows by v2(b!) >= b - log2(b + 1), so a class has about W/2 modes of weight <= W instead of W:
@@ -34,16 +34,26 @@ O(m^2) per entry of the old pair table, no division). The new index theta (grade
 mode units (2 per group pair): preparing a pair table 4r - 6 - 2 eta, absorbing it 4r - 8, then A, the r - 4
 singletons one at a time and B last with the pair-pair edge 4 + u_theta (eps_bc1 below); the mode fraction of a
 level is min(eps_mm(r), eps_bc1(r)). Needs shellmm.
+profile (appd-profile, GPT-6 Astra, head-verified): the mode sum of a node with r groups is split by complete
+shell profiles (one exact weight w_e per group pair e, sum w_e < p); inside a profile every edge has a finite
+alphabet of N_e tuples and the network is contracted group by group, every step one shell matrix product, in the
+order of the frozen menu PF_MENUS[r] with the smallest cost bound max_k 125 (X + Y + Z) - 24 min(X, Y, Z) (X, Y,
+Z the sums of b_e = ceil(log2 N_e) over the edges A-B, A-C, B-C of step k; alpha' = 101/125 > log2(7) - 2).
+With l_e <= beta sqrt(2 w_e) and Cauchy-Schwarz, min over the menu <= the mean of its envelopes gives the mode
+fraction eps <= (2 / r^2) max over one form per order of ||mean of the forms||^2 = PF_EPS[r] (exact, 101/125);
+rounding to whole bits adds at most C(r, 2) bits, profiles and steps are polynomially many. The mode fraction of
+a level is then min(eps_mm, eps_bc1 with bincross, PF_EPS[r]) for 4 <= r <= 16. Needs shellmm.
 """
 import math
+from fractions import Fraction
 
 LN2 = math.log(2.0)
 TARGETS = {"third": 1.0 / 3.0, "occ3sat": math.log2(1.1199), "ppsz": math.log2(1.307031578),
            "sharp3sat": math.log2(1.637), "brute": 1.0}
 PRIMARY = "third"            # fair counting competitor for this class: 2^(n/3) (pathwidth DP)
 FLAGS = ("memo", "modedp", "chunks", "perclass", "leafvars", "labelfree", "newton", "ldu", "shellmm", "guarded",
-         "bincross")
-CODE_FLAGS = ("memo", "modedp", "chunks", "leafvars", "newton", "ldu", "shellmm", "guarded", "bincross")
+         "bincross", "profile")
+CODE_FLAGS = ("memo", "modedp", "chunks", "leafvars", "newton", "ldu", "shellmm", "guarded", "bincross", "profile")
 
 
 def eps_dp(r):
@@ -96,14 +106,79 @@ def eps_bc1(r):
     return min(eps_mm(r), max(qs) / float(r * r))
 
 
+PF_ALPHA_NUM, PF_ALPHA_DEN = 101, 125          # appd-profile: alpha' = 101/125 > log2(7) - 2 (7^125 < 2^351)
+# appd-profile menus: orders of the positions 0..r-1 of a node's groups (first the identity) and their certificates
+PF_MENUS = {
+    4: ((0, 1, 2, 3), (0, 2, 3, 1), (1, 2, 0, 3)),
+    5: ((0, 1, 2, 3, 4), (0, 3, 4, 2, 1), (2, 3, 0, 4, 1), (3, 1, 0, 4, 2)),
+    6: ((0, 1, 2, 3, 4, 5), (2, 3, 0, 5, 4, 1), (4, 2, 0, 5, 1, 3), (5, 2, 1, 4, 3, 0)),
+    7: ((0, 1, 2, 3, 4, 5, 6), (1, 0, 4, 5, 3, 6, 2), (0, 3, 5, 4, 2, 1, 6), (5, 2, 0, 6, 1, 4, 3)),
+    8: ((0, 1, 2, 3, 4, 5, 6, 7), (7, 0, 6, 2, 1, 4, 3, 5), (3, 4, 0, 6, 2, 1, 7, 5), (2, 7, 3, 4, 6, 5, 1, 0)),
+    9: ((0, 1, 2, 3, 4, 5, 6, 7, 8), (3, 7, 4, 0, 6, 5, 1, 8, 2), (5, 3, 4, 8, 1, 2, 7, 0, 6), (7, 2, 4, 5, 0, 1, 6, 3, 8)),
+    10: ((0, 1, 2, 3, 4, 5, 6, 7, 8, 9), (3, 7, 2, 5, 6, 1, 9, 4, 0, 8), (5, 8, 1, 0, 7, 2, 6, 9, 4, 3), (6, 0, 9, 5, 3, 8, 7, 2, 1, 4)),
+    11: ((0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10), (8, 9, 1, 5, 2, 6, 10, 7, 0, 3, 4), (9, 2, 4, 10, 5, 3, 8, 7, 1, 0, 6)),
+    12: ((0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11), (7, 8, 0, 6, 3, 4, 9, 2, 1, 11, 10, 5), (4, 6, 11, 1, 7, 2, 8, 0, 3, 9, 5, 10)),
+    13: ((0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12), (8, 6, 5, 3, 2, 10, 11, 0, 12, 1, 7, 9, 4), (11, 0, 5, 7, 2, 10, 1, 8, 6, 9, 12, 4, 3)),
+    14: ((0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13), (10, 4, 6, 13, 9, 2, 3, 8, 1, 5, 11, 7, 12, 0), (6, 8, 0, 10, 13, 1, 4, 12, 5, 7, 3, 9, 2, 11)),
+    15: ((0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14), (13, 10, 8, 1, 4, 11, 0, 2, 14, 12, 9, 6, 3, 5, 7), (6, 5, 11, 2, 14, 8, 0, 10, 12, 7, 4, 1, 9, 13, 3)),
+    16: ((0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15), (1, 0, 8, 7, 2, 14, 12, 10, 3, 13, 15, 4, 6, 9, 11, 5), (3, 10, 2, 9, 0, 14, 5, 13, 4, 15, 6, 1, 7, 8, 11, 12)),
+}
+PF_EPS = {
+    4: Fraction(185701, 375000),
+    5: Fraction(185239, 390625),
+    6: Fraction(332719, 750000),
+    7: Fraction(651717, 1531250),
+    8: Fraction(102163, 250000),
+    9: Fraction(338143, 843750),
+    10: Fraction(2440461, 6250000),
+    11: Fraction(2280778, 5671875),
+    12: Fraction(265501, 675000),
+    13: Fraction(620336, 1584375),
+    14: Fraction(1781599, 4593750),
+    15: Fraction(1349194, 3515625),
+    16: Fraction(6840623, 18000000),
+}
+
+
+def pf_forms(order, r):
+    """The cost forms of a sequential order, scaled by PF_ALPHA_DEN: per step k and per cross class, coefficient
+    PF_ALPHA_NUM on that class, PF_ALPHA_DEN on the other two, 0 on the edges inside A, B or C (edge order: (i, j),
+    i < j, lexicographic)."""
+    E = [(i, j) for i in range(r) for j in range(i + 1, r)]
+    pos = {g: k for k, g in enumerate(order)}
+    out = set()
+    for k in range(1, r):
+        cls = lambda g: 0 if pos[g] < k else (1 if pos[g] == k else 2)
+        lab = [tuple(sorted((cls(i), cls(j)))) for i, j in E]
+        for weak in ((0, 1), (0, 2), (1, 2)):
+            out.add(tuple(0 if a == b else (PF_ALPHA_NUM if (a, b) == weak else PF_ALPHA_DEN) for a, b in lab))
+    return sorted(out)
+
+
+def pf_certificate(r):
+    """Exact recomputation of PF_EPS[r] from PF_MENUS[r] (slow for r >= 14; used by the head's validation)."""
+    menu = PF_MENUS[r]
+    k = len(menu)
+    fs = [pf_forms(o, r) for o in menu]
+    best = 0
+    acc = [tuple(f) for f in fs[0]]
+    for j in range(1, k):
+        acc = [tuple(x + y for x, y in zip(a, b)) for a in acc for b in fs[j]]
+    best = max(sum(x * x for x in a) for a in acc)
+    return Fraction(2 * best, k * k * PF_ALPHA_DEN * PF_ALPHA_DEN * r * r)
+
+
 def eps_mode(r, fl):
-    """Mode fraction of the root sum: all modes without modedp, eps_dp with it, eps_mm with shellmm as well and
-    min(eps_mm, eps_bc1) with bincross."""
+    """Mode fraction of the root sum: all modes without modedp, eps_dp with it, eps_mm with shellmm as well,
+    min(eps_mm, eps_bc1) with bincross and at most PF_EPS[r] with profile (4 <= r <= 16)."""
     if not fl.get("modedp"):
         return f_all(r)
     if not fl.get("shellmm"):
         return eps_dp(r)
-    return eps_bc1(r) if fl.get("bincross") else eps_mm(r)
+    e = eps_bc1(r) if fl.get("bincross") else eps_mm(r)
+    if fl.get("profile") and r in PF_EPS:
+        e = min(e, float(PF_EPS[r]))
+    return e
 
 
 def gamma_guard(a, kappa):
@@ -187,6 +262,8 @@ def exponent_of(params, lam):
         return _bad("shellmm needs modedp (it reorganises the group-by-group sum)")
     if fl["bincross"] and not fl["shellmm"]:
         return _bad("bincross needs shellmm (its merges are shell matrix products)")
+    if fl["profile"] and not fl["shellmm"]:
+        return _bad("profile needs shellmm (its steps are shell matrix products)")
     if fl["leafvars"] and not (fl["chunks"] and L == 1):
         return _bad("leafvars applies to the depth-1 leaves of a chunk network only")
     for d in range(L):

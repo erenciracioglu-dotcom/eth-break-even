@@ -162,3 +162,68 @@ of 2, so the new index theta of a piece has 2^(max(a,b) + (c - 1) min(a,b)) valu
 4 of two edges. The transforms cost a factor m^2 per entry of the old pair table and use no division. With pair A,
 the singletons one at a time and pair B last the mode fraction drops from 0.5696 to 0.5544 at r = 7
 (appd_assembly_public.eps_bc1, flag bincross).
+
+## Round 11: a contraction order per shell profile (appd-profile)
+Proposed by GPT-6 Astra, checked and extended by the head (exact certificates; 66 random nodes where every profile
+value equals a direct sum and is the same in every order). The mode sum of a node with r >= 4 groups is a tensor
+network on the groups: the modes whose two groups are r_groups[i] and r_groups[j] (i < j) form the edge (i, j), and
+their exponent tuple is the index that T_g and T_h share. Edge order: (0,1), (0,2), ..., (0,r-1), (1,2), ...,
+(r-2,r-1). Every mode joins two different groups, so every mode lies on exactly one edge.
+
+Profiles. Every edge has its shells: self.shells(sorted modes of the edge), in increasing weight (an edge without
+modes has the single shell [{}] of weight 0). A profile picks one shell per edge with total weight < p. Enumerate
+them depth first: edges in edge order, shells in increasing weight; at an edge stop as soon as a shell's weight
+reaches the remaining budget (p minus the weights already chosen). Inside a profile every edge has a finite
+alphabet, the tuples of its shell in shell order: N_e tuples and b_e = (N_e - 1).bit_length() bits.
+
+Order choice, two module-level functions:
+- pf_cost(order, bits, r): order = tuple of the positions 0..r-1; bits = dict {(i, j): b_e} over all edges (i < j).
+  For k = 1..r-1: A = order[:k], B = order[k], C = order[k+1:]; X = sum of the bits of the edges between A and B,
+  Y = between A and C, Z = between B and C; v_k = 125 * (X + Y + Z) - 24 * min(X, Y, Z). Return max over k of v_k
+  (an integer: 125 times the Strassen cost exponent of the step with alpha = 101/125).
+- pf_choose(bits, r, menu=None): menu = PF_MENUS[r] of appd_assembly_public when None; costs = [pf_cost(o, bits, r)
+  for o in menu]; j = the index of the smallest cost, the smallest index among equal costs; return (j, costs).
+
+sum_prof(self) (a NodeExpansion method; returns (series, records, child_calls)), pseudo-code:
+    child_calls = 0; tables = group_table(g) for every group; r = len(r_groups); menu = PF_MENUS[r]
+    edges and profiles as above; total = zero series; records = []
+    for each profile, in enumeration order:
+        alph[e] = the chosen shell of edge e (list of tuples); sizes[e] = len(alph[e])
+        bits = {(i, j): (sizes[e] - 1).bit_length() for every edge e = (i, j)}
+        j, costs = pf_choose(bits, r, menu)      # call it by this name, exactly once per profile
+        value, shapes = the profile's network contracted in the order menu[j] (below)
+        total += value
+        records.append(dict(weights=[weight of the chosen shell, per edge], sizes=sizes, order=j, costs=costs,
+                            shapes=shapes, value=value mod 2^p))
+    return total, records, self.child_calls
+
+Contraction of one profile in an order (positions):
+    entry(g, one tuple per edge of g) = tables[g][self.key(union of those tuples)]
+    state T: dict from (one alphabet index per open edge) to series; the open edges are the edges with exactly
+    one end processed, kept in edge order.
+    start: processed = {order[0]}; T[c] = entry(order[0], c) for every combination c of its edges' alphabets.
+    for k = 1..r-1:
+        b = order[k]; AB = the open edges touching b; AC = the other open edges (both in open-edge order);
+        BC = the edges of b that are not open (to groups later in the order), in edge order
+        rows = itertools.product over the AC alphabets (index tuples), inner = over AB, cols = over BC
+        Am[row][inner] = T[the AC and AB indices placed in open-edge order]
+        Bm[inner][col] = entry(b, the AB and BC indices)
+        Cm = matmul(Am, Bm, q, 2^p)          # the module-level matmul, one call per step
+        shapes.append((len(rows), len(inner), len(cols)))
+        processed += {b}; the new open edges are AC and BC in edge order; T[their indices] = Cm[row][col]
+    value = T[()] after the last step.
+
+node_value(..., method="prof"): ser, records, calls = ne.sum_prof(); stats = {"records": records, "child_calls":
+calls, "modes": len(ne.modes)}. count_e2e(..., method="prof"): at every node ne.sum_prof() when len(ne.r_groups) is
+a key of PF_MENUS (4 to 16 groups), otherwise ne.sum_dp() (as for the default method).
+Every mode tuple of weight < p lies in exactly one profile, so the profile values add up to sum_paper exactly, in
+any order. The referee checks pf_choose on random bits, every per-profile record and the shape of every matmul
+call, again after replacing pf_choose by a chooser that cycles through the menu, and end-to-end counts, with
+sum_paper, sum_memo, sum_dp, sum_mm and sum_cross blocked.
+
+Why it is cheaper (the cost model, flag profile): with one fixed order the worst profile sets the cost; choosing the
+order per profile pays only min over the menu, and min <= the mean of the orders' cost envelopes. With
+log2 N_e <= beta sqrt(2 w_e) and Cauchy-Schwarz this gives the mode fraction PF_EPS[r], an exact certificate over
+all combinations of one cost form per order (appd_assembly_public.pf_certificate). At seven groups 0.554 (one
+crossing) becomes 0.426 with the four orders of PF_MENUS[7]; whole bits add at most C(r, 2) bits per profile, and
+profiles and steps are polynomially many.

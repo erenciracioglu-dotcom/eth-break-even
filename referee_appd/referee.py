@@ -1,4 +1,4 @@
-"""FROZEN referee for the Appendix D route, version 6 (round 10: binary crossing gates). Usage: python referee.py <candidate_dir> <out_json>
+"""FROZEN referee for the Appendix D route, version 7 (round 11: profile-adaptive order gates). Usage: python referee.py <candidate_dir> <out_json>
 Runs the verify gate, then the score gate with the flags verify confirmed (separate processes)."""
 import json
 import os

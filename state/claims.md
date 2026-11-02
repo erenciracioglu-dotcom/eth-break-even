@@ -992,3 +992,45 @@ round 5 ends there.
   14 bits less (41.6); the constant comes from splitting the deviation budget over about 42 Lc stages because labels are pairs
   of unit schedules. A sharper balancing proof is the only size-related lever left; round 9's what-if (20 bits less
   slack: 661 -> 654, then the padding binds) puts it at about 1%. Not pursued.
+
+## Round 11 (2 November): a contraction order per shell profile (GPT-6 Astra) [T26, T27]
+- appd-profile [head-verified sketch; proposed by GPT-6 Astra, "Two contraction orders, chosen separately for each
+  shell profile", 2 November, after the head's verification of the cost model; extended by the head to menus of
+  three and four orders].
+  1. Complete profiles: every group pair e = (i, j) of a node gets one exact weight w_e (one shell of its modes),
+     sum_e w_e < p; every mode tuple of weight < p lies in exactly one profile, so the profile values add up to the
+     mode sum (D.8) in any contraction order. There are at most (p + 1)^C(r, 2) profiles, polynomially many.
+  2. Inside a profile every edge has a finite alphabet of N_e tuples, l_e = log2 N_e <= beta sqrt(2 w_e) (the
+     tuple bound of the frozen model, an exact Chernoff bound with the round-7 LDU mode lemma). A sequential order
+     costs, at step k (A the first k groups, B the next, C the rest), one shell matrix product with blocked
+     Strassen: 2^(X + Y + Z - (3 - omega) min(X, Y, Z)) = 2^max(alpha X + Y + Z, X + alpha Y + Z, X + Y + alpha Z),
+     alpha = omega - 2, X, Y, Z the sums of l_e over A-B, A-C, B-C; this also pays for reading and writing the
+     tables. So an order has the cost envelope C_pi(l) = max over its 3 (r - 1) forms a . l (coefficient 0 on the
+     edges inside A, B or C, alpha on one cross class, 1 on the other two).
+  3. Per profile the algorithm runs the cheapest order of a fixed menu (estimates with whole bits b_e = (N_e -
+     1).bit_length() and alpha' = 101/125 > alpha, since 7^125 < 2^351; ties to the smaller index). For any
+     weights lam_j >= 0 with sum 1: min_j C_j <= sum_j lam_j C_j = max over one form per order of
+     (sum_j lam_j a_j) . l <= beta sqrt(2P) ||sum_j lam_j a_j|| (Cauchy-Schwarz with sum_e w_e <= P). With uniform
+     lam the root fraction is eps <= (2 / r^2) max over the form combinations of ||mean of the forms||^2, computed
+     exactly with alpha' (integer arithmetic); whole bits add at most C(r, 2) bits per profile. Child tables are
+     memoised across profiles and stay in the child term; the polynomial factors (profiles, steps, block padding,
+     Strassen constants) cannot move a cell.
+  4. One order reproduces eps_mm(r) exactly (normalisation check). Menus (frozen in appd_assembly v7, PF_MENUS,
+     first order the identity): three orders for r = 4 and 11..16, four for r = 5..10, found by local search in the
+     cloud (search_orders.py); certificates PF_EPS (exact fractions): r = 4 0.4952, 5 0.4742, 6 0.4436, 7 0.4256,
+     8 0.4087, 9 0.4008, 10 0.3905, 11 0.4021, 12 0.3933, 13 0.3915, 14 0.3878, 15 0.3838, 16 0.3800 (one
+     crossing: 0.5545 to 0.5327; at r = 7 0.5544 -> 0.4256). A uniform profile costs the same in every sequential
+     order, so no menu of sequential orders goes below 2 (12 + 3 alpha)^2 / (21 * 49) = 0.404 at r = 7.
+  Head checks. Cloud: cert_head.py (independent re-derivation; Astra's four two-order certificates reproduced
+  exactly, 129201/250000, 196478/390625, 274603/562500, 51847/109375; one order = eps_mm(r)), finalize_menus.py
+  (exact integer certificates of the frozen menus). PC: pf_certificate in the v7 assembly (pure-Python re-derivation)
+  equals PF_EPS for r = 4..12; test_pf_head.py on 66 random nodes and find_pf_cases.py on 692 more (4 to 6
+  groups, power and LDU bases, chunks): the total equals (D.8) and sum_dp, every profile value equals a direct sum
+  over the profile's tuples and is the same in every order of the menu, and the chosen order follows the rule.
+  Caveat: head-level sketch, not peer reviewed; the bound lives in the frozen unit model.
+- referee_appd version 7: code flag profile (needs shellmm; mode fraction min(eps_mm, eps_bc1, PF_EPS[r]) for
+  4 <= r <= 16). Gates: pf_choose (the module-level rule on 160 random edge-bit dicts, r = 4..16), pf_node (14 hidden
+  nodes with 4 to 6 groups, 26 to 1,287 profiles, non-trivial choices in every one: the value and every per-profile
+  record with the other sums blocked, every step one matmul call of the recorded shape, and again with a chooser
+  that cycles through the menu, so the contraction must follow the chosen order) and pf_e2e (two end-to-end
+  counts with sum_prof at exactly the nodes with 4 to 16 groups, 6 and 4 of them). Validation: Validation of referee_appd version 7 (2 November, 17:19-17:28): the head solution verifies all 11 flags and scores 533 / 2,034 / 413 / 159 / 103 (third / occ3sat / ppsz / sharp3sat / brute); the untouched round-10 code keeps its 10 flags with profile false and its thresholds 646 / 2,531 / 497 / 186 / 112 (baseline unchanged); four wrong variants each verify the old 10 flags and lose the profile flag at the intended gate: always the first order (pf_node: records, matrix shapes and cycled run fail, values right), ties to the higher index (pf_choose), contraction without the matrix product (pf_node: matmul and cycled fail, values and records right), end-to-end count without sum_prof (pf_e2e: right count, sum_prof called 0 of 6 times).

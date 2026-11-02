@@ -1846,3 +1846,211 @@ def count_e2e_bc(n, clauses, chunks=True, Lc=2, r=4, seed=0, a=2, u=1):
         data[t] = ser
     got = red(recover(data, qm, a), p)
     return (got * pow(2, net.unused, 1 << p)) % (1 << p), crossed
+
+
+# ---- round 11 (appd-profile): Astra's profile-adaptive contraction orders (head reference)
+# Round 11 head reference (appd-profile): GPT-6 Astra's profile-adaptive contraction orders, head-verified.
+# The mode sum of a node with r >= 4 groups is split by complete shell profiles: every unordered group pair
+# (edge) e = (i, j), i < j positions in self.r_groups, gets one exact weight w_e (a shell of its modes), with
+# sum_e w_e < p. Inside a profile every edge has the finite alphabet of its shell (N_e tuples), and the profile's
+# network is contracted group by group in the cheapest order of the frozen menu PF_MENUS[r] (appd_assembly):
+# cost of an order = max over its steps k of 125 (X + Y + Z) - 24 min(X, Y, Z), with X, Y, Z the sums of the bits
+# b_e = (N_e - 1).bit_length() over the edges A-B, A-C, B-C (A the first k groups of the order, B the next one, C the
+# rest); 125 x the blocked-Strassen exponent with alpha = 101/125 > log2(7) - 2. Ties go to the smaller menu index.
+# Each step is one matrix product: rows = assignments of the A-C edges, inner = A-B, columns = B-C.
+# Every mode tuple lies in exactly one profile, so the profile values add up to the mode sum (D.8).
+
+import itertools
+import appd_assembly as _A
+
+PF_MENUS = _A.PF_MENUS
+PF_ALPHA_NUM, PF_ALPHA_DEN = _A.PF_ALPHA_NUM, _A.PF_ALPHA_DEN
+
+
+def pf_cost(order, bits, r):
+    """PF_ALPHA_DEN x the cost exponent bound of the sequential order (tuple of positions) for the edge bits
+    {(i, j): b} (i < j): max over steps k = 1..r-1 of 125 (X + Y + Z) - 24 min(X, Y, Z)."""
+    pos = {g: k for k, g in enumerate(order)}
+    best = 0
+    for k in range(1, r):
+        X = Y = Z = 0
+        for (i, j), b in bits.items():
+            ci = 0 if pos[i] < k else (1 if pos[i] == k else 2)
+            cj = 0 if pos[j] < k else (1 if pos[j] == k else 2)
+            c = (ci, cj) if ci <= cj else (cj, ci)
+            if c == (0, 1):
+                X += b
+            elif c == (0, 2):
+                Y += b
+            elif c == (1, 2):
+                Z += b
+        v = PF_ALPHA_DEN * (X + Y + Z) - (PF_ALPHA_DEN - PF_ALPHA_NUM) * min(X, Y, Z)
+        best = max(best, v)
+    return best
+
+
+def pf_choose(bits, r, menu):
+    """(index of the cheapest order of the menu, list of the costs); ties go to the smaller index."""
+    costs = [pf_cost(o, bits, r) for o in menu]
+    j = min(range(len(costs)), key=lambda t: (costs[t], t))
+    return j, costs
+
+
+def install_pf(mod):
+    NE = mod.NodeExpansion
+    ps_add_mod, naive_matmul = mod.ps_add_mod, mod.naive_matmul
+
+    def pf_edges(self):
+        """[((i, j), sorted modes between groups r_groups[i] and r_groups[j])] for i < j, in this order."""
+        G = self.r_groups
+        out = []
+        for i in range(len(G)):
+            for j in range(i + 1, len(G)):
+                ks = sorted(k for k, md in enumerate(self.modes) if {md["src"], md["tgt"]} == {G[i], G[j]})
+                out.append(((i, j), ks))
+        assert sum(len(ks) for _, ks in out) == len(self.modes), "a mode inside one group or outside r_groups"
+        return out
+
+    def pf_profiles(self, edges):
+        """Every complete profile, as a tuple of shell indices (one per edge, in edge order), with total weight < p;
+        edges in their order, shells in increasing weight (depth first). Also return the shells and weights."""
+        shells = [self.cross_shells(ks) for _, ks in edges]
+        wts = [[self.weight(sh[0]) for sh in shs] for shs in shells]
+        out = []
+
+        def rec(ei, left, cur):
+            if ei == len(edges):
+                out.append(tuple(cur))
+                return
+            for si, w in enumerate(wts[ei]):
+                if w >= left:
+                    break
+                cur.append(si)
+                rec(ei + 1, left - w, cur)
+                cur.pop()
+        rec(0, self.p, [])
+        return out, shells, wts
+
+    def pf_contract(self, order, edges, alph, tables, mm):
+        """Contract one profile's network in the given order (positions); mm(A, B, q, m) is the matrix product.
+        Return (value series, [(rows, inner, cols) per step])."""
+        q, M = self.q, self.m
+        G = self.r_groups
+        r = len(G)
+        inc_e = {i: [ei for ei, ((a, b), _) in enumerate(edges) if i in (a, b)] for i in range(r)}
+
+        def entry(i, idx):
+            g = G[i]
+            merged = {}
+            for ei in inc_e[i]:
+                merged.update(alph[ei][idx[ei]])
+            return tables[g][self.key(merged)]
+
+        def open_edges(aset):
+            return [ei for ei, ((a, b), _) in enumerate(edges) if (a in aset) != (b in aset)]
+
+        aset = {order[0]}
+        oe = open_edges(aset)
+        T = {}
+        for combo in itertools.product(*[range(len(alph[ei])) for ei in oe]):
+            T[combo] = entry(order[0], dict(zip(oe, combo)))
+        shapes = []
+        for k in range(1, r):
+            b = order[k]
+            AB = [ei for ei in oe if b in edges[ei][0]]
+            AC = [ei for ei in oe if b not in edges[ei][0]]
+            oes = set(oe)
+            BC = [ei for ei in inc_e[b] if ei not in oes]
+            rows = list(itertools.product(*[range(len(alph[ei])) for ei in AC]))
+            inner = list(itertools.product(*[range(len(alph[ei])) for ei in AB]))
+            cols = list(itertools.product(*[range(len(alph[ei])) for ei in BC]))
+            at = {ei: t for t, ei in enumerate(oe)}
+            Am = []
+            for rv in rows:
+                row = []
+                for iv in inner:
+                    key = [None] * len(oe)
+                    for ei, x in zip(AC, rv):
+                        key[at[ei]] = x
+                    for ei, x in zip(AB, iv):
+                        key[at[ei]] = x
+                    row.append(T[tuple(key)])
+                Am.append(row)
+            Bm = []
+            for iv in inner:
+                d = dict(zip(AB, iv))
+                Bm.append([entry(b, {**d, **dict(zip(BC, cv))}) for cv in cols])
+            Cm = mm(Am, Bm, q, M)
+            shapes.append((len(rows), len(inner), len(cols)))
+            aset.add(b)
+            noe = open_edges(aset)
+            T = {}
+            for ri, rv in enumerate(rows):
+                for ci, cv in enumerate(cols):
+                    d = dict(zip(AC, rv))
+                    d.update(zip(BC, cv))
+                    T[tuple(d[ei] for ei in noe)] = Cm[ri][ci]
+            oe = noe
+        return T[()], shapes
+
+    def sum_prof(self, menu=None):
+        """appd-profile: the mode sum through complete shell profiles, each contracted in the cheapest order of the
+        menu (PF_MENUS[r] by default). Return (series, records, child_calls); one record per profile in
+        enumeration order: weights, sizes, order (menu index), costs, shapes, value (entries mod 2^p)."""
+        r = len(self.r_groups)
+        assert r >= 4, "sum_prof needs at least four groups"
+        menu = menu or PF_MENUS[r]
+        self.child_calls = 0
+        tables = {g: self.group_table(g) for g in self.r_groups}
+        q, M = self.q, self.m
+        edges = pf_edges(self)
+        profs, shells, wts = pf_profiles(self, edges)
+        total = [0] * q
+        records = []
+        for prof in profs:
+            alph = [shells[ei][si] for ei, si in enumerate(prof)]
+            sizes = [len(a) for a in alph]
+            bits = {edges[ei][0]: (sizes[ei] - 1).bit_length() for ei in range(len(edges))}
+            j, costs = pf_choose(bits, r, menu)
+            val, shapes = pf_contract(self, menu[j], edges, alph, tables, naive_matmul)
+            total = ps_add_mod(total, val, M)
+            records.append(dict(weights=[wts[ei][si] for ei, si in enumerate(prof)], sizes=sizes, order=j,
+                                costs=costs, shapes=shapes, value=[int(c) % M for c in val]))
+        return total, records, self.child_calls
+
+    NE.pf_edges = pf_edges
+    NE.pf_profiles = pf_profiles
+    NE.pf_contract = pf_contract
+    NE.sum_prof = sum_prof
+    return mod
+
+
+install_pf(sys.modules[__name__])
+
+
+def count_e2e_pf(n, clauses, chunks=True, Lc=2, r=4, seed=0, a=2, u=1):
+    """Exact #F with the power-of-two packing of count_e2e (ldu basis, sharp weights): sum_prof at every node with
+    4 to 16 groups, sum_dp otherwise. Return (count, number of nodes that used sum_prof)."""
+    rng = random.Random(seed)
+    net = chunk_net_mapped(n, clauses, make_units(n, clauses, Lc, rng)) if chunks else formula_net(n, clauses)
+    labels = [tuple(rng.randrange(r) for _ in range(a)) for _ in net.verts]
+    pk = Packing(net, labels, a)
+    M = len(net.wires)
+    L = pk.L
+    h = M * (2 * L - 1) // sum((L >> i) * (u - i) for i in range(u)) + 1
+    qm = multiplicities(a, u, h)
+    p = n + 1
+    data, used = {}, 0
+    for t, qt in sorted(qm.items()):
+        if qt == 0:
+            continue
+        Pt = p + loss_bits(qm, a, t)
+        ne = NodeExpansion(net, pk, labels, t, Pt, qt, weights="sharp", basis="ldu")
+        if len(ne.r_groups) in PF_MENUS:
+            ser = ne.sum_prof()[0]
+            used += 1
+        else:
+            ser = ne.sum_dp()[0]
+        data[t] = ser
+    got = red(recover(data, qm, a), p)
+    return (got * pow(2, net.unused, 1 << p)) % (1 << p), used
