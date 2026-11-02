@@ -1,15 +1,15 @@
-"""FROZEN Appendix D assembly, referee_appd version 5 (2026-11-01, round 8: guarded flag).
+"""FROZEN Appendix D assembly, referee_appd version 6 (2026-11-02, round 10: bincross flag).
 
 Cost exponent e (cost ~ 2^(e n), lam = log2 n, polynomial factors ignored) of the tensor-contraction algorithm
 of Appendix D (Theorem D.1) on 3-CNF with at most three occurrences per variable, with the head-audited steps of
 state/claims.md: appd-tight, appd-bernstein, appd-memo, appd-modedp, appd-chunks, appd-perclass, appd-leafvars,
-appd-labelfree, appd-newton, appd-ldu, appd-shellmm, appd-guarded. All wire counts are per n.
+appd-labelfree, appd-newton, appd-ldu, appd-shellmm, appd-guarded, appd-bincross. All wire counts are per n.
 
 params = {"levels": L in 1..3, "r": [r_0..r_{L-1}] groups per level, "u": [u_d] retained valuation levels
 (integers >= 2), "a": [a_d] packet coordinates (L_d = 2^a_d, integers), "delta": balance tolerance,
 "Lc": chunk size, and boolean flags memo, modedp, chunks, perclass, leafvars, labelfree, newton, ldu,
-shellmm, guarded} plus, with guarded, "kappa": [kappa_d] (guard width H_d = 2^(a_d - kappa_d), 2 <= kappa_d <= 30).
-Flags memo, modedp, chunks, leafvars, newton, ldu, shellmm and guarded count only when the verify gate confirmed the agent's code
+shellmm, guarded, bincross} plus, with guarded, "kappa": [kappa_d] (guard width H_d = 2^(a_d - kappa_d), 2 <= kappa_d <= 30).
+Flags memo, modedp, chunks, leafvars, newton, ldu, shellmm, guarded and bincross count only when the verify gate confirmed the agent's code
 for them (see referee.py); perclass and labelfree are accounting facts (audited) and need no code.
 newton (appd-newton): crossing entries expanded in binomial moments, source forms sum_j binom(j, b) X_(y0 + c j);
 the weight of mode b grows by v2(b!) >= b - log2(b + 1), so a class has about W/2 modes of weight <= W instead of W:
@@ -23,6 +23,17 @@ guarded (appd-guarded, GPT-6 Astra): packets are virtual grids of Q = 2^a slots 
 slots at both ends and the deformation W~_xy(T) = l_y(x + T) (Lagrange basis on the grid, degree Q - 1 instead of
 2Q - 1); nodes in [-H, H). The LDU modes and weights are unchanged, the Hermite loss halves and the packets hold
 N = Q - 2H wires: K p scales by gamma_guard(a, kappa); headroom and inherited precision by need_bits, next_lp.
+bincross (appd-bincross, GPT-6 Astra, head-verified): one binary crossing in the mode sum of every level with
+r >= 5 groups. The two group-pair edges x = (g1, g3) and y = (g2, g4) are equality wires; on padded shell codes
+of a and b bits the pair is SWAP^(m) (x) I, m = min(a, b), and SWAP^(m) = sum_i A_i with A_i = [t^i](I - tJ)^(m),
+J = v v^T, v = (0, 1, -1, 0). A_i factors integrally through R_i (row: pairs {g1, g2}, {g3, g4}) or C_i (column:
+pairs {g1, g4}, {g2, g3}) channels with unimodular S, T; column for 2i <= m, row otherwise, so every piece has at
+most 2^(c m) channels, c = log2(12)/2. The transforms are tensor products of 4 x 4 integer matrices (cost
+O(m^2) per entry of the old pair table, no division). The new index theta (grade wx + wy) has at most
+2^(max(a,b) + (c-1) min(a,b)) values, i.e. u_theta = 2 (1 + (c - 1)^2) = 3.256 mode units instead of 4. Costs in
+mode units (2 per group pair): preparing a pair table 4r - 6 - 2 eta, absorbing it 4r - 8, then A, the r - 4
+singletons one at a time and B last with the pair-pair edge 4 + u_theta (eps_bc1 below); the mode fraction of a
+level is min(eps_mm(r), eps_bc1(r)). Needs shellmm.
 """
 import math
 
@@ -30,8 +41,9 @@ LN2 = math.log(2.0)
 TARGETS = {"third": 1.0 / 3.0, "occ3sat": math.log2(1.1199), "ppsz": math.log2(1.307031578),
            "sharp3sat": math.log2(1.637), "brute": 1.0}
 PRIMARY = "third"            # fair counting competitor for this class: 2^(n/3) (pathwidth DP)
-FLAGS = ("memo", "modedp", "chunks", "perclass", "leafvars", "labelfree", "newton", "ldu", "shellmm", "guarded")
-CODE_FLAGS = ("memo", "modedp", "chunks", "leafvars", "newton", "ldu", "shellmm", "guarded")
+FLAGS = ("memo", "modedp", "chunks", "perclass", "leafvars", "labelfree", "newton", "ldu", "shellmm", "guarded",
+         "bincross")
+CODE_FLAGS = ("memo", "modedp", "chunks", "leafvars", "newton", "ldu", "shellmm", "guarded", "bincross")
 
 
 def eps_dp(r):
@@ -62,11 +74,36 @@ def eps_mm(r):
     return max([2.0 * (r - 1) / float(r * r)] + [f_mm(k - 1, 1, r - k, r) for k in range(2, r + 1)])
 
 
+ETA_MM = 1.0 - (OMEGA_MM - 2.0) ** 2           # Strassen discount of the smallest index set
+C_BIN = 0.5 * math.log2(12.0)                 # appd-bincross: channels per paired bit, 2^c = sqrt(12)
+U_THETA = 2.0 * (1.0 + (C_BIN - 1.0) ** 2)     # mode units of the crossing index theta (two plain edges: 4)
+
+
+def eps_bc1(r):
+    """appd-bincross: mode fraction with one binary crossing (r >= 5; eps_mm otherwise). Steps in mode units: the
+    pair tables 4r - 6 - 2 eta (prepare) and 4r - 8 (absorb); then pair A takes the t = r - 4 singletons one at a
+    time (step j: shared 2j + 2, A side h + 4(t - j) + 4(j - 1) + 2(j - 1)(t - j), singleton side 4 + 2(t - j),
+    h = 4 + u_theta) and pair B comes last (h + 4t). Equal to the exact best merge tree for r <= 16 (head DP)."""
+    if r < 5:
+        return eps_mm(r)
+    t, h = r - 4, 4.0 + U_THETA
+    qs = [4.0 * r - 6.0 - 2.0 * ETA_MM, 4.0 * r - 8.0, h + 4.0 * t]
+    for j in range(1, t + 1):
+        X = 2.0 * j + 2.0
+        Y = h + 4.0 * (t - j) + 4.0 * (j - 1) + 2.0 * (j - 1) * (t - j)
+        Z = 4.0 + 2.0 * (t - j)
+        qs.append(X + Y + Z - ETA_MM * min(X, Y, Z))
+    return min(eps_mm(r), max(qs) / float(r * r))
+
+
 def eps_mode(r, fl):
-    """Mode fraction of the root sum: all modes without modedp, eps_dp with it, eps_mm with shellmm as well."""
+    """Mode fraction of the root sum: all modes without modedp, eps_dp with it, eps_mm with shellmm as well and
+    min(eps_mm, eps_bc1) with bincross."""
     if not fl.get("modedp"):
         return f_all(r)
-    return eps_mm(r) if fl.get("shellmm") else eps_dp(r)
+    if not fl.get("shellmm"):
+        return eps_dp(r)
+    return eps_bc1(r) if fl.get("bincross") else eps_mm(r)
 
 
 def gamma_guard(a, kappa):
@@ -148,6 +185,8 @@ def exponent_of(params, lam):
         return _bad("modedp needs memo (the elimination reads the child tables)")
     if fl["shellmm"] and not fl["modedp"]:
         return _bad("shellmm needs modedp (it reorganises the group-by-group sum)")
+    if fl["bincross"] and not fl["shellmm"]:
+        return _bad("bincross needs shellmm (its merges are shell matrix products)")
     if fl["leafvars"] and not (fl["chunks"] and L == 1):
         return _bad("leafvars applies to the depth-1 leaves of a chunk network only")
     for d in range(L):

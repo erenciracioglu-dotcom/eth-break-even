@@ -185,9 +185,78 @@
   "after": [
    "T21"
   ],
-  "status": "running",
+  "status": "done",
   "priority": 40,
   "max_attempts": 3,
+  "steps": 40,
+  "attempts": 1,
+  "result": "third threshold 686 -> 663 (3.35% lower threshold)",
+  "done_iter": 8
+ },
+ {
+  "id": "T23",
+  "title": "Binary crossing transforms bc_mask, bc_left, bc_right (appd-bincross, part 1)",
+  "kind": "code",
+  "files": [
+   "appd_core.py"
+  ],
+  "spec": "Round 10, part 1. Read NOTES.md, section 'Round 10'. Add three module-level functions at the end of appd_core.py; change nothing else (smoke_appd.py must still print SMOKE OK).\n1. bc_mask(m, i, pairing): the list of words w in range(4 ** m), increasing, with at least i zero base-4 digits when pairing == 'row', or at least m - i zero digits when pairing == 'col'. Digit k of w (k = 0 the most significant) is (w >> (2 * (m - 1 - k))) & 3.\n2. bc_left(vec, m, pairing, q, mod): vec is a list of 4 ** m entries, each None (meaning zero) or a series (list of q ints). Return a new list of 4 ** m series (no None) equal to (M^T)^(x)m vec mod mod, with M = S for 'row' and M = K T for 'col' (matrices in NOTES.md). One digit at a time: for k in range(m): new[w2] = sum over d in 0..3 of A[d2][d] * old[w2 with digit k replaced by d], where d2 is digit k of w2 and A = M^T, i.e. A[d2][d] = M[d][d2]. Multiply series by the small integer entry coefficientwise and reduce mod mod.\n3. bc_right(vec, m, pairing, q, mod): return a list R of m + 1 lists of 4 ** m series, R[i] = [t^i] (N0 + t N1)^(x)m vec mod mod, with (N0, N1) from NOTES.md for 'row' and for 'col'. Keep one vector per power of t (start with [vec]); at digit k apply N0 to every vector (same power) and N1 (power + 1) with the same digit rule as in 2 (here A = N0 or N1 directly, no transpose), adding results that land on the same power.\nm = 0 is allowed: one word (0); bc_left returns [vec[0] or q zeros], bc_right returns [[vec[0] or q zeros]]. Never modify the input list or its series.\ncheck_t23.py compares the three functions with dense Kronecker products and checks that the pieces add up to the crossing; the hidden referee compares them with its own copy on other random vectors.",
+  "stop": "check_t23.py prints T23 OK and smoke_appd.py prints SMOKE OK",
+  "needs_flags": [
+   "bc_fast"
+  ],
+  "after": [],
+  "status": "open",
+  "priority": 41,
+  "max_attempts": 3,
   "steps": 40
+ },
+ {
+  "id": "T24",
+  "title": "NodeExpansion.sum_cross and method 'cross' (appd-bincross, part 2)",
+  "kind": "code",
+  "files": [
+   "appd_core.py"
+  ],
+  "spec": "Round 10, part 2. Read NOTES.md, section 'Round 10' (the pseudo-code of sum_cross is the spec). Use bc_mask, bc_left and bc_right from part 1 (already in appd_core.py).\n1. Add the method NodeExpansion.sum_cross(self) -> (series, records, child_calls) (inside the class, or as a module-level function followed by NodeExpansion.sum_cross = sum_cross). It must not call sum_paper, sum_memo, sum_dp or sum_mm (the referee blocks them while it runs); it uses self.group_table, self.tuples, self.shells, self.weight, self.key, self.inc, self.modes (src, tgt), self.r_groups, ps_mul_mod and ps_add_mod. It needs at least four groups.\n2. Groups g1, g2, g3, g4 = self.r_groups[:4], singletons = self.r_groups[4:]; X = sorted modes k with {modes[k]['src'], modes[k]['tgt']} == {g1, g3}, Y the same for {g2, g4}; others = all other modes. Shells: self.shells(X) and self.shells(Y) in their order; the code of a tuple is its position in its shell; a = (len(shell) - 1).bit_length().\n3. Blocks: row -> left (g1 holding x, g2 holding y), right (g4 holding u, g3 holding v); col -> left (g1 holding x, g4 holding u), right (g2 holding y, g3 holding v); x and v come from the X shell (a bits), y and u from the Y shell (b bits). A block's word: m = min(a, b) digits, digit k = 2 * (bit k of the top m bits of the FIRST end's code) + (bit k of the top m bits of the SECOND end's code), most significant first; e = the low |a - b| bits of whichever end has the longer code (0 when a == b).\n4. records: one dict per (shell of X, shell of Y with wx + wy < p, i in 0..m), in loop order (X shells increasing, then Y shells, then i), with keys wx, wy, nx (= len X shell), ny, a, b, m, i, pairing ('col' if 2 * i <= m else 'row'), channels (= len(bc_mask(m, i, pairing))), extra (= |a - b|) and value (the piece's series, entries mod 2^p). The returned series is the sum of the piece values.\n5. node_value(..., method='cross'): ser, records, calls = ne.sum_cross(); stats = {'records': records, 'child_calls': calls, 'modes': len(ne.modes)}. count_e2e(..., method='cross'): at every node use ne.sum_cross() when len(ne.r_groups) >= 4, otherwise ne.sum_dp() (as for the default method).\nPitfalls: restrict every tuple to self.inc[g] before self.key(...) for a lookup in tables[g]; the budget is p - wx - wy for tuples(bnd, budget) and tuples(others, budget); bnd of a block = sorted((inc[hA] | inc[hB]) - X - Y) (its inner edge stays in bnd); keep every series mod 2^p.\ncheck_t24.py compares node values with method 'dp' and the records with the head's records on public nodes, and runs count_e2e with method 'cross'.",
+  "stop": "check_t24.py prints T24 OK and smoke_appd.py prints SMOKE OK",
+  "needs_flags": [
+   "bc_fast",
+   "bincross"
+  ],
+  "after": [
+   "T23"
+  ],
+  "status": "open",
+  "priority": 42,
+  "max_attempts": 3,
+  "steps": 60
+ },
+ {
+  "id": "T25",
+  "title": "Switch on the verified bincross flag in the parameter search",
+  "kind": "score",
+  "files": [
+   "appd_params.py"
+  ],
+  "spec": "Round 10, part 3. The frozen model (appd_assembly_public.py, version 6) has the code flag bincross: with shellmm and bincross the mode fraction of a level is eps_bc1(r) instead of eps_mm(r) (NOTES.md, section 'Round 10'). Change only appd_params.py: (1) in choose_params add bincross=False to the base flags dict and bincross=True to the flags.update(...) that switches on the code flags; (2) give rank_e a last parameter bincross=False and use A.eps_mode(r[d], {'modedp': True, 'shellmm': shellmm, 'bincross': bincross}) there; (3) where choose_params calls rank_e, pass flags['bincross'] after flags['shellmm']. Nothing else changes; one call must stay under 3 s.",
+  "stop": "check_t25.py prints T25 OK",
+  "needs_flags": [
+   "memo",
+   "modedp",
+   "chunks",
+   "newton",
+   "ldu",
+   "shellmm",
+   "guarded",
+   "bincross"
+  ],
+  "after": [
+   "T24"
+  ],
+  "status": "open",
+  "priority": 43,
+  "max_attempts": 3,
+  "steps": 30
  }
 ]

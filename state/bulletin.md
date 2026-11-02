@@ -1,4 +1,5 @@
 # Bulletin (latest first)
+- 2026-11-02 00:39:15 iter_appd 008 T22 attempt 1: ACCEPTED - third threshold 686 -> 663 (3.35% lower threshold)
 - 2026-11-01 22:53:24 iter_appd 007 T21 attempt 1: ACCEPTED - third threshold 1,280 -> 686 (46.41% lower threshold)
 - 2026-11-01 21:02:43 iter_appd 006 T20 attempt 1: ACCEPTED - third threshold 1,370 -> 1,280 (6.57% lower threshold)
 - 2026-11-01 18:30:06 iter_appd 005 T18 attempt 1: ACCEPTED - third threshold 2,670 -> 1,370 (48.69% lower threshold)

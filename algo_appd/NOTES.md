@@ -97,3 +97,68 @@ est_u (and so rank_e) looks only at the padding budget, so the pre-rank always p
 and never refines the smaller chunk sizes, where the root balance leaves room for a larger u_0. With est_u = the
 smaller of the padding budget and the balance test, a finer Lc and delta grid and 20 refined candidates, the frozen
 model gives about 663 against 2^(n/3) (head dry run; the current search needs 686).
+
+## Round 10: one binary crossing with fast absorption (appd-bincross)
+Proposed by GPT-6 Astra, checked by the head (exact checks on 600 random nodes). The mode sum of a node is a tensor
+network on the groups: the modes whose two groups are {g, h} form one edge, and their exponent tuple is the index
+that T_g and T_h share. Take g1, g2, g3, g4 = r_groups[0], r_groups[1], r_groups[2], r_groups[3] and the two edges
+X = the modes of {g1, g3} and Y = the modes of {g2, g4}. Seen from the pairs {g1, g2} and {g3, g4} they cross.
+
+Codes. Fix a shell of X (exact weight wx) and a shell of Y (wy), from self.shells(X) and self.shells(Y) (keep their
+order). The code of a tuple is its position in its shell; a shell of N tuples has a = (N - 1).bit_length() bits
+(a = 0 when N = 1), most significant bit first. Let b be the bits of the Y shell and m = min(a, b). The top m bits of
+the two codes are paired; the low |a - b| bits of the longer code (call their value e) pass straight through.
+
+Pieces. x and v are the X-tuples seen at g1 and g3, y and u the Y-tuples seen at g2 and g4; the two edges say
+u = y and v = x. Per paired bit this is the 4 x 4 matrix SWAP = I - J with J = j j^T, j = (0, 1, -1, 0), on the digit
+2 * (first bit) + (second bit). For m bits SWAP^(m) = sum over i = 0..m of A_i = [t^i] (I - tJ)^(m) (the pieces).
+Each piece factors through few channels with integer matrices, in one of two pairings:
+- row pairing: left block A = (g1 holding x, g2 holding y), right block B = (g4 holding u, g3 holding v);
+- column pairing: left block A = (g1 holding x, g4 holding u), right block B = (g2 holding y, g3 holding v).
+Piece i uses the column pairing when 2 i <= m, otherwise the row pairing. A block's word has m base-4 digits, digit k
+(k = 0 the most significant) = 2 * (bit k of the first end's top bits) + (bit k of the second end's top bits).
+
+The three module-level helpers (vectors are lists of 4^m series, None = zero, index = word):
+- bc_mask(m, i, pairing): the words with at least i zero digits (row) or at least m - i zero digits (column), in
+  increasing order.
+- bc_left(vec, m, pairing, q, mod) = (M^T)^(m) vec with M = S (row) or K T (column): for k = 0..m-1 replace vec by
+  new[w'] = sum over d of M^T[d'][d] * vec[w' with digit k set to d], where d' = digit k of w'.
+- bc_right(vec, m, pairing, q, mod) = list R[0..m] with R[i] = [t^i] (N0 + t N1)^(m) vec: keep one vector per power of
+  t; at digit k, N0 keeps the power and N1 raises it by one.
+- piece i of a block pair = sum over w in bc_mask(m, i, pairing) of L[w] * R[i][w] (series products mod (2^p, z^q)).
+Matrices (row index = output digit d', column index = input digit d):
+  S    = [[0,1,0,0],[1,0,0,0],[-1,0,1,0],[0,0,0,1]]     K T = [[1,0,0,1],[0,0,-1,0],[0,-1,0,0],[1,0,0,0]]
+  row:    N0 = S^-1 = [[0,1,0,0],[1,0,0,0],[0,1,1,0],[0,0,0,1]]   N1 = -S^-1 J = [[0,-1,1,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]]
+  column: N0 = T^-1 P0 = [[1,0,0,1],[0,0,0,0],[0,0,0,0],[0,0,0,0]] N1 = -T^-1 = [[-1,0,0,0],[0,-1,0,0],[0,0,-1,0],[1,0,0,-1]]
+(M^T)[d'][d] = M[d][d']. check_t23.py compares the helpers with dense Kronecker products of these matrices.
+
+sum_cross (returns (series, records, child_calls)), pseudo-code:
+    child_calls = 0; tables = group_table(g) for every group; g1..g4 = r_groups[:4]; singles = r_groups[4:]
+    X, Y as above (sorted mode indices); others = every mode not in X or Y; total = zero series; records = []
+    blocks: row -> ((g1, x, g2, y), (g4, u, g3, v)); col -> ((g1, x, g4, u), (g2, y, g3, v))
+    for sx in shells(X), wx = its weight:  for sy in shells(Y), wy = its weight:
+        skip when wx + wy >= p; budget = p - wx - wy; a, b, m as above; the shell of x and v is sx (a bits), of y, u sy
+        for each pairing used by some i in 0..m, for each side (left, right) with block (hA, endA, hB, endB):
+            bnd = sorted((inc[hA] | inc[hB]) - X - Y)            (the block's other modes, its inner edge included)
+            for bt in tuples(bnd, budget), for code cA, tuple tA of endA's shell, for code cB, tuple tB of endB's shell:
+                val = tables[hA][key((bt + tA) restricted to inc[hA])] * tables[hB][key((bt + tB) restricted to inc[hB])]
+                word from the top m bits of cA (first) and cB (second); e = the low |a - b| bits of the longer code
+                add val into vecs[(e, key(bt))][word]
+            left side: L[(e, key)] = bc_left(vec, m, pairing, q, 2^p); right side: R[(e, key)] = bc_right(...)
+        for i in 0..m: pairing = col if 2 i <= m else row; mask = bc_mask(m, i, pairing); piece = zero series
+            for bt in tuples(others, budget):
+                kA = key(bt restricted to the left block's bnd); kB = key(bt restricted to the right block's bnd)
+                s = product over singles s of tables[s][key(bt restricted to inc[s])]
+                for e in 0..2^|a-b| - 1 with (e, kA) in L and (e, kB) in R:
+                    piece += s * (sum over w in mask of L[(e, kA)][w] * R[(e, kB)][i][w])
+            total += piece; records.append(dict(wx, wy, nx = len(sx), ny = len(sy), a, b, m, i, pairing, channels =
+            len(mask), extra = |a - b|, value = piece mod 2^p))
+Every assignment of total weight < p appears once in every piece, so the pieces add up to sum_paper exactly; a
+piece alone is the network with A_i in place of the two crossing edges. The referee checks the series and every
+record, with the old sums (sum_paper, sum_memo, sum_dp, sum_mm) blocked.
+
+Why it is cheaper (the cost model): a piece has at most 2^(c m) channels, c = log2(12)/2 = 1.79 per bit pair instead
+of 2, so the new index theta of a piece has 2^(max(a,b) + (c - 1) min(a,b)) values: 3.256 mode units instead of the
+4 of two edges. The transforms cost a factor m^2 per entry of the old pair table and use no division. With pair A,
+the singletons one at a time and pair B last the mode fraction drops from 0.5696 to 0.5544 at r = 7
+(appd_assembly_public.eps_bc1, flag bincross).

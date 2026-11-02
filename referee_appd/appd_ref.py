@@ -1631,3 +1631,218 @@ def count_e2e_g(n, clauses, chunks=True, Lc=2, r=3, seed=0, a=3, u=1, kappa=2, m
         data[t] = ser
     got = red(recover(data, qm, a), p)
     return (got * pow(2, net.unused, 1 << p)) % (1 << p)
+
+
+# ---- round 10 (appd-bincross): Astra's binary crossing with fast integral absorption (head reference)
+# Round 10 head reference (appd-bincross, GPT-6 Astra, head-verified): one binary crossing with fast integral
+# absorption in the mode sum of a node. install(mod) adds NodeExpansion.sum_cross to the module mod (appd_core or
+# appd_ref); the module-level helpers bc_mask, bc_left and bc_right are defined here.
+#
+# Conventions (also the task spec):
+# - groups g1, g2, g3, g4 = self.r_groups[0..3], singletons self.r_groups[4:]; X = the modes whose two groups are
+#   {g1, g3}, Y = the modes of {g2, g4} (the two crossing edges).
+# - shells: self.cross_shells(X), self.cross_shells(Y) = self.tuples(idx, self.p) split by exact weight, increasing
+#   weight, tuple order kept (the same lists as NodeExpansion.shells of appd_core); inside a shell the code of a tuple
+#   is its position in that list; a shell of N tuples has a = (N - 1).bit_length() bits (a = 0 when N = 1), most
+#   significant bit first; m = min(a, b); the top m bits of both codes are paired, the low |a - b| bits of the longer
+#   code (value e) pass through unchanged.
+# - word = base-4 number of m digits, digit k (most significant first) = 2 * (bit k of the first end) + (bit k of the
+#   second end). Row pairing: block A = (g1 with x, g2 with y), block B = (g4 with u, g3 with v); column pairing:
+#   A = (g1 with x, g4 with u), B = (g2 with y, g3 with v). Here x, v are the X-tuples seen at g1 and g3 and y, u the
+#   Y-tuples seen at g2 and g4. Piece i (0 <= i <= m) uses the column pairing when 2 i <= m, else the row pairing.
+# - bc_left(vec, m, pairing, q, mod) = (M^T)^{(x)m} vec, M = S (row) or K T (column);
+#   bc_right(vec, m, pairing, q, mod)[i] = [t^i] (N0 + t N1)^{(x)m} vec, (N0, N1) = (S^-1, -S^-1 J) (row) or
+#   (T^-1 P0, -T^-1) (column); vec is a list of 4^m series (None = zero); piece value of a block pair =
+#   sum over w in bc_mask(m, i, pairing) of L[w] * R[i][w].
+# - bc_mask(m, i, pairing): the words with at least i zero digits (row) or at least m - i zero digits (column).
+# - The per-piece value is the full contraction with the piece A_i in place of the two crossing wires, over all
+#   assignments of total weight < p (wx + wy + weight of the other modes); summing the pieces gives sum_paper.
+
+S_ROW = ((0, 1, 0, 0), (1, 0, 0, 0), (-1, 0, 1, 0), (0, 0, 0, 1))          # M for the row pairing
+KT_COL = ((1, 0, 0, 1), (0, 0, -1, 0), (0, -1, 0, 0), (1, 0, 0, 0))        # M = K T for the column pairing
+N_ROW = (((0, 1, 0, 0), (1, 0, 0, 0), (0, 1, 1, 0), (0, 0, 0, 1)),          # S^-1
+         ((0, -1, 1, 0), (0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)))         # -S^-1 J
+N_COL = (((1, 0, 0, 1), (0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)),          # T^-1 P0
+         ((-1, 0, 0, 0), (0, -1, 0, 0), (0, 0, -1, 0), (1, 0, 0, -1)))      # -T^-1
+OPS = [0]                                                                   # scalar * series terms (cost probe)
+
+
+def bc_mask(m, i, pairing):
+    need = i if pairing == "row" else m - i
+    return [w for w in range(4 ** m) if sum(1 for k in range(m) if (w >> (2 * k)) & 3 == 0) >= need]
+
+
+def _apply(vec, mat, k, m, mod):
+    """out[w'] = sum_d mat[d'][d] vec[w' with digit k replaced by d], d' = digit k of w' (k = 0 most significant)."""
+    sh = 2 * (m - 1 - k)
+    out = [None] * len(vec)
+    for w in range(len(vec)):
+        d2 = (w >> sh) & 3
+        base = w & ~(3 << sh)
+        acc = None
+        for d in range(4):
+            c = mat[d2][d]
+            src = vec[base | (d << sh)] if c else None
+            if src is None:
+                continue
+            OPS[0] += 1
+            term = [(c * x) % mod for x in src]
+            acc = term if acc is None else [(u + v) % mod for u, v in zip(acc, term)]
+        out[w] = acc
+    return out
+
+
+def bc_left(vec, m, pairing, q, mod):
+    M = S_ROW if pairing == "row" else KT_COL
+    MT = tuple(tuple(M[d][d2] for d in range(4)) for d2 in range(4))       # (M^T)[d2][d] = M[d][d2]
+    cur = list(vec)
+    for k in range(m):
+        cur = _apply(cur, MT, k, m, mod)
+    return [c if c is not None else [0] * q for c in cur]
+
+
+def bc_right(vec, m, pairing, q, mod):
+    N0, N1 = N_ROW if pairing == "row" else N_COL
+    polys = [list(vec)]
+    for k in range(m):
+        new = [[None] * len(vec) for _ in range(len(polys) + 1)]
+        for d, cur in enumerate(polys):
+            for shift, mat in ((0, N0), (1, N1)):
+                res = _apply(cur, mat, k, m, mod)
+                for w, val in enumerate(res):
+                    if val is None:
+                        continue
+                    old = new[d + shift][w]
+                    new[d + shift][w] = val if old is None else [(u + v) % mod for u, v in zip(old, val)]
+        polys = new
+    return [[c if c is not None else [0] * q for c in cur] for cur in polys]
+
+
+def install(mod):
+    NE = mod.NodeExpansion
+    ps_mul_mod, ps_add_mod = mod.ps_mul_mod, mod.ps_add_mod
+
+    def cross_shells(self, idx):
+        """self.tuples(idx, self.p) split by exact weight, in increasing weight, keeping the tuples order."""
+        byw = {}
+        for tpl in self.tuples(idx, self.p):
+            byw.setdefault(self.weight(tpl), []).append(tpl)
+        return [byw[w] for w in sorted(byw)]
+
+    def cross_setup(self):
+        g1, g2, g3, g4 = self.r_groups[:4]
+        pairof = {k: frozenset((md["src"], md["tgt"])) for k, md in enumerate(self.modes)}
+        X = sorted(k for k in pairof if pairof[k] == frozenset((g1, g3)))
+        Y = sorted(k for k in pairof if pairof[k] == frozenset((g2, g4)))
+        blocks = {"row": ((g1, "x", g2, "y"), (g4, "u", g3, "v")), "col": ((g1, "x", g4, "u"), (g2, "y", g3, "v"))}
+        return (g1, g2, g3, g4), X, Y, blocks
+
+    def sum_cross(self, force_pairing=None):
+        """appd-bincross: the sum of sum_paper through one binary crossing (groups r_groups[0..3]) with fast
+        absorption. Return (series, records, child_calls); records: one dict per (wx, wy, i), increasing."""
+        assert len(self.r_groups) >= 4, "the crossing needs four groups"
+        self.child_calls = 0
+        tables = {g: self.group_table(g) for g in self.r_groups}
+        q, M, p = self.q, self.m, self.p
+        (g1, g2, g3, g4), X, Y, blocks = cross_setup(self)
+        singles = self.r_groups[4:]
+        others = [k for k in range(len(self.modes)) if k not in set(X) | set(Y)]
+        total = [0] * q
+        records = []
+        for sx in cross_shells(self, X):
+            wx = self.weight(sx[0])
+            for sy in cross_shells(self, Y):
+                wy = self.weight(sy[0])
+                if wx + wy >= p:
+                    continue
+                budget = p - wx - wy
+                a, b = (len(sx) - 1).bit_length(), (len(sy) - 1).bit_length()
+                m = min(a, b)
+                shell = {"x": (sx, a), "v": (sx, a), "y": (sy, b), "u": (sy, b)}
+                piece_pairing = [force_pairing or ("col" if 2 * i <= m else "row") for i in range(m + 1)]
+                parts = {}
+                for pairing in sorted(set(piece_pairing)):
+                    sides = []
+                    for side, (hA, eA, hB, eB) in enumerate(blocks[pairing]):
+                        (shA, bitsA), (shB, bitsB) = shell[eA], shell[eB]
+                        bnd = sorted((set(self.inc[hA]) | set(self.inc[hB])) - set(X) - set(Y))
+                        vecs = {}
+                        for bt in self.tuples(bnd, budget):
+                            for cA, tA in enumerate(shA):
+                                kA = self.key({k: e for k, e in {**bt, **tA}.items() if k in self.inc[hA]})
+                                for cB, tB in enumerate(shB):
+                                    kB = self.key({k: e for k, e in {**bt, **tB}.items() if k in self.inc[hB]})
+                                    val = ps_mul_mod(tables[hA][kA], tables[hB][kB], q, M)
+                                    topA, topB = cA >> (bitsA - m), cB >> (bitsB - m)
+                                    e = (cA & ((1 << (bitsA - m)) - 1)) if bitsA > m else (cB & ((1 << (bitsB - m)) - 1))
+                                    wd = 0
+                                    for kk in range(m):
+                                        wd = 4 * wd + 2 * ((topA >> (m - 1 - kk)) & 1) + ((topB >> (m - 1 - kk)) & 1)
+                                    vec = vecs.setdefault((e, self.key(bt)), [None] * (4 ** m))
+                                    vec[wd] = val if vec[wd] is None else ps_add_mod(vec[wd], val, M)
+                        if side == 0:
+                            tr = {k: bc_left(v, m, pairing, q, M) for k, v in vecs.items()}
+                        else:
+                            tr = {k: bc_right(v, m, pairing, q, M) for k, v in vecs.items()}
+                        sides.append((tr, set(bnd)))
+                    parts[pairing] = sides
+                for i in range(m + 1):
+                    pairing = piece_pairing[i]
+                    (LA, bA), (RB, bB) = parts[pairing]
+                    mask = bc_mask(m, i, pairing)
+                    val = [0] * q
+                    for bt in self.tuples(others, budget):
+                        kA = self.key({k: e for k, e in bt.items() if k in bA})
+                        kB = self.key({k: e for k, e in bt.items() if k in bB})
+                        sval = [1] + [0] * (q - 1)
+                        for s in singles:
+                            sval = ps_mul_mod(sval, tables[s][self.key({k: e for k, e in bt.items()
+                                                                        if k in self.inc[s]})], q, M)
+                        for e in range(1 << abs(a - b)):
+                            L, R = LA.get((e, kA)), RB.get((e, kB))
+                            if L is None or R is None:
+                                continue
+                            acc = [0] * q
+                            for w in mask:
+                                acc = ps_add_mod(acc, ps_mul_mod(L[w], R[i][w], q, M), M)
+                            val = ps_add_mod(val, ps_mul_mod(acc, sval, q, M), M)
+                    total = ps_add_mod(total, val, M)
+                    records.append(dict(wx=wx, wy=wy, nx=len(sx), ny=len(sy), a=a, b=b, m=m, i=i, pairing=pairing,
+                                        channels=len(mask), extra=abs(a - b), value=[int(c) % M for c in val]))
+        return total, records, self.child_calls
+
+    NE.cross_setup = cross_setup
+    NE.cross_shells = cross_shells
+    NE.sum_cross = sum_cross
+    return mod
+
+
+install(sys.modules[__name__])
+
+
+def count_e2e_bc(n, clauses, chunks=True, Lc=2, r=4, seed=0, a=2, u=1):
+    """Exact #F with the power-of-two packing of count_e2e (ldu basis, sharp weights): sum_cross at every node with
+    at least four groups, sum_dp otherwise. Return (count, number of nodes that used sum_cross)."""
+    rng = random.Random(seed)
+    net = chunk_net_mapped(n, clauses, make_units(n, clauses, Lc, rng)) if chunks else formula_net(n, clauses)
+    labels = [tuple(rng.randrange(r) for _ in range(a)) for _ in net.verts]
+    pk = Packing(net, labels, a)
+    M = len(net.wires)
+    L = pk.L
+    h = M * (2 * L - 1) // sum((L >> i) * (u - i) for i in range(u)) + 1
+    qm = multiplicities(a, u, h)
+    p = n + 1
+    data, crossed = {}, 0
+    for t, qt in sorted(qm.items()):
+        if qt == 0:
+            continue
+        Pt = p + loss_bits(qm, a, t)
+        ne = NodeExpansion(net, pk, labels, t, Pt, qt, weights="sharp", basis="ldu")
+        if len(ne.r_groups) >= 4:
+            ser = ne.sum_cross()[0]
+            crossed += 1
+        else:
+            ser = ne.sum_dp()[0]
+        data[t] = ser
+    got = red(recover(data, qm, a), p)
+    return (got * pow(2, net.unused, 1 << p)) % (1 << p), crossed

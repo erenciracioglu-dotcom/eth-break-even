@@ -864,3 +864,57 @@ round 5 ends there.
   against 2^(n/3), 531 -> 508 against 1.307^n, 204 -> 190 against 1.637^n and 126 -> 114 against 2^n, 2,600 against
   1.1199^n unchanged, exactly the head's dry run. At clause density 4.26 the T22 search keeps 25,946 / 7,689 / 3,911
   (whatif_dens_v6.py: the optimum there already uses Lc = 2^20).
+
+## Round 10 (2 November): binary crossing with fast integral absorption (GPT-6 Astra) [T23, T24, T25]
+- appd-bincross [head-verified sketch; proposed by GPT-6 Astra, "Fast integral absorption of binary crossing
+  pieces", 2 November, after the head rejected the runtime claim of the Schur crossing pieces].
+  1. In the mode sum of a node the modes of the group pair {g1, g3} (edge x) and of {g2, g4} (edge y) are equality
+     wires between the group tables. For fixed shells (exact weights wx, wy) the tuples get codes of a and b bits
+     (absent codes are zero entries); on the top m = min(a, b) bit pairs the two wires are SWAP^(m) (digit
+     2 x_k + y_k -> 2 u_k + v_k with u = y, v = x); the low |a - b| bits of the longer code pass through.
+  2. SWAP = I - J, J = j j^T, j = (0, 1, -1, 0); SWAP^(m) = sum_{i=0..m} A_i with A_i = [t^i] (I - tJ)^(m).
+  3. Row factorisation: S unimodular with first column j, A_i = (S^(m) E_i)(E_i^T (S^-1)^(m) A_i), E_i = words with
+     >= i zero digits, R_i = sum_{k <= m-i} C(m, k) 3^k channels. Column flattening: colflat(I - tJ) = K (P0 - tI)
+     with K^2 = I, K P0 = P0; T unimodular with first column (1, 0, 0, 1): colflat(A_i) =
+     ((K T)^(m) F_i)(F_i^T (T^-1)^(m) B_i), F_i = words with >= m - i zero digits, C_i = sum_{k <= i} C(m, k) 3^k.
+     Column pairing for 2i <= m, row pairing otherwise: every piece has at most sum_{k <= m/2} C(m, k) 3^k <= 2^(c m)
+     channels, c = log2(12)/2 = 1.7925.
+  4. Fast application: (S^T)^(m), ((K T)^T)^(m), (S^-1 - t S^-1 J)^(m) and (T^-1 P0 - t T^-1)^(m) act digit by
+     digit: O(m^2 4^m) ring operations per assignment of the other indices of the old pair table, entries in
+     {-1, 0, 1}, no division.
+  5. The new index: log2 |theta_i| <= max(a, b) + (c - 1) min(a, b) <= beta sqrt(u_theta (wx + wy)) + O(1),
+     u_theta = 2 (1 + (c - 1)^2) = 3.2561 mode units instead of 4 (Cauchy-Schwarz on a <= beta sqrt(2 wx),
+     b <= beta sqrt(2 wy)); theta is graded by the original weight wx + wy and every cutoff uses original weights.
+  6. Cost in mode units (2 per group pair; shell/Strassen merges q = X + Y + Z - eta min(X, Y, Z)): pair tables
+     4r - 6 - 2 eta (prepare) and 4r - 8 (absorb); then pair A, the r - 4 singletons one at a time and pair B last,
+     pair-pair edge 4 + u_theta: eps_bc1(r), equal to the exact best merge tree for r <= 16. Old -> new: r = 5
+     0.5843 -> 0.5545, 6 0.5724 -> 0.5518, 7 0.5696 -> 0.5544, 8 0.5611 -> 0.5495; no gain at r = 4 (preparing a
+     pair already costs the old peak).
+  Head checks. Cloud: verify_binary.py (SWAP identity, both factorisations and their supports for m <= 4, ranks over
+  Q (mod p) equal to R_i and C_i, fast = dense for m <= 5 with O(m^2 4^m) operation counts); verify_k6.py (216 exact
+  K6 contractions with padded unequal alphabets: row-only, column-only and mixed pieces); crossing_dp.py (exact
+  merge-tree DP: reproduces eps_mm and Astra's table for r = 4..10). PC: bc_head.py on 600+ random nodes of the toy
+  algorithm (4 to 6 groups, power and LDU bases, chunks): total = (D.8) = sum_paper, per-piece values identical for
+  row-only, column-only and mixed pairings and equal to a dense evaluation with the explicit A_i. Astra's checker
+  and cost probe reproduced.
+  What-if with the T22 search on the patched model: 646 / 2,531 / 497 / 186 / 112 (from 663 / 2,600 / 508 / 190 /
+  114). Several disjoint crossings (k <= r/4, exact DP) lower eps only at r >= 9 and do not change the five values.
+  Caveat: head-level sketch, not peer reviewed; the bound lives in the frozen unit model.
+- referee_appd version 6: code flag bincross (needs shellmm; mode fraction min(eps_mm, eps_bc1)); non-scoring flag
+  bc_fast. Gates: bc_fast (bc_mask, bc_left, bc_right equal the reference on 20 random series vectors, m = 0..4, both
+  pairings), bc_node (15 hidden nodes with 4 to 6 groups, up to 129 pieces: the value and every per-piece record,
+  with sum_paper, sum_memo, sum_dp and sum_mm blocked and the transforms called) and bc_e2e (an end-to-end count with
+  sum_cross at exactly the nodes with four groups or more, 6 of them; a second case with 4 such nodes took over six
+  minutes in the agent-side code path and was left out). Validation: the head solution verifies all
+  ten flags (verify 179 s) and scores 646 / 2,531 / 497 / 186 / 112 (2.1 s per choose_params call); the current
+  code keeps its eight flags and 663 / 2,600 / 508 / 190 / 114; wrong variants fail bincross: flatpiece (all piece
+  values in piece 0: records), pairswap (row pairing for the low pieces: records), swapsign (one sign in -S^-1 J:
+  bc_fast) and lazy_e2e (count_e2e ignores the crossing: sum_cross calls 0 of 6).
+- Examined and set aside: Astra's Schur crossing pieces (head analysis on 1-2 November): integral and
+  factorial-free, but theta's Schur degree is tied to its edge shells; in the coupled cost model the rewrite costs
+  more at 2 x 2 (r = 4: 0.935 against 0.582) and 2 x 3 (r = 6: 0.638 against 0.572) and less only at 2 x 4
+  (r = 8: 0.541 against 0.561), where it still needs explicit piece tensors and would not beat one binary crossing at
+  r = 7 in the search.
+- Incident: at 10:46 the PC rebooted after a bugcheck 0x10E (VIDEO_MEMORY_MANAGEMENT_INTERNAL) while the head ran
+  about 16 search and referee processes at once; two of them reported MemoryError just before. The validation was
+  rerun with six processes (peak use well below 1 GB each); round 10 keeps background work to a few processes.

@@ -1,4 +1,4 @@
-"""FROZEN gates of referee_appd version 5 (round 8). Usage: python appd_gates.py <candidate_dir> <verify|score> <out_json> [verified_flags_json]
+"""FROZEN gates of referee_appd version 6 (round 10). Usage: python appd_gates.py <candidate_dir> <verify|score> <out_json> [verified_flags_json]
 
 verify: the agent's appd_core.py against the frozen reference appd_ref.py on hidden cases (cases_appd.json):
   node   - node_value(method = paper, memo, dp) equals F(t + alpha z) mod (2^p, z^q) from the frozen direct
@@ -24,10 +24,18 @@ verify: the agent's appd_core.py against the frozen reference appd_ref.py on hid
            the reference modes, weights, series source forms and coefficient residues; node_value(method dp
            and mm) equals (D.8) with the guarded deformation and the reference dp count; byvars on chunk
            networks; count_e2e(..., guarded=True, kappa) equals the brute-force count.
+  bincross (version 6; decides only the bincross flag, and bc_fast alone the bc_fast flag) - bc_mask, bc_left and
+           bc_right equal the reference on random series vectors for m = 0..4 and both pairings (bc_fast);
+           node_value(..., method="cross") on hidden nodes with four to six groups equals (D.8) / the reference
+           value and returns the reference per-piece records (shell weights and sizes, bits, pairing, channels,
+           pass-through bits and the exact value of every piece) while sum_paper, sum_memo, sum_dp and sum_mm of
+           the agent's NodeExpansion are blocked and bc_left / bc_right are called (bc_node);
+           count_e2e(..., basis="ldu", method="cross") equals the brute-force count and calls sum_cross at exactly
+           the nodes with at least four groups (bc_e2e).
   direct_taylor_mod and F_poly of the agent module are blocked while it runs.
   Verified flags: memo (every memo item), modedp (every dp item), chunks (every item on a chunk network and every
   chunk end-to-end count), leafvars (every byvars item), newton (every newton item), ldu (every ldu item),
-  shellmm (every mm item), guarded (every gd item).
+  shellmm (every mm item), guarded (every gd item), bc_fast (every bc_fast item), bincross (every bc item).
   With IMPLEMENTED = False
   nothing is tried and no code flag is verified (the gate still passes).
 score: break-even sizes from the agent's appd_params.choose_params(lam, target), re-scored here with the frozen
@@ -314,13 +322,142 @@ def guarded_items(C, cases):
     return items
 
 
+BC_KINDS = ("bc_fast", "bc_node", "bc_e2e")
+
+
+def _bc_norm(ser, mod):
+    return [int(x) % mod for x in ser]
+
+
+def _bc_canon(recs, mod):
+    keys = ("wx", "wy", "nx", "ny", "a", "b", "m", "i", "pairing", "channels", "extra")
+    return [tuple(d.get(k) for k in keys) + (tuple(int(x) % mod for x in d.get("value", [])),) for d in recs]
+
+
+def bc_items(C, cases):
+    """Round 10 (bincross): Astra's binary crossing with fast integral absorption. bc_fast: the module-level
+    transforms and masks equal the reference exactly; bc_node: node values and per-piece records through
+    NodeExpansion.sum_cross with the plain sums blocked; bc_e2e: end-to-end counts with sum_cross at the nodes with
+    at least four groups."""
+    if not all(callable(getattr(C, f, None)) for f in ("bc_mask", "bc_left", "bc_right")):
+        return [dict(kind=k, ok=False, error="appd_core has no bc_mask/bc_left/bc_right (round 10 not implemented)")
+                for k in BC_KINDS]
+    items = []
+    rng = random.Random(101010)
+    for m in range(5):
+        for pairing in ("row", "col"):
+            for rep_ in range(2):
+                q, mod = rng.choice([1, 2, 3]), 1 << rng.choice([3, 5, 8])
+                vec = [None if rng.random() < 0.15 else [rng.randrange(mod) for _ in range(q)] for _ in range(4 ** m)]
+                it = dict(kind="bc_fast", m=m, pairing=pairing, q=q, mod=mod)
+                try:
+                    okm = all([int(w) for w in C.bc_mask(m, i, pairing)] == R.bc_mask(m, i, pairing)
+                              for i in range(m + 1))
+                    L = C.bc_left([None if v is None else list(v) for v in vec], m, pairing, q, mod)
+                    Rr = C.bc_right([None if v is None else list(v) for v in vec], m, pairing, q, mod)
+                    wl, wr = R.bc_left(vec, m, pairing, q, mod), R.bc_right(vec, m, pairing, q, mod)
+                    okl = len(L) == 4 ** m and all(_bc_norm(a, mod) == _bc_norm(b, mod) for a, b in zip(L, wl))
+                    okr = len(Rr) == m + 1 and all(len(Rr[i]) == 4 ** m and all(
+                        _bc_norm(a, mod) == _bc_norm(b, mod) for a, b in zip(Rr[i], wr[i])) for i in range(m + 1))
+                    it.update(ok=bool(okm and okl and okr), mask=okm, left=okl, right=okr)
+                except Exception:  # noqa: BLE001
+                    it.update(ok=False, error=traceback.format_exc()[-400:])
+                items.append(it)
+    fast_bad = any(i["kind"] == "bc_fast" and not i["ok"] for i in items)
+    for cs in cases.get("bincross_node", []):
+        rng = random.Random(cs["seed"])
+        n_, cls, net, labels, pk = R.setup(rng, cs["n"], cs["m"], cs["a"], cs["r"], chunks=cs["chunks"], Lc=cs["Lc"])
+        M = len(net.wires)
+        C._WIREMAP.update({k: v for k, v in R._WIREMAP.items() if k[0] == id(net)})
+        nodes = [s for s in pk.S if s and R.v2(s) < pk.a]
+        t = nodes[int(cs["tpick"] * len(nodes)) % len(nodes)]
+        p, q, w, basis = cs["p"], cs["q"], cs["weights"], cs["basis"]
+        mod = 1 << p
+        it = dict(kind="bc_node", seed=cs["seed"], chunks=cs["chunks"], M=M, t=t, p=p, q=q, basis=basis)
+        if fast_bad:
+            it.update(ok=False, error="not run: a bc_fast check failed")
+            items.append(it)
+            continue
+        ref = R.NodeExpansion(net, pk, labels, t, p, q, weights=w, basis=basis)
+        want_ser, want_recs, _ = ref.sum_cross()
+        it.update(groups=len(ref.r_groups), modes=len(ref.modes), pieces=len(want_recs))
+        saved = {k: getattr(C.NodeExpansion, k, None) for k in ("sum_paper", "sum_memo", "sum_dp", "sum_mm")}
+        calls = {"left": 0, "right": 0}
+        orig_l, orig_r = C.bc_left, C.bc_right
+
+        def cl(*a, _o=orig_l, **k):
+            calls["left"] += 1
+            return _o(*a, **k)
+
+        def cr(*a, _o=orig_r, **k):
+            calls["right"] += 1
+            return _o(*a, **k)
+        try:
+            for k in saved:
+                setattr(C.NodeExpansion, k, _blocked)
+            C.bc_left, C.bc_right = cl, cr
+            ser, st = C.node_value(net, pk, labels, t, p, q, weights=w, method="cross", basis=basis)
+            ok_v = _bc_norm(ser, mod) == _bc_norm(want_ser, mod) == [int(x) for x in cs["value"]]
+            ok_r = _bc_canon(st.get("records", []), mod) == _bc_canon(want_recs, mod)
+            need = any(d["m"] >= 1 for d in want_recs)
+            ok_c = (calls["left"] > 0 and calls["right"] > 0) or not need
+            it.update(ok=bool(ok_v and ok_r and ok_c), value=ok_v, records=ok_r, transform_calls=dict(calls))
+        except Exception:  # noqa: BLE001
+            it.update(ok=False, error=traceback.format_exc()[-400:])
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    try:
+                        delattr(C.NodeExpansion, k)
+                    except AttributeError:
+                        pass
+                else:
+                    setattr(C.NodeExpansion, k, v)
+            C.bc_left, C.bc_right = orig_l, orig_r
+        items.append(it)
+    node_bad = fast_bad or any(i["kind"] == "bc_node" and not i["ok"] for i in items)
+    for cs in cases.get("bincross_e2e", []):
+        rng = random.Random(cs["seed"])
+        n = cs["n"]
+        cls = R.random_formula(n, cs["m"], rng)
+        it = dict(kind="bc_e2e", seed=cs["seed"], chunks=cs["chunks"], a=cs["a"], u=cs["u"], r=cs["r"])
+        if node_bad:
+            it.update(ok=False, error="not run: a bincross node check failed")
+            items.append(it)
+            continue
+        cnt = [0]
+        orig_sc = getattr(C.NodeExpansion, "sum_cross", None)
+        if orig_sc is None:
+            it.update(ok=False, error="NodeExpansion has no sum_cross")
+            items.append(it)
+            continue
+
+        def counting_sc(self, *a, _o=orig_sc, **k):
+            cnt[0] += 1
+            return _o(self, *a, **k)
+        try:
+            C.NodeExpansion.sum_cross = counting_sc
+            got = C.count_e2e(n, cls, chunks=cs["chunks"], Lc=cs["Lc"], r=cs["r"], seed=cs["seed"], a=cs["a"],
+                              u=cs["u"], basis="ldu", method="cross")
+            want_c = R.count_sat(n, cls)
+            it.update(ok=int(got) == want_c and cnt[0] == cs["cross_nodes"], got=int(got), want=want_c,
+                      sum_cross_calls=[cnt[0], cs["cross_nodes"]])
+        except Exception:  # noqa: BLE001
+            it.update(ok=False, error=traceback.format_exc()[-400:])
+        finally:
+            C.NodeExpansion.sum_cross = orig_sc
+        items.append(it)
+    return items
+
+
 def verify(cand):
     sys.path.insert(0, cand)
     import appd_core as C  # noqa: E402
     cases = json.load(open(os.path.join(HERE, "cases_appd.json")))
     items = []
     if not getattr(C, "IMPLEMENTED", False):
-        return {"ok": True, "implemented": False, "items": [], "flags": {k: False for k in A.CODE_FLAGS}}
+        return {"ok": True, "implemented": False, "items": [],
+                "flags": dict({k: False for k in A.CODE_FLAGS}, bc_fast=False)}
     C.direct_taylor_mod = _blocked
     C.F_poly = _blocked
     for cs in cases["node"]:
@@ -381,10 +518,12 @@ def verify(cand):
     items += newton_items(C, cases, basis="ldu")
     items += mm_items(C, cases)
     items += guarded_items(C, cases)
+    items += bc_items(C, cases)
     nk = ("newton_modes", "newton_paper", "newton_memo", "newton_dp", "newton_byvars", "newton_e2e")
     lk = tuple("ldu" + k[len("newton"):] for k in nk)
     mk = ("mm_matmul", "mm_node", "mm_e2e")
     gk = GUARD_KINDS
+    bk = BC_KINDS
     core = ("paper", "memo", "dp", "byvars", "e2e")       # the newton items only decide the newton flag
     flags = {
         "memo": all(i["ok"] for i in items if i["kind"] == "memo") and any(i["kind"] == "memo" for i in items),
@@ -396,9 +535,11 @@ def verify(cand):
         "ldu": all(i["ok"] for i in items if i["kind"] in lk) and all(any(i["kind"] == k for i in items) for k in lk),
         "shellmm": all(i["ok"] for i in items if i["kind"] in mk) and all(any(i["kind"] == k for i in items) for k in mk),
         "guarded": all(i["ok"] for i in items if i["kind"] in gk) and all(any(i["kind"] == k for i in items) for k in gk),
+        "bincross": all(i["ok"] for i in items if i["kind"] in bk) and all(any(i["kind"] == k for i in items) for k in bk),
+        "bc_fast": all(i["ok"] for i in items if i["kind"] == "bc_fast") and any(i["kind"] == "bc_fast" for i in items),
     }
     return {"ok": all(i["ok"] for i in items if i["kind"] in core), "implemented": True, "items": items, "flags": flags,
-            "counts": {k: sum(1 for i in items if i["kind"] == k) for k in ("paper", "memo", "dp", "byvars", "e2e") + nk + lk + mk + gk}}
+            "counts": {k: sum(1 for i in items if i["kind"] == k) for k in ("paper", "memo", "dp", "byvars", "e2e") + nk + lk + mk + gk + bk}}
 
 
 def score(cand, verified):
