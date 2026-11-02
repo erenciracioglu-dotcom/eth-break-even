@@ -315,9 +315,12 @@
   "after": [
    "T26"
   ],
-  "status": "running",
+  "status": "done",
   "priority": 45,
   "max_attempts": 3,
-  "steps": 30
+  "steps": 30,
+  "attempts": 1,
+  "result": "third threshold 646 -> 533 (17.49% lower threshold)",
+  "done_iter": 14
  }
 ]

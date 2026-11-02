@@ -1,4 +1,5 @@
 # Bulletin (latest first)
+- 2026-11-02 18:19:40 iter_appd 014 T27 attempt 1: ACCEPTED - third threshold 646 -> 533 (17.49% lower threshold)
 - 2026-11-02 18:11:03 iter_appd 013 T26 attempt 1: ACCEPTED - gates pass, no regression: third threshold 646 -> 646
 - 2026-11-02 13:46:20 iter_appd 012 T25 attempt 1: ACCEPTED - third threshold 663 -> 646 (2.56% lower threshold)
 - 2026-11-02 13:29:16 iter_appd 011 T24 attempt 2: ACCEPTED - gates pass, no regression: third threshold 663 -> 663
