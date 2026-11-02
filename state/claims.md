@@ -961,3 +961,34 @@ round 5 ends there.
   measure the group-by-group contraction with its edge bits on its own (a dynamic program like the 2^(n/3)
   path-decomposition count). Below those sizes the search is erratic (e < 1 again at 13-34, invalid at 36-41,
   its fallback at 43-55). The cost model's regime conditions are not re-checked at these sizes.
+
+## Verification of the cost model after round 10 (2 November, asked by the owner of the page; head only)
+- Scan (work/head/verify_r10/scan_appd.py; frozen assembly v6, the T25 search, 286 evaluations from log2 n = 64 to
+  3,200 on a 1.5% grid, then 4,000 to 10^9, integer bisection): e(lam) decreases monotonically, no grid point is
+  invalid, and the five cells come out exactly as scored, 646 / 2,531 / 497 / 186 / 112, each a size from which the
+  route stays ahead (no grid point below the target before it). Margins at the cells: 1/3 - e = 1.3e-4 (646),
+  3.4e-5 (2,531), 3.9e-4 (497), 3.8e-3 (186), 2.1e-3 (112).
+- Condition margins at the cells (bits): at 646 (r = 7, 7, 10; u = 105, 86, 59; a = 128, 216, 276; delta = 0.002;
+  Lc = 256; kappa = 10) the root label balance has 0.82, the root padding 4.27; at 497 the root balance 0.84; at 186
+  and 112 (one level) the balance 0.63 and 0.72; at 2,531 (Lc = 2^20) the root padding 0.94. The precision headroom
+  is tight at every level by construction (the search takes the smallest a), and it does not depend on lam.
+- The counting formulas are upper bounds at every size, not asymptotic estimates. (a) Tuples: if the sorted mode
+  weights satisfy w_i >= i/K, then for every t > 0 #(tuples of weight <= N) <= e^(tN) prod_i (1 - e^(-t w_i))^(-1)
+  <= exp(tN + K pi^2/(6t)) (sum of f(i/K) <= K int f for decreasing f), so ln # <= 2 pi sqrt(KN/6); tup() is exactly
+  this with K = cK (1 + dm) f M/D and N = 6 h D (the mode-weight premise is the round 7 LDU lemma). (b) shellmm:
+  X Y Z min(X, Y, Z)^(omega - 3) is nondecreasing in each argument, so the tuple bounds and Cauchy-Schwarz give
+  (2 pi/sqrt 6) sqrt((K_X + K_Y + K_Z - eta K_min) N) for every shell triple, i.e. f_mm. (c) bincross: a and b are at
+  most the shell bounds plus one bit, and Cauchy-Schwarz on sqrt(wx) + (c - 1) sqrt(wy) gives u_theta.
+  Exact integer check (exact_counts.py, cloud; K = 1, 2, 3, 5, 8 modes per weight, budgets up to 2,000): ln count
+  over the bound at most 0.948; the best shell triple with Strassen at 0.87 to 0.90 of the f_mm bound in bits (six
+  unit mixes, every case below, by 34 bits or more); the crossing index below the u_theta bound everywhere (by
+  1.79 bits or more). Dropped factors are polynomial (block padding, Strassen constants, the number of shells,
+  steps and nodes); at n = 2^lam with lam >= 64 and these margins they cannot move a cell.
+- What a computation cannot settle: the correctness of each step (head proof sketches; the referee checks their
+  identities on toy nodes, and its shellmm and bincross gates check the block shapes and per-piece channels the model
+  counts), and the label-balancing constant. The binding size condition at 646 is the root label balance: about
+  2^56.5 wires per label type against the 2^55.6 that the multi-stage Bernstein sketch (8192 Lc^2 / delta^2 times
+  ln(172 Lc D)) asks for. A single-stage Bernstein bound for one type would have room to spare by many orders of
+  magnitude; the constant comes from splitting the deviation budget over about 42 Lc stages because labels are pairs
+  of unit schedules. A sharper balancing proof is the only size-related lever left; round 9's what-if (20 bits less
+  slack: 661 -> 654, then the padding binds) puts it at about 1%. Not pursued.
