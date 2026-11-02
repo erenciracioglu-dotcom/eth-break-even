@@ -1085,5 +1085,6 @@ like 1/sqrt(u)").
    locality while dropping labels). Accepted as the largest remaining lever. Head estimate with the round-11 exponent
    parameters fixed and only the label term of the size conditions scaled: labels halved / quartered / none give
    376 / 303 / 231 against 2^(n/3) (then the deepest packet's padding binds), 289 / 236 / 182 against 1.307^n,
-   1,412 / 1,106 / 799 against 1.1199^n, 101 / 72 / 45 against 1.637^n and 71 / 55 / 39 against 2^n. No such
-   construction exists yet; galactic in every case.
+   1,412 / 1,106 / 799 against 1.1199^n, 101 / 72 / 45 against 1.637^n and 71 / 55 / 35 against 2^n (with no labels
+   the balance condition itself goes away; every no-label value is then set by padding). No such construction exists
+   yet; galactic in every case.
