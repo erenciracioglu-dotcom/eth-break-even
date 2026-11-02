@@ -1034,3 +1034,56 @@ round 5 ends there.
   record with the other sums blocked, every step one matmul call of the recorded shape, and again with a chooser
   that cycles through the menu, so the contraction must follow the chosen order) and pf_e2e (two end-to-end
   counts with sum_prof at exactly the nodes with 4 to 16 groups, 6 and 4 of them). Validation: Validation of referee_appd version 7 (2 November, 17:19-17:28): the head solution verifies all 11 flags and scores 533 / 2,034 / 413 / 159 / 103 (third / occ3sat / ppsz / sharp3sat / brute); the untouched round-10 code keeps its 10 flags with profile false and its thresholds 646 / 2,531 / 497 / 186 / 112 (baseline unchanged); four wrong variants each verify the old 10 flags and lose the profile flag at the intended gate: always the first order (pf_node: records, matrix shapes and cycled run fail, values right), ties to the higher index (pf_choose), contraction without the matrix product (pf_node: matmul and cycled fail, values and records right), end-to-end count without sum_prof (pf_e2e: right count, sum_prof called 0 of 6 times).
+- Audit T26 (iter_appd 013, commit 4b7e03c, accepted 2 November 18:11 on the first attempt; agent 1,425 s, 35
+  requests). appd_core.py gains 182 lines: the import of appd_assembly_public, pf_cost, pf_choose, sum_prof (profile
+  enumeration depth first over the edges, contraction of each profile in the chosen order with one matmul call per
+  step) and method 'prof' in node_value and count_e2e. The file's line endings changed from CRLF to LF (git diff
+  --ignore-cr-at-eol shows only the 182 added lines). Read in full: no call of sum_paper, sum_memo, sum_dp, sum_mm or
+  sum_cross inside sum_prof, no file or network access, no stored values; pf_choose and matmul are looked up by their
+  module-level names at call time, so the referee's replacements took effect (pf_node with the cycling chooser
+  passes on all 14 hidden nodes).
+- Audit T27 (iter_appd 014, commit 26671db, accepted 18:19 on the first attempt; agent 90 s, 10 requests).
+  appd_params.py threads the flag profile through eps_cached, rank_e and the all-flags branch of the search (9
+  changed lines). Thresholds 646 / 2,531 / 497 / 186 / 112 -> 533 / 2,034 / 413 / 159 / 103 (third / occ3sat / ppsz /
+  sharp3sat / brute), equal to the head solution's validation run with the same parameters in every cell; all 11
+  flags verified (verify 273 s, score 153 s).
+- What sets the round-11 cells (head, from the frozen model's size conditions with the certificates' parameters):
+  a label balance condition in every cell. At the top level against 2^(n/3) (r = 8, u = 79: 8^158 = 2^474 label
+  types, 58.17 bits of balance, 0.83 bits to spare), 1.307^n (2^360, 52.31, 0.69), 1.637^n (2^114, 44.75, 0.27) and
+  2^n (7^22 = 2^61.76, 40.82, 0.44); at depth 2 against 1.1199^n (0.52 bits to spare). The exponent e does not depend
+  on lambda in the model; lambda enters only through the size conditions, so a cell is the smallest size at which
+  parameters with e below the competitor satisfy them.
+
+## External review notes (GPT-6 Astra, 2026-11-02 18:09, relayed by the owner) and the head's answers
+Astra commented on the head's plain-language message about practical meaning (in short: "this route cannot reach a
+practical size; the threshold is the number of label types times the balance per type; the cost per level falls only
+like 1/sqrt(u)").
+1. Certainty. The count r^(2u) is the cost of the present labeling design, and the balance condition is a sufficient
+   condition of the construction, not a proven lower bound for every construction; "at most 11 percent from a
+   perfect balancing argument" holds for the present parameters and that margin only. Accepted: the head's claim
+   holds for the present design, not as an impossibility result; the chance that another design becomes practical is
+   low but not known to be zero.
+2. "Mostly safety margins were removed" was wrong. The first drop (1.11e11 to 496,177 against 2^(n/3)) was
+   accounting; from 496,177 to 533 (about 930 times) the steps were algorithmic: each distinct sub-contraction once,
+   group-by-group contraction, chunks, the Newton basis, the Cauchy LDU, shell matrix products, the guarded
+   deformation, the binary crossing, the profile orders. Accepted. Round 11 alone shrinks the variable count at the
+   break-even by 2^113, about 10^34.
+3. "A practical break-even means a few hundred variables" compared worst-case upper bounds; their crossing is not a
+   running time of a program on a given formula, and dividing 2^67 operations by a FLOP rate ignores operation types,
+   memory and data movement; practical solvers are judged on real instances. Accepted; the page now says that the
+   cells compare worst-case bounds and gives the few hundred variables only as the scale at which such bounds can be
+   run at all.
+4. 533 in the head's message was the reference solution's score. The loop's accepted result is the same.
+5. Proposals. (a) Write-up with separate statuses (checked on small instances by the referee; exact-arithmetic
+   certificates; proof sketches; the paper's theorem assumed). Accepted. (b) A separate, time-boxed practicality
+   experiment: do profile orders and fast transforms cut time or memory of concrete contractions at real sizes, and can
+   a useful piece join an existing exact counter (for example GANAK in its deterministic mode; decision and counting
+   judged separately)? Open, the owner's decision. Head's prior is low: the profile choice acts on the shells of the
+   deformation's mode sums, which practical counters do not form, and even the route's smallest settings use
+   packets of length L = 2^29. (c) If the theoretical threshold is pursued further, the target should be the labeling
+   structure ("must the u coordinate carry every label pair?"; the obstacle is keeping the packets' orientation and
+   locality while dropping labels). Accepted as the largest remaining lever. Head estimate with the round-11 exponent
+   parameters fixed and only the label term of the size conditions scaled: labels halved / quartered / none give
+   376 / 303 / 231 against 2^(n/3) (then the deepest packet's padding binds), 289 / 236 / 182 against 1.307^n,
+   1,412 / 1,106 / 799 against 1.1199^n, 101 / 72 / 45 against 1.637^n and 71 / 55 / 39 against 2^n. No such
+   construction exists yet; galactic in every case.
