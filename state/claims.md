@@ -918,3 +918,46 @@ round 5 ends there.
 - Incident: at 10:46 the PC rebooted after a bugcheck 0x10E (VIDEO_MEMORY_MANAGEMENT_INTERNAL) while the head ran
   about 16 search and referee processes at once; two of them reported MemoryError just before. The validation was
   rerun with six processes (peak use well below 1 GB each); round 10 keeps background work to a few processes.
+- T23 (iter_appd 009, attempt 1, 11:37 to 11:41, 14 requests): accepted at 11:48, bc_fast verified and the eight
+  earlier flags kept (referee 382 s); third threshold 663 -> 663 (code task).
+- T23 audit (git diff -w 897fefe 51637b9 -- algo_appd): exactly the spec. appd_core.py only (137 lines): the six
+  4 x 4 matrices of NOTES 'Round 10' (S, K T and N0, N1 for both pairings), the helpers _bc_pair, _bc_mats, _bc_rows,
+  _bc_rows_T, _bc_apply, _bc_add_into, _bc_copy and bc_mask, bc_left, bc_right, digit by digit, with None as an
+  internal zero and the inputs never modified. No other change.
+- T24 attempt 1 (iter_appd 010, 11:48 to 12:20, 61 requests): rejected at 12:27, bincross not verified: 3 of the 15
+  hidden nodes (all with 5 groups) wrong in value and records. Head diagnosis (diag_t24.py): sum_cross built the
+  group-table keys by joining two tuples (the spectator part and the shell part) instead of self.key of the merged
+  dict; self.key sorts by mode, so whenever a spectator mode at a group had a larger index than a crossing mode the
+  lookup missed and the term was skipped silently. A copy with sorted keys passes the three nodes exactly. The public
+  nodes of check_t24.py did not expose it; the agent's own summary blamed the pass-through bits. A spec note for a
+  third attempt was added at 12:45 and was not needed.
+- T24 attempt 2 (iter_appd 011, 12:27 to 13:22, 35 requests; killed at the 55-minute wall while it ran extra fuzz
+  tests of its own, code final since 12:39): accepted at 13:29, all ten flags verified, bincross and bc_fast included
+  (referee 412 s); 663 -> 663 (code task). Head pre-check at 13:08 on a snapshot: the three nodes of attempt 1 exact.
+- T24 audit (git diff -w 51637b9 7bb1676 -- algo_appd): spec items 1-5. appd_core.py only: node_value(method =
+  'cross'); count_e2e(method = 'cross') with sum_cross at nodes with four groups or more and sum_dp otherwise;
+  _bc_spread and sum_cross (blocks, words, pass-through bits and records as specified, sorted keys restricted to
+  inc[g], block vectors through bc_left / bc_right, pieces through bc_mask, no call to sum_paper, sum_memo, sum_dp or
+  sum_mm). The commit also rewrote every line of appd_core.py with CRLF endings (cosmetic; the file is uniform
+  again, like appd_params.py, so the head left it).
+- T25 (iter_appd 012, attempt 1, 13:29 to 13:40, 29 requests): accepted at 13:46, all ten flags verified (referee
+  393 s; score gate 75 choose_params calls, 2.3 s each); third threshold 663 -> 646 (2.56% lower). The loop then
+  found the backlog done, stopped the Strata server and exited.
+- T25 audit (git diff -w 7bb1676 7a79a65 -- algo_appd): spec items 1-3 in appd_params.py; besides them a cache for
+  A.eps_mode keyed by (r, shellmm, bincross), a pure function of those arguments there (modedp is always on), so
+  it changes the speed only. No other change.
+- Round 10 summary: appd-bincross adopted. 663 -> 646 against 2^(n/3), 2,600 -> 2,531 against 1.1199^n, 508 -> 497
+  against 1.307^n, 190 -> 186 against 1.637^n and 114 -> 112 against 2^n, exactly the head's what-if. Attempts:
+  T23 1, T24 2, T25 1; loop 11:36 to 13:46. Best parameters against 2^(n/3): three levels, r = 7, 7, 10, u = 105,
+  86, 59, a = 128, 216, 276, delta = 0.002, Lc = 256, kappa = 10.
+- Head re-run below log2 n = 1,000 of the main loop's counting cells (Sections 2-4; 2 November, asked by the owner
+  of the page). The main referee's score starts its search at log2 n = 1,000 and reported <= 1,000 for the
+  counting version against 2^n from T12 and against 1.637^n from T14. Same frozen assembly and Qwen's choose_params
+  of commits 67882a5 (T12, referee v8) and f4948c7 (T14b, referee v9), one grid point every 5% from 10 to 1,000 and
+  bisection (work/head/below1000/scan.py); a cell is the size from which every grid point up to 1,000 is below the
+  target. T12 beats 2^n from 940 (19 groups, Q = 103, R = 35; e(939) = 1.0002, e(940) = 0.9936). T14b beats 2^n
+  from 57 and 1.637^n from 61, but there the search uses 2 and 12 groups with Q = 1 and R <= 2, i.e. without the
+  interpolation, and from about 90 to 1,000 the counting exponent stays at 0.500 whatever Q, so these two cells
+  measure the group-by-group contraction with its edge bits on its own (a dynamic program like the 2^(n/3)
+  path-decomposition count). Below those sizes the search is erratic (e < 1 again at 13-34, invalid at 36-41,
+  its fallback at 43-55). The cost model's regime conditions are not re-checked at these sizes.
