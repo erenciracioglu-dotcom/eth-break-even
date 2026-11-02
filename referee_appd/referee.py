@@ -1,4 +1,4 @@
-"""FROZEN referee for the Appendix D route, version 7 (round 11: profile-adaptive order gates). Usage: python referee.py <candidate_dir> <out_json>
+"""FROZEN referee for the Appendix D route, version 8 (round 12: matchbal analysis flag in the assembly; gates as in version 7). Usage: python referee.py <candidate_dir> <out_json>
 Runs the verify gate, then the score gate with the flags verify confirmed (separate processes)."""
 import json
 import os

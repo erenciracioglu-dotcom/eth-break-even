@@ -1,9 +1,9 @@
 {
- "third": 533,
- "occ3sat": 2034,
- "ppsz": 413,
- "sharp3sat": 159,
- "brute": 103,
+ "third": 525,
+ "occ3sat": 2033,
+ "ppsz": 404,
+ "sharp3sat": 147,
+ "brute": 93,
  "verified_flags": {
   "memo": true,
   "modedp": true,
@@ -26,16 +26,16 @@
   ],
   "u": [
    79,
-   63,
-   50
+   61,
+   48
   ],
   "a": [
-   101,
+   103,
    166,
-   218
+   216
   ],
-  "delta": 0.003,
-  "Lc": 1024,
+  "delta": 0.00085,
+  "Lc": 4096,
   "perclass": true,
   "labelfree": true,
   "memo": true,
@@ -48,14 +48,148 @@
   "guarded": true,
   "bincross": true,
   "profile": true,
+  "matchbal": true,
   "kappa": [
-   10,
-   10,
-   10
+   12,
+   12,
+   12
   ]
  },
  "iter": 14,
  "task": "T27",
  "updated": "2026-11-02 18:19:39",
- "referee_version": 7
+ "referee_version": 8,
+ "params_occ3sat": {
+  "levels": 3,
+  "r": [
+   8,
+   9,
+   16
+  ],
+  "u": [
+   323,
+   256,
+   172
+  ],
+  "a": [
+   350,
+   608,
+   782
+  ],
+  "delta": 0.00012862499999999994,
+  "Lc": 1048576,
+  "perclass": true,
+  "labelfree": true,
+  "memo": true,
+  "modedp": true,
+  "chunks": true,
+  "leafvars": false,
+  "newton": true,
+  "ldu": true,
+  "shellmm": true,
+  "guarded": true,
+  "bincross": true,
+  "profile": true,
+  "matchbal": true,
+  "kappa": [
+   11,
+   11,
+   11
+  ]
+ },
+ "params_ppsz": {
+  "levels": 2,
+  "r": [
+   9,
+   10
+  ],
+  "u": [
+   57,
+   43
+  ],
+  "a": [
+   83,
+   128
+  ],
+  "delta": 0.005,
+  "Lc": 512,
+  "perclass": true,
+  "labelfree": true,
+  "memo": true,
+  "modedp": true,
+  "chunks": true,
+  "leafvars": false,
+  "newton": true,
+  "ldu": true,
+  "shellmm": true,
+  "guarded": true,
+  "bincross": true,
+  "profile": true,
+  "matchbal": true,
+  "kappa": [
+   14,
+   14
+  ]
+ },
+ "params_sharp3sat": {
+  "levels": 1,
+  "r": [
+   8
+  ],
+  "u": [
+   18
+  ],
+  "a": [
+   46
+  ],
+  "delta": 0.0068,
+  "Lc": 256,
+  "perclass": true,
+  "labelfree": true,
+  "memo": true,
+  "modedp": true,
+  "chunks": true,
+  "leafvars": true,
+  "newton": true,
+  "ldu": true,
+  "shellmm": true,
+  "guarded": true,
+  "bincross": true,
+  "profile": true,
+  "matchbal": true,
+  "kappa": [
+   19
+  ]
+ },
+ "params_brute": {
+  "levels": 1,
+  "r": [
+   7
+  ],
+  "u": [
+   11
+  ],
+  "a": [
+   35
+  ],
+  "delta": 0.0408,
+  "Lc": 64,
+  "perclass": true,
+  "labelfree": true,
+  "memo": true,
+  "modedp": true,
+  "chunks": true,
+  "leafvars": true,
+  "newton": true,
+  "ldu": true,
+  "shellmm": true,
+  "guarded": true,
+  "bincross": true,
+  "profile": true,
+  "matchbal": true,
+  "kappa": [
+   16
+  ]
+ },
+ "note_r12": "round 12 (head): referee v8 on the head search; the page reports the smallest dictionaries of three searches, see work/head/r12/round12_witnesses.json and claims.md"
 }

@@ -1,4 +1,4 @@
-"""FROZEN Appendix D assembly, referee_appd version 7 (2026-11-02, round 11: profile flag).
+"""FROZEN Appendix D assembly, referee_appd version 8 (2026-11-02, round 12: matchbal flag; version 7 added profile).
 
 Cost exponent e (cost ~ 2^(e n), lam = log2 n, polynomial factors ignored) of the tensor-contraction algorithm
 of Appendix D (Theorem D.1) on 3-CNF with at most three occurrences per variable, with the head-audited steps of
@@ -43,6 +43,17 @@ With l_e <= beta sqrt(2 w_e) and Cauchy-Schwarz, min over the menu <= the mean o
 fraction eps <= (2 / r^2) max over one form per order of ||mean of the forms||^2 = PF_EPS[r] (exact, 101/125);
 rounding to whole bits adds at most C(r, 2) bits, profiles and steps are polynomially many. The mode fraction of
 a level is then min(eps_mm, eps_bc1 with bincross, PF_EPS[r]) for 4 <= r <= 16. Needs shellmm.
+matchbal (appd-matchbal, GPT-6 Astra, head-checked; version 8): the root label balance of a chunk network by
+matchings. A chunk unit has at most 1 + 7(Lc - 1) variables, at most 21 Lc designated clauses with at most two
+outside incidences each and at most 21 Lc outside incidences of its own variables, so its wire degree is
+Delta <= 63 Lc. A greedy edge colouring splits the crossing wires (a loopless multigraph on the units) into
+q <= 2 Delta - 1 <= 126 Lc - 1 matchings. Inside one matching different wires have disjoint ends, so their pair
+labels are independent and uniform over the D pairs; the load of a (matching j, pair) is binomial with mean mu_j.
+Budgets t_j = (delta/2)(mu_j + mu/q) add up to delta mu, and Bernstein (or a rational pessimistic estimator, which
+derandomises the labels) bounds each tail by 2 exp(-delta^2 mu / (5 q)) for delta <= 1/4. The union bound over the
+2 q D events then holds once M / D >= (8 q / delta^2) ln(8 q D): the root slack becomes
+log2(8 q) + 2 log2(1/delta) + log2(ln(8 q) + ln D), linear in Lc where the two-stage chunk balancing was
+quadratic. Port bounds follow by summing the pair loads. An analysis flag (no code); needs chunks.
 """
 import math
 from fractions import Fraction
@@ -52,7 +63,7 @@ TARGETS = {"third": 1.0 / 3.0, "occ3sat": math.log2(1.1199), "ppsz": math.log2(1
            "sharp3sat": math.log2(1.637), "brute": 1.0}
 PRIMARY = "third"            # fair counting competitor for this class: 2^(n/3) (pathwidth DP)
 FLAGS = ("memo", "modedp", "chunks", "perclass", "leafvars", "labelfree", "newton", "ldu", "shellmm", "guarded",
-         "bincross", "profile")
+         "bincross", "profile", "matchbal")
 CODE_FLAGS = ("memo", "modedp", "chunks", "leafvars", "newton", "ldu", "shellmm", "guarded", "bincross", "profile")
 
 
@@ -264,6 +275,8 @@ def exponent_of(params, lam):
         return _bad("bincross needs shellmm (its merges are shell matrix products)")
     if fl["profile"] and not fl["shellmm"]:
         return _bad("profile needs shellmm (its steps are shell matrix products)")
+    if fl["matchbal"] and not fl["chunks"]:
+        return _bad("matchbal needs chunks (it balances the wires of the chunk units)")
     if fl["leafvars"] and not (fl["chunks"] and L == 1):
         return _bad("leafvars applies to the depth-1 leaves of a chunk network only")
     for d in range(L):
@@ -292,7 +305,10 @@ def exponent_of(params, lam):
         lD = 2 * lab * lr
         logM = lam + math.log2(M[d])
         lnD = max(lD * LN2, 1.0)
-        if d == 0 and fl["chunks"]:
+        if d == 0 and fl["chunks"] and fl["matchbal"]:
+            q = 126.0 * Lc - 1.0                  # appd-matchbal: q <= 2 Delta - 1 matchings, Delta <= 63 Lc
+            slack = math.log2(8.0 * q) + 2 * math.log2(1 / delta) + math.log2(math.log(8.0 * q) + lnD)
+        elif d == 0 and fl["chunks"]:
             slack = math.log2(8192.0 * Lc * Lc) + 2 * math.log2(1 / delta) + math.log2(math.log(172.0 * Lc) + lnD)
         else:
             ldeg = math.log2(3.0) if d == 0 else a[d - 1] + 1

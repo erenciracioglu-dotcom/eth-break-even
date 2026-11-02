@@ -10,6 +10,8 @@ cheap analytic replica of the assembly (closed-form greedy u from the padding bu
 candidates are refined with the real model: bisection on u_0, and inside every trial a bisection that maximises
 each remaining u_d. min_a is kept for a_d.
 
+Search (round 12, head): matchbal in bal_u and a coordinate refinement of the best builds (_refine).
+
 Search (attempt 3, round 9 / T22): est_u is now the smaller of the padding budget (est_u_pad) and the frozen
 assembly's label-balance test (bal_u), which often binds first; the depth d, the previous level's a (0 at the
 root) and Lc are threaded into every est_u call, and the grids are finer: 8 deltas down to 1e-4, 5 chunk sizes
@@ -23,6 +25,12 @@ LN2 = math.log(2.0)
 
 GUARD_KAPPA = 10           # appd-guarded: guard width H_d = 2^(a_d - GUARD_KAPPA) used by the frozen model
 _KAPPA = None              # set by choose_params (None = the paper's Cauchy deformation)
+_MATCHBAL = False          # set by choose_params: root label balance by matchings (appd-matchbal, round 12)
+REFINE_TOP = 4             # round 12: distinct best builds refined by coordinate search
+REFINE_BUILDS = 220        # round 12: cap on build() calls in the refinement
+FINE_TOP = 60              # round 12: coarse candidates re-ranked on finer delta and Lc neighbours
+FINE_DELTA = (0.6, 0.8, 1.25, 1.6)
+FINE_LC = (0.5, 2.0)
 
 # r grids: r_0 small (the root group count sets M_d / sqrt(u_d) everywhere), r_1 and r_2 wide and geometric
 R0 = (4, 5, 6, 7, 8, 9, 10, 12, 16)
@@ -78,7 +86,11 @@ def bal_u(rd, Md, delta, lam, d, a_prev, Lc):
     two_lr = 2.0 * lr
     logM = lam + math.log2(Md)
     inv = 2.0 * math.log2(1.0 / delta)
-    if d == 0:
+    if d == 0 and _MATCHBAL:                 # appd-matchbal: q = 126 Lc - 1 matchings at the root
+        q = 126.0 * Lc - 1.0
+        base = math.log2(8.0 * q) + inv
+        c1 = math.log(8.0 * q)
+    elif d == 0:
         base = math.log2(8192.0 * Lc * Lc) + inv
         c1 = math.log(172.0 * Lc)
     else:
@@ -250,14 +262,67 @@ def build(r, delta, Lc, flags, lam, ustart=None):
     return (s["e"], make(uu, r, delta, Lc, flags)) if s["valid"] else None
 
 
-def choose_params(lam, target="third"):
+def _refine(cands, flags, lam):
+    """Round 12: coordinate search from the best builds. Moves delta (x 0.7, 0.85, 1.15, 1.4), Lc (x 1/2, 2), every
+    r_d (+-1) and, with guards, kappa (+-1); every trial is a full build() (u by bisection, a = min_a) scored by
+    the frozen model at lam; first improvement wins; at most REFINE_BUILDS builds in total."""
     global _KAPPA
+    budget = [REFINE_BUILDS]
+
+    def trial(r, delta, Lc, kap):
+        global _KAPPA
+        if budget[0] <= 0:
+            return None
+        if not (1e-4 <= delta <= 0.25 and 1 <= Lc <= (1 << 20) and all(2 <= x <= 4096 for x in r)):
+            return None
+        if kap is not None and not 2 <= kap <= 30:
+            return None
+        budget[0] -= 1
+        _KAPPA = kap
+        fl = dict(flags, leafvars=flags["chunks"] and len(r) == 1)
+        res = build(list(r), delta, Lc, fl, lam)
+        if res is None:
+            return None
+        s = A.exponent_of(res[1], lam)
+        return (s["e"], res[1]) if s["valid"] else None
+
+    best = None
+    for e0, p0 in cands[:REFINE_TOP]:
+        cur = (e0, p0)
+        moved = True
+        while moved and budget[0] > 0:
+            moved = False
+            r, delta, Lc = list(cur[1]["r"]), cur[1]["delta"], cur[1]["Lc"]
+            kap = cur[1]["kappa"][0] if cur[1].get("kappa") else None
+            tries = [(r, delta * f, Lc, kap) for f in (0.7, 0.85, 1.15, 1.4, 0.5, 2.0)]
+            tries += [(r, delta, Lc // 2, kap), (r, delta, Lc * 2, kap)]
+            for d in range(len(r)):
+                for dr in (-1, 1):
+                    rr = list(r)
+                    rr[d] += dr
+                    tries.append((rr, delta, Lc, kap))
+            if kap is not None:
+                tries += [(r, delta, Lc, kap + dk) for dk in (-1, 1, -2, 2)]
+            for t in tries:
+                res = trial(*t)
+                if res is not None and res[0] < cur[0] - 1e-15:
+                    cur, moved = res, True
+                    break
+        if best is None or cur[0] < best[0]:
+            best = cur
+    return best
+
+
+def choose_params(lam, target="third"):
+    global _KAPPA, _MATCHBAL
     flags = dict(perclass=True, labelfree=True, memo=False, modedp=False, chunks=False, leafvars=False,
-                 newton=False, ldu=False, shellmm=False, guarded=False, bincross=False, profile=False)
+                 newton=False, ldu=False, shellmm=False, guarded=False, bincross=False, profile=False,
+                 matchbal=False)
     if USE_CODE_FLAGS:
         flags.update(memo=True, modedp=True, chunks=True, newton=True, ldu=True, shellmm=True, guarded=True,
-                     bincross=True, profile=True)
+                     bincross=True, profile=True, matchbal=True)
     _KAPPA = GUARD_KAPPA if flags["guarded"] else None
+    _MATCHBAL = flags["matchbal"]
     lam = float(lam)
     shapes = []
     for r0 in R0:
@@ -279,7 +344,18 @@ def choose_params(lam, target="third"):
                               flags["profile"])
                 cand.append((e, shape, delta, Lc))
     cand.sort(key=lambda x: x[0])
-    best = None
+    fine = []
+    for _, shape, delta, Lc in cand[:FINE_TOP]:          # round 12: finer delta and Lc around the best shapes
+        lv = flags["chunks"] and len(shape) == 1
+        for d2 in [delta * f for f in FINE_DELTA] + [delta]:
+            for L2 in [int(Lc * g) for g in FINE_LC] + [Lc]:
+                if (d2, L2) == (delta, Lc) or not (1e-4 <= d2 <= 0.25 and 2 <= L2 <= (1 << 20)):
+                    continue
+                e, _ = rank_e(list(shape), d2, L2, lam, lv, cK, flags["shellmm"], flags["bincross"],
+                              flags["profile"])
+                fine.append((e, shape, d2, L2))
+    cand = sorted(cand + fine, key=lambda x: x[0])
+    built = []
     seen = set()
     for _, shape, delta, Lc in cand[:TOPK]:
         key = (shape, delta, Lc)
@@ -291,8 +367,11 @@ def choose_params(lam, target="third"):
         if p is None:
             continue
         s = A.exponent_of(p[1], lam)
-        if s["valid"] and (best is None or s["e"] < best[0]):
-            best = (s["e"], p[1])
+        if s["valid"]:
+            built.append((s["e"], p[1]))
+    built.sort(key=lambda x: x[0])
+    best = _refine(built, flags, lam) if built else None
+    _KAPPA = GUARD_KAPPA if flags["guarded"] else None
     if best:
         return best[1]
     return make([2], [2], 1e-4, 4096, flags)

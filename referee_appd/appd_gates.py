@@ -1,4 +1,4 @@
-"""FROZEN gates of referee_appd version 7 (round 11). Usage: python appd_gates.py <candidate_dir> <verify|score> <out_json> [verified_flags_json]
+"""FROZEN gates of referee_appd version 8 (round 12; gates unchanged from version 7). Usage: python appd_gates.py <candidate_dir> <verify|score> <out_json> [verified_flags_json]
 
 verify: the agent's appd_core.py against the frozen reference appd_ref.py on hidden cases (cases_appd.json):
   node   - node_value(method = paper, memo, dp) equals F(t + alpha z) mod (2^p, z^q) from the frozen direct

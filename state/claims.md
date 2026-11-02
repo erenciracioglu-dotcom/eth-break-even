@@ -1149,3 +1149,57 @@ in a zip) and the head's answers:
   competitor 2^(n/3 + o(n)), the general-density entries withdrawn, and the dropped costs with explicit margins: at
   the witnesses n (target - e) exceeds the review's scale 2^a (lambda + a) of the tensor-entry costs by 2^52.9 (2^n),
   2^101.1 (1.637^n), 2^300.4 (2^(n/3)), 2^225.7 (1.307^n) and 2^1220.6 (1.1199^n).
+
+## Round 12 (2 November, evening): the hostile review's corrections and the matching-based root balance [head]
+No loop task: the round changes one size condition of the model and the parameter search, no algorithm code.
+- appd-matchbal [head-checked sketch; proposed by GPT-6 Astra in her hostile review, 2 November].
+  1. A chunk unit has at most 1 + 7(Lc - 1) variables (appd-chunks), at most 21 Lc designated clauses with at most
+     two outside incidences each, and its variables have at most 21 Lc outside incidences: wire degree
+     Delta <= 63 Lc (the same count behind the old constant 8192 ~ 2 * 64^2).
+  2. The crossing wires form a loopless multigraph on the units (parallel and opposite wires allowed); greedy edge
+     colouring gives q <= 2 Delta - 1 <= 126 Lc - 1 matchings.
+  3. Unit labels independent and uniform in [r]^u (K = r^u, D = K^2 ordered pairs): inside one matching the wires
+     have disjoint ends, so the load X_j of a fixed pair is Binomial(|E_j|, 1/D), mean mu_j; sum_j mu_j = mu = M/D.
+  4. Budgets t_j = (delta/2)(mu_j + mu/q) add up to delta mu. Bernstein: Pr[|X_j - mu_j| > t_j] <=
+     2 exp(-t_j^2 / (2 (mu_j + t_j/3))); the exponent is smallest at mu_j + mu/q = 2 (mu/q) / (1 + delta/6), where
+     it equals delta^2 mu / (2 q (1 + delta/6)^2), so every tail is <= 2 exp(-delta^2 mu / (5 q)) for delta <= 1/4
+     (Astra's weaker form, with a rational pessimistic estimator that derandomises the labels by conditional
+     expectations, polynomial in the network and in D <= M).
+  5. Union bound over the 2 q D events: with M/D >= (8 q / delta^2) ln(8 q D) the total failure probability is at
+     most (1/4) (8 q D)^(-0.6) < 1/4. Root slack: log2(8 q) + 2 log2(1/delta) + log2(ln(8 q) + ln D).
+  6. Port bounds follow by summing the pair loads; the weighted vertex events of appd-leafvars (weights at most
+     28 Lc) have ample slack under the same condition (Astra; not separately quantified by the head).
+  Head checks: Delta <= 63 Lc against the appd-chunks definition; the Bernstein minimum by calculus; Astra's
+  witnesses 92 / 148 / 526 / 403 / 2,033 reproduced exactly by an independently written patched copy of the
+  frozen model (work/head/r12 and the cloud scratchpad) and by referee v8. The old two-stage condition needs 9 to
+  13 bits more at every (r, u, Lc) used, so all earlier cells stay valid. Caveat: head-level sketch, not peer
+  reviewed.
+- referee_appd version 8: the assembly gains the analysis flag matchbal (needs chunks; not a code flag); gates and
+  cases as in version 7. Without matchbal every round-11 certificate scores exactly as before.
+  Validation (2 November, 20:48-20:56): the head solution (work/head/r12/hs12) verifies all 11 code flags and scores 525 / 2,033 / 404 / 147 / 93 (third / occ3sat / ppsz / sharp3sat / brute) at 2.86 s per call, matchbal on in every certificate; the untouched round-11 code keeps 533 / 2,034 / 413 / 159 / 103; a variant that sets matchbal without chunks keeps its code flags and scores none / none / none / none / none (every dictionary rejected).
+- Round-12 cells (frozen v8 model, matchbal on): the smallest valid dictionary found by three searches, the
+  head's online search (round-11 search plus matchbal in its replica and a coordinate refinement over delta, Lc,
+  every r_d and kappa; 2.75 s per call), a head differential evolution over r_d, u_d, delta, Lc and kappa (two
+  passes, seeded with the review's witnesses and the online search's best), and the review's own search. Every
+  dictionary was checked on the PC with referee_v8/appd_assembly.py: valid at its size with the stated exponent,
+  invalid one size lower. brute 92 (r 7, u 11, a 29, delta 0.0521, Lc 64, kappa 10; review and DE), sharp3sat 147
+  (r 8, u 18, a 39, delta 0.00702, Lc 256, kappa 12; DE and online), ppsz 403 (r 8/9/10, u 60/46/36, a
+  82/130/168, delta 0.0045, Lc 512, kappa 10; review and DE), third 524 (r 8/9/11, u 79/61/43, a 103/166/211,
+  delta 0.00121, Lc 4096, kappa 12; DE pass 2), occ3sat 2,032 (r 8/9/16, u 323/256/172, a 350/608/782, delta
+  0.000374, Lc 65536, kappa 11; DE, valid even without matchbal, so also a v7 witness). Binding condition: the
+  root balance against 2^(n/3) (2^474 types and 49.78 bits, 0.22 to spare), 2^n (2^61.8, 30.25) and 1.637^n; the
+  balance one level down against 1.307^n; the root padding against 1.1199^n. Dropped-cost margins: n (target - e)
+  exceeds 2^a (lambda + a) by at least 2^46.3 (2^n), 2^89.5, 2^288.4, 2^211.7 and 2^1220.1. Label what-if with
+  these exponent parameters fixed: half the labels 355 (2^(n/3)) and 61 (2^n); no labels 225 and 34 (padding).
+  Status: feasible thresholds of the conditional model found by these searches, not proved minimal.
+- appd-density repaired [head, after the review]: small connected components are solved directly; with no isolated
+  variables a connected component with c clauses of width <= 3 has at most 2c + 1 variables, so the small ones
+  remove at most n_s/3 from 2m - n and the large components carry at most 2m - 2n/3 + n/Lc wires (a single
+  three-variable clause is the worst case); M_root = 2 rho - 2/3 + 3 rho/(B - 2) + 1/Lc with the chains of copies
+  as before (equalities are arity-two constraints, so the copies add no wires). Root balance by matchings with the
+  exact unit degree for occurrence cap B: units of at most (2B + 1) Lc variables (variable-graph degree <= 2B), at
+  most B (2B + 1) Lc designated clauses with two outside incidences each and B (2B + 1) Lc outside incidences of
+  their variables, Delta <= 3 B (2B + 1) Lc, q = 2 Delta - 1 (B = 3 gives 126 Lc - 1); this replaces the old
+  (B/3)^4 scaling of the two-stage constant. work/head/r12/whatif_dens_v8.py (frozen v8 assembly and the head's
+  round-12 search, both patched only in M_root, q and the leaf term): m = 4.26n gives 6,594 / 22,223 / 3,357 against 1.637^n / 1.307^n / 2^n (the withdrawn round-11 entries were 6,063 / 20,415 / 3,089); m = 5n gives 9,293 / 31,365 / 4,722 (withdrawn: 8,660 / 29,219 / 4,401), n about 10^1,421 against 2^n.
+  Caveat: the weighted vertex events of the leaf step at high density are not separately quantified.
