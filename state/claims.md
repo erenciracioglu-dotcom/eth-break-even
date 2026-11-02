@@ -1097,8 +1097,8 @@ like 1/sqrt(u)").
   analyses: a comparison of two published routes, not of one algorithm.
 
 ## External review notes (GPT-6 Astra, hostile review, 2026-11-02 20:20, relayed by the owner) and the head's checks
-Astra received the review package (brief, claims.md, frozen v7 assembly, round-11 certificates, results page PDF) in a
-fresh conversation and was asked to refute. Her report (appendix_d_hostile_review.md, with a checker and certificates
+Astra received the review package (brief, claims.md, frozen v7 assembly, round-11 certificates, results page PDF) and was asked
+to refute. Her report (appendix_d_hostile_review.md, with a checker and certificates
 in a zip) and the head's answers:
 1. The cells are not minimal (changes cells). The unchanged frozen v7 model accepts 100 / 157 / 532 / 411 / 2,033
    (brute / sharp3sat / third / ppsz / occ3sat) with finer delta and Lc and, for third and ppsz, r = 11 and smaller
@@ -1144,3 +1144,8 @@ in a zip) and the head's answers:
 7. Recommended wording, ACCEPTED: "a feasible threshold for this conditional leading-exponent model, found by the
    stated parameter search; not proved minimal; polynomial and tensor-entry costs need explicit accounting for a
    full finite-runtime comparison."
+- Page update after the review (version 23): the five frozen-model witnesses in the tables (100 / 157 / 532 / 411 /
+  2,033), "a feasible threshold found by a parameter search, not proved minimal", width at most three, the counting
+  competitor 2^(n/3 + o(n)), the general-density entries withdrawn, and the dropped costs with explicit margins: at
+  the witnesses n (target - e) exceeds the review's scale 2^a (lambda + a) of the tensor-entry costs by 2^52.9 (2^n),
+  2^101.1 (1.637^n), 2^300.4 (2^(n/3)), 2^225.7 (1.307^n) and 2^1220.6 (1.1199^n).
