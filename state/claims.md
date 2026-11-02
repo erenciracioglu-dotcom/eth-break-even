@@ -1095,3 +1095,52 @@ like 1/sqrt(u)").
   contraction, Lean files in anthropics/formal-math) is reported (lilting.ch) to compute its constants as n >
   10^10000 against 2^n at m = 5n; the Appendix D route here needs about 10^1325 there. Different algorithms and
   analyses: a comparison of two published routes, not of one algorithm.
+
+## External review notes (GPT-6 Astra, hostile review, 2026-11-02 20:20, relayed by the owner) and the head's checks
+Astra received the review package (brief, claims.md, frozen v7 assembly, round-11 certificates, results page PDF) in a
+fresh conversation and was asked to refute. Her report (appendix_d_hostile_review.md, with a checker and certificates
+in a zip) and the head's answers:
+1. The cells are not minimal (changes cells). The unchanged frozen v7 model accepts 100 / 157 / 532 / 411 / 2,033
+   (brute / sharp3sat / third / ppsz / occ3sat) with finer delta and Lc and, for third and ppsz, r = 11 and smaller
+   u, a at the last level. Head check (work/head/r12/check_astra_witnesses.py): all five rebuilt from her tables on the
+   round-11 certificates are valid in appd_assembly v7 with exactly her exponents (to 1e-12) and invalid one size
+   lower. ACCEPTED. The cells are feasible thresholds found by a parameter search, valid from there on (e does not
+   depend on lambda, every size condition relaxes as lambda grows), not proved minimal; the page's wording "above
+   which" is to be replaced.
+2. Steps: no counterexample to the algebra of appd-profile, appd-bincross, appd-shellmm, appd-guarded; all 13 PF_EPS
+   constants reproduced exactly. Weakest interfaces (not false identities): (a) the chunk-root extension of
+   appd-bernstein (proof incomplete; she supplies a replacement proof that supports the existing root condition),
+   (b) full work accounting around appd-memo and recursive packet-entry evaluation, (c) the simultaneous weighted
+   vertex balance needed by appd-leafvars (repairable). Head check: with bincross off the five round-11 exponents are
+   unchanged (PF_EPS is below eps_bc1 at every level used), confirmed; with ldu on, newton does not set cK. ACCEPTED as
+   statements of dependence; the write-up should say so.
+3. Matching-based root balance (new, Astra): edge-colour the crossing wires into q <= 2 Delta - 1 <= 126 Lc - 1
+   matchings, balance every matching and label pair separately (Bernstein / pessimistic estimator, derandomisable):
+   sufficient condition M/D >= (8q/delta^2) log(8qD), linear in Lc where the ledger's is quadratic; the old condition
+   dominates it, so the existing root test stands. With only that line replaced she reports 92 / 148 / 526 / 403 /
+   2,033. PENDING: the head checks the proof and the witnesses before any adoption (new model version).
+4. Work accounting: complete profiles are polynomial for fixed r <= 16; matrix padding is constant-factor; memo
+   lookups need an indexed memory model; implicit tensor-entry evaluation (D.4.6: exp(O(Q log s)); chunk tensors
+   2^O(Lc)) is not in the assembly. Her scale check: these are far below the margin n (target - e) at every cell.
+   ACCEPTED: the write-up states the bound as polynomial x entry overhead x 2^(n max(worst, cum + leaf)) and gives the
+   margins per cell explicitly instead of "cannot move a cell"; small child networks need an explicit direct rule.
+   The root balance fixes the size; it is not the largest arithmetic term in every cell (third: the middle term).
+5. Competitors and interfaces: 1.637^n (Kutzkov, IJCAI 2026), 1.307031578^n (Jiang and Cai) and 1.1199^n (Jain, Neoh
+   and Stephan) confirmed; the counting competitor should be written 2^(n/3 + o(n)) (using it without the o(n) is
+   conservative for us); "3-CNF" must mean width at most three (with exactly three distinct variables and at most
+   three occurrences every formula is satisfiable, by Hall's theorem, so the decision column would be trivial).
+   Definition 3.1 and Lemmas 4.5 / 4.7 are not the Appendix D interface; the right obligations are packet placement
+   and real-port balance, F(0), integral jets, strict degree coverage, recovery precision, integral local modes and
+   immutable tensor descriptions. ACCEPTED (wording).
+6. General density (breaks the stated inequality): 2m - n + n/Lc omits small connected components (one clause on
+   three variables, Lc = 4: M_eff = 0 > -1/4). ACCEPTED. Head repair to check: small components solved directly;
+   with no isolated variables, every small component has at least (n_c - 1)/2 clauses, so the large components carry
+   at most 2m - 2n/3 + n/Lc wires (single three-variable clauses are the worst case); the density patch's
+   M_root = 2 rho - 1 + ... becomes 2 rho - 2/3 + ...; rerun and publish the density certificates with the patch.
+   The B^4 scaling of the chunk-balance constant is a scaling argument, not an exact certificate (to be replaced, for
+   example by the matching-based condition with the cap's Delta). Anthropic's 10^10000 (checked by Astra in its PDF)
+   is a necessary threshold for its displayed bound to beat exhaustive search, not a certified crossover; a later
+   preprint (Majdoddin, arXiv 2610.41622) lowers its crossover points. The comparison must state these statuses.
+7. Recommended wording, ACCEPTED: "a feasible threshold for this conditional leading-exponent model, found by the
+   stated parameter search; not proved minimal; polynomial and tensor-entry costs need explicit accounting for a
+   full finite-runtime comparison."
