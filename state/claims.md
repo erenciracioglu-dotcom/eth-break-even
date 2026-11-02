@@ -1203,3 +1203,4 @@ No loop task: the round changes one size condition of the model and the paramete
   (B/3)^4 scaling of the two-stage constant. work/head/r12/whatif_dens_v8.py (frozen v8 assembly and the head's
   round-12 search, both patched only in M_root, q and the leaf term): m = 4.26n gives 6,594 / 22,223 / 3,357 against 1.637^n / 1.307^n / 2^n (the withdrawn round-11 entries were 6,063 / 20,415 / 3,089); m = 5n gives 9,293 / 31,365 / 4,722 (withdrawn: 8,660 / 29,219 / 4,401), n about 10^1,421 against 2^n.
   Caveat: the weighted vertex events of the leaf step at high density are not separately quantified.
+- Page version 24 (2 November, about 21:05): round-12 rows in both Appendix D tables (147 / 524 / 403 / 2,032 and 92 / 147 / 524 / 403 / 2,032), summary row, comparison and practical paragraphs, the round-12 paragraph, the density entries restored with the repaired count, dropped-cost margin at least 2^46.
