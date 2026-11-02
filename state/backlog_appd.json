@@ -230,13 +230,14 @@
   "after": [
    "T23"
   ],
-  "status": "running",
+  "status": "done",
   "priority": 42,
   "max_attempts": 3,
   "steps": 60,
-  "attempts": 1,
+  "attempts": 2,
   "last_feedback": "code flags not verified: bincross; third threshold 663 -> 663; failing checks: {'kind': 'bc_node', 'seed': 1001057, 'chunks': False, 'M': 9, 't': -3, 'p': 10, 'q': 3, 'basis': 'power', 'groups': 5, 'modes': 24, 'pieces': 125, 'value': False, 'records': False, 'transform_calls': {'left': 13542, 'right': 10377}}; {'kind': 'bc_node', 'seed': 1190396, 'chunks': False, 'M': 9, 't': 2, 'p': 9, 'q': 3, 'basis': 'power', 'groups': 5, 'modes': 9, 'pieces': 89, 'value': False, 'records': False, 'transform_calls': {'left': 3883, 'right': 3002}}; {'kind': 'bc_node', 'seed': 1159447, 'chunks': False, 'M': 9, 't': 2, 'p': 11, 'q': 3, 'basis': 'ldu', 'groups': 5, 'modes': 11, 'pieces': 34, 'value': False, 'records': False, 'transform_calls': {'left': 1596, 'right': 2757}}. Agent's own summary:  - The e2e case passes (count 20 = count_sat, expected 0 `sum_cross` calls).  I did not get a final `smoke_appd.py` run after the last edit (step limit hit); earlier runs of it were SMOKE OK before `sum_cross` existed, and the changes are additive plus two small dispatch branches. [ctx 38758 (onbellek 0) | pp 38758 tok 20.0s = 1934.2 t/s | tg 435 tok 6.4s = 67.7 t/s] The step limit was reached; answered without tools                           tg 67.7 t/s | pp 1934.2 t/s | ctx 38,758/65,536 (59%)",
-  "result": "code flags not verified: bincross; third threshold 663 -> 663; failing checks: {'kind': 'bc_node', 'seed': 1001057, 'chunks': False, 'M': 9, 't': -3, 'p': 10, 'q': 3, 'basis': 'power', 'groups': 5, 'modes': 24, 'pieces': 125, 'value': False, 'records': False, 'transform_calls': {'left': 13542, 'right': 10377}}; {'kind': 'bc_node', 'seed': 1190396, 'chunks': False, 'M': 9, 't': 2, 'p': 9, 'q': 3, 'basis': 'power', 'groups': 5, 'modes': 9, 'pieces': 89, 'value': False, 'records': False, 'transform_calls': {'left': 3883, 'right': 3002}}; {'kind': 'bc_node', 'seed': 1159447, 'chunks': False, 'M': 9, 't': 2, 'p': 11, 'q': 3, 'basis': 'ldu', 'groups': 5, 'modes': 11, 'pieces': 34, 'value': False, 'records': False, 'transform_calls': {'left': 1596, 'right': 2757}}"
+  "result": "gates pass, no regression: third threshold 663 -> 663",
+  "done_iter": 11
  },
  {
   "id": "T25",
@@ -260,7 +261,7 @@
   "after": [
    "T24"
   ],
-  "status": "open",
+  "status": "running",
   "priority": 43,
   "max_attempts": 3,
   "steps": 30
