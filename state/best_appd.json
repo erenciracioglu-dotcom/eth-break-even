@@ -13,7 +13,7 @@
   "ldu": true,
   "shellmm": true,
   "guarded": true,
-  "bincross": false,
+  "bincross": true,
   "bc_fast": true
  },
  "params_third": {
@@ -51,8 +51,8 @@
    10
   ]
  },
- "iter": 9,
- "task": "T23",
- "updated": "2026-11-02 11:48:04",
+ "iter": 11,
+ "task": "T24",
+ "updated": "2026-11-02 13:29:16",
  "referee_version": 6
 }

@@ -1,4 +1,6 @@
 # Bulletin (latest first)
+- 2026-11-02 12:27:24 iter_appd 010 T24 attempt 1/3: REJECTED - code flags not verified: bincross; third threshold 663 -> 663; failing checks: {'kind': 'bc_node', 'seed': 1001057, 'chunks': False, 'M': 9, 't': -3, 'p': 10, 'q': 3, 'basis': 'power', 'groups': 5, 'modes': 24, 'pieces': 125, 'value': False, 'records': False, 'transform_calls': {'left': 13542, 'right': 10377}}; {'kind': 'bc_node', 'seed': 1190396, 'chunks': False, 'M': 9, 't': 2, 'p': 9, 'q': 3, 'basis': 'power', 'groups': 5, 'modes': 9, 'pieces': 89, 'value': False, 'records': False, 'transform_calls': {'left': 3883, 'right': 3002}}; {'kind': 'bc_node', 'seed': 1159447, 'chunks': False, 'M': 9, 't': 2, 'p': 11, 'q': 3, 'basis': 'ldu', 'groups': 5, 'modes': 11, 'pieces': 34, 'value': False, 'records': False, 'transform_calls': {'left': 1596, 'right': 2757}}
+- 2026-11-02 11:48:04 iter_appd 009 T23 attempt 1: ACCEPTED - gates pass, no regression: third threshold 663 -> 663
 - 2026-11-02 00:39:15 iter_appd 008 T22 attempt 1: ACCEPTED - third threshold 686 -> 663 (3.35% lower threshold)
 - 2026-11-01 22:53:24 iter_appd 007 T21 attempt 1: ACCEPTED - third threshold 1,280 -> 686 (46.41% lower threshold)
 - 2026-11-01 21:02:43 iter_appd 006 T20 attempt 1: ACCEPTED - third threshold 1,370 -> 1,280 (6.57% lower threshold)
