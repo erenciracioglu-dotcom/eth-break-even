@@ -1088,3 +1088,10 @@ like 1/sqrt(u)").
    1,412 / 1,106 / 799 against 1.1199^n, 101 / 72 / 45 against 1.637^n and 71 / 55 / 35 against 2^n (with no labels
    the balance condition itself goes away; every no-label value is then set by padding). No such construction exists
    yet; galactic in every case.
+- General clause density with round 11's steps (head what-if, work/head/r11/whatif_dens_v7.py: the round-9 density
+  patch of the frozen v7 assembly with the accepted T27 search; occurrence cap 1,024 by chains of copies, as checked
+  by Fable for round 6): m = 4.26n gives 6,063 / 20,415 / 3,089 against 1.637^n / 1.307^n / 2^n (round 8's steps:
+  7,689 / 25,946 / 3,911); m = 5n gives 8,660 / 29,219 / 4,401. Anthropic's own paper (26 October 2026, tensor-network
+  contraction, Lean files in anthropics/formal-math) is reported (lilting.ch) to compute its constants as n >
+  10^10000 against 2^n at m = 5n; the Appendix D route here needs about 10^1325 there. Different algorithms and
+  analyses: a comparison of two published routes, not of one algorithm.
