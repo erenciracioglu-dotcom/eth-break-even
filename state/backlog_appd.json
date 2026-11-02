@@ -284,10 +284,13 @@
   "after": [
    "T25"
   ],
-  "status": "running",
+  "status": "done",
   "priority": 44,
   "max_attempts": 3,
-  "steps": 60
+  "steps": 60,
+  "attempts": 1,
+  "result": "gates pass, no regression: third threshold 646 -> 646",
+  "done_iter": 13
  },
  {
   "id": "T27",
@@ -312,7 +315,7 @@
   "after": [
    "T26"
   ],
-  "status": "open",
+  "status": "running",
   "priority": 45,
   "max_attempts": 3,
   "steps": 30

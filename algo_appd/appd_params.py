@@ -112,19 +112,19 @@ def est_u(rd, Md, delta, lam, lp_in, d=0, a_prev=0, Lc=1 << 20):
     return min(est_u_pad(rd, Md, delta, lam, lp_in), bal_u(rd, Md, delta, lam, d, a_prev, Lc))
 
 
-_EPS_CACHE = {}             # (r, shellmm, bincross) -> A.eps_mode(r, ...): pure function, memoise it
+_EPS_CACHE = {}             # (r, shellmm, bincross, profile) -> A.eps_mode(r, ...): pure function, memoise it
 
 
-def eps_cached(r, shellmm, bincross):
-    key = (r, shellmm, bincross)
+def eps_cached(r, shellmm, bincross, profile=False):
+    key = (r, shellmm, bincross, profile)
     v = _EPS_CACHE.get(key)
     if v is None:
-        v = A.eps_mode(r, {"modedp": True, "shellmm": shellmm, "bincross": bincross})
+        v = A.eps_mode(r, {"modedp": True, "shellmm": shellmm, "bincross": bincross, "profile": profile})
         _EPS_CACHE[key] = v
     return v
 
 
-def rank_e(r, delta, Lc, lam, leafvars, cK=2.0, shellmm=False, bincross=False):
+def rank_e(r, delta, Lc, lam, leafvars, cK=2.0, shellmm=False, bincross=False, profile=False):
     """Analytic replica: greedy u_d from the padding budget, a_d = min_a, cost exponent of the assembly."""
     L = len(r)
     M = _M(r, delta, Lc, True)
@@ -137,7 +137,7 @@ def rank_e(r, delta, Lc, lam, leafvars, cK=2.0, shellmm=False, bincross=False):
         u.append(ud)
         cKd = cK * (A.gamma_guard(ad, _KAPPA) if _KAPPA is not None else 1.0)
         x = M[d] / math.sqrt(ud)
-        ar = A.tup(ud, eps_cached(r[d], shellmm, bincross), dm, cKd) * x
+        ar = A.tup(ud, eps_cached(r[d], shellmm, bincross, profile), dm, cKd) * x
         ch = A.tup(ud, A.f_grp(r[d]), dm, cKd) * x
         worst = max(worst, cum + ar)
         cum += ch
@@ -253,10 +253,10 @@ def build(r, delta, Lc, flags, lam, ustart=None):
 def choose_params(lam, target="third"):
     global _KAPPA
     flags = dict(perclass=True, labelfree=True, memo=False, modedp=False, chunks=False, leafvars=False,
-                 newton=False, ldu=False, shellmm=False, guarded=False, bincross=False)
+                 newton=False, ldu=False, shellmm=False, guarded=False, bincross=False, profile=False)
     if USE_CODE_FLAGS:
         flags.update(memo=True, modedp=True, chunks=True, newton=True, ldu=True, shellmm=True, guarded=True,
-                     bincross=True)
+                     bincross=True, profile=True)
     _KAPPA = GUARD_KAPPA if flags["guarded"] else None
     lam = float(lam)
     shapes = []
@@ -275,7 +275,8 @@ def choose_params(lam, target="third"):
         lv = flags["chunks"] and len(shape) == 1
         for delta in DELTAS:
             for Lc in LCS:
-                e, _ = rank_e(list(shape), delta, Lc, lam, lv, cK, flags["shellmm"], flags["bincross"])
+                e, _ = rank_e(list(shape), delta, Lc, lam, lv, cK, flags["shellmm"], flags["bincross"],
+                              flags["profile"])
                 cand.append((e, shape, delta, Lc))
     cand.sort(key=lambda x: x[0])
     best = None
