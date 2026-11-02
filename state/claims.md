@@ -988,7 +988,7 @@ round 5 ends there.
   identities on toy nodes, and its shellmm and bincross gates check the block shapes and per-piece channels the model
   counts), and the label-balancing constant. The binding size condition at 646 is the root label balance: about
   2^56.5 wires per label type against the 2^55.6 that the multi-stage Bernstein sketch (8192 Lc^2 / delta^2 times
-  ln(172 Lc D)) asks for. A single-stage Bernstein bound for one type would have room to spare by many orders of
-  magnitude; the constant comes from splitting the deviation budget over about 42 Lc stages because labels are pairs
+  ln(172 Lc D)) asks for. A single-stage Bernstein bound for one type (summands <= 63 Lc) would ask for about
+  14 bits less (41.6); the constant comes from splitting the deviation budget over about 42 Lc stages because labels are pairs
   of unit schedules. A sharper balancing proof is the only size-related lever left; round 9's what-if (20 bits less
   slack: 661 -> 654, then the padding binds) puts it at about 1%. Not pursued.
