@@ -206,7 +206,7 @@
    "bc_fast"
   ],
   "after": [],
-  "status": "open",
+  "status": "running",
   "priority": 41,
   "max_attempts": 3,
   "steps": 40

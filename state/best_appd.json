@@ -14,7 +14,7 @@
   "shellmm": true,
   "guarded": true,
   "bincross": false,
-  "bc_fast": false
+  "bc_fast": true
  },
  "params_third": {
   "levels": 3,
@@ -51,8 +51,8 @@
    10
   ]
  },
- "iter": 8,
- "task": "T22",
- "updated": "2026-11-02 00:39:15",
+ "iter": 9,
+ "task": "T23",
+ "updated": "2026-11-02 11:48:04",
  "referee_version": 6
 }

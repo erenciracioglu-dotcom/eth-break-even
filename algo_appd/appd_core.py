@@ -1371,3 +1371,140 @@ def count_e2e(n, clauses, chunks=True, Lc=2, r=3, seed=0, a=1, u=1, basis="power
         data[t] = ser
     got = red(recover(data, qm, a), p)
     return (got * pow(2, net.unused, 1 << p)) % (1 << p)
+
+
+# ------------------------------------------------------------------ binary crossing (round 10, appd-bincross)
+# The 4 x 4 matrices of NOTES.md, section 'Round 10' (row index = output digit, column = input digit).
+_BC_S = [[0, 1, 0, 0], [1, 0, 0, 0], [-1, 0, 1, 0], [0, 0, 0, 1]]                    # S (row pairing)
+_BC_KT = [[1, 0, 0, 1], [0, 0, -1, 0], [0, -1, 0, 0], [1, 0, 0, 0]]                  # K T (column pairing)
+_BC_N0_ROW = [[0, 1, 0, 0], [1, 0, 0, 0], [0, 1, 1, 0], [0, 0, 0, 1]]                # S^-1
+_BC_N1_ROW = [[0, -1, 1, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]               # -S^-1 J
+_BC_N0_COL = [[1, 0, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]                # T^-1 P0
+_BC_N1_COL = [[-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [1, 0, 0, -1]]            # -T^-1
+
+
+def _bc_pair(pairing):
+    """'row' or 'col' ('column' accepted) -> the pairing name used below."""
+    if pairing == "row":
+        return "row"
+    if pairing in ("col", "column"):
+        return "col"
+    raise ValueError("unknown pairing " + str(pairing))
+
+
+def _bc_mats(pairing):
+    """(M, N0, N1) of NOTES.md for the given pairing; M = S (row) or K T (column)."""
+    if _bc_pair(pairing) == "row":
+        return _BC_S, _BC_N0_ROW, _BC_N1_ROW
+    return _BC_KT, _BC_N0_COL, _BC_N1_COL
+
+
+def _bc_rows(A):
+    """A -> for every output digit d2 the (input digit d, coefficient) pairs with A[d2][d] != 0."""
+    return [[(d, A[d2][d]) for d in range(4) if A[d2][d]] for d2 in range(4)]
+
+
+def _bc_rows_T(A):
+    """Rows of A^T: for every output digit d2 the (d, coefficient) pairs with A^T[d2][d] = A[d][d2] != 0."""
+    return [[(d, A[d][d2]) for d in range(4) if A[d][d2]] for d2 in range(4)]
+
+
+def _bc_apply(old, m, k, rows, q, mod):
+    """One digit step: new[w2] = sum over d of rows[d2][d] * old[w2 with digit k replaced by d], where d2 is
+    digit k of w2 (digit 0 is the most significant). None entries mean zero; words that come out zero are
+    returned as None. The input list and its series are not modified."""
+    n = 4 ** m
+    shift = 2 * (m - 1 - k)
+    clear = ~ (3 << shift)
+    out = [None] * n
+    for w in range(n):
+        base = w & clear
+        acc = None
+        for d, c in rows[(w >> shift) & 3]:
+            src = old[base | (d << shift)]
+            if src is None:
+                continue
+            if acc is None:
+                acc = [c * x for x in src]
+            else:
+                acc = [a + c * x for a, x in zip(acc, src)]
+        if acc is not None:
+            out[w] = [a % mod for a in acc]
+    return out
+
+
+def _bc_add_into(dst, src, mod):
+    """dst[w] += src[w] (None = zero) mod mod, in place on the list dst; returns dst."""
+    for w, s in enumerate(src):
+        if s is None:
+            continue
+        cur = dst[w]
+        if cur is None:
+            dst[w] = s
+        else:
+            dst[w] = [(a + b) % mod for a, b in zip(cur, s)]
+    return dst
+
+
+def _bc_copy(vec):
+    """A copy of a vector of series (None kept as None); the input list and its series are not touched."""
+    return [None if v is None else [x for x in v] for v in vec]
+
+
+def bc_mask(m, i, pairing):
+    """The words w in range(4 ** m), increasing, with at least i zero base-4 digits when pairing == 'row', or
+    at least m - i zero digits when pairing == 'col'. Digit k of w (k = 0 the most significant) is
+    (w >> (2 * (m - 1 - k))) & 3."""
+    need = i if _bc_pair(pairing) == "row" else m - i
+    n = 4 ** m
+    if need <= 0:
+        return list(range(n))
+    if need > m:
+        return []
+    out = []
+    for w in range(n):
+        z = 0
+        t = w
+        for _ in range(m):
+            t, d = t >> 2, t & 3
+            if d == 0:
+                z += 1
+        if z >= need:
+            out.append(w)
+    return out
+
+
+def bc_left(vec, m, pairing, q, mod):
+    """(M^T)^(x)m vec mod mod as a list of 4 ** m series with no None, M = S for 'row' and M = K T for 'col';
+    one digit at a time with A = M^T, i.e. A[d2][d] = M[d][d2]. The input is never modified."""
+    M = _bc_mats(pairing)[0]
+    rows = _bc_rows_T(M)
+    cur = _bc_copy(vec)
+    if m == 0:
+        s = cur[0] if cur[0] is not None else [0] * q
+        return [[int(x) % mod for x in s]]
+    for k in range(m):
+        cur = _bc_apply(cur, m, k, rows, q, mod)
+    return [[x for x in s] if s is not None else [0] * q for s in cur]
+
+
+def bc_right(vec, m, pairing, q, mod):
+    """R = a list of m + 1 lists of 4 ** m series with R[i] = [t^i] (N0 + t N1)^(x)m vec mod mod, (N0, N1) of
+    NOTES.md for the pairing; here A = N0 or N1 directly (no transpose). The input is never modified."""
+    _M, N0, N1 = _bc_mats(pairing)
+    r0, r1 = _bc_rows(N0), _bc_rows(N1)
+    cur = _bc_copy(vec)
+    if m == 0:
+        s = cur[0] if cur[0] is not None else [0] * q
+        return [[[int(x) % mod for x in s]]]
+    powers = [cur]
+    for k in range(m):
+        nxt = [None] * (m + 1)
+        for i, v in enumerate(powers):
+            if v is None:
+                continue
+            for j, rows in ((i, r0), (i + 1, r1)):
+                res = _bc_apply(v, m, k, rows, q, mod)
+                nxt[j] = res if nxt[j] is None else _bc_add_into(nxt[j], res, mod)
+        powers = nxt
+    return [[s if s is not None else [0] * q for s in p] for p in powers]
