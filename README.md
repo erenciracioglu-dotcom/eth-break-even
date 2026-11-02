@@ -37,7 +37,7 @@ runs the whole referee on the committed code, in about seven minutes. Its verify
 python work/head/r12/whatif_dens_v8.py 4.26 out.json brute,sharp3sat,ppsz
 ```
 
-recomputes the general-formula entries at clause density 4.26 (use 5.0 for the other row).
+recomputes the general-formula entries at clause density 4.26 in about six minutes (use 5.0 for the other row).
 
 ## What is in the repository
 

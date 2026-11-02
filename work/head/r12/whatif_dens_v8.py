@@ -11,10 +11,12 @@ with the two corrections of GPT-6 Astra's review:
 Usage: python whatif_dens_v8.py <rho> <out> [targets]"""
 import json
 import math
+import os
 import sys
 import time
 import types
 
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 RHO = float(sys.argv[1])
 OUT = sys.argv[2]
 KEYS = sys.argv[3].split(",") if len(sys.argv) > 3 and sys.argv[3] else None
@@ -36,13 +38,13 @@ def load(path, name, repl):
 
 
 m0 = "(2.0 * %r - 2.0 / 3.0 + %r + 1.0 / Lc) if fl[\"chunks\"] else (6.0 * %r - 3.0)" % (RHO, XC, RHO)
-A = load("D:/ETH-loop/work/head/r12/referee_v8/appd_assembly.py", "appd_assembly_public", [
+A = load(os.path.join(ROOT, "referee_appd", "appd_assembly.py"), "appd_assembly_public", [
     ("M = [(1.0 + 1.0 / Lc) if fl[\"chunks\"] else 3.0]", "M = [" + m0 + "]"),
     ("q = 126.0 * Lc - 1.0", "q = " + QEXPR),
     ("leaf = min(leaf, (1 + delta) * (1 + M[0] / 2) / r[0])", "leaf = min(leaf, (1 + delta) * (1 + %r + M[0] / 2) / r[0])" % XC),
 ])
 m1 = "(2.0 * %r - 2.0 / 3.0 + %r + 1.0 / Lc) if chunks else (6.0 * %r - 3.0)" % (RHO, XC, RHO)
-P = load("D:/ETH-loop/work/head/r12/hs12/appd_params.py", "appd_params", [
+P = load(os.path.join(ROOT, "algo_appd", "appd_params.py"), "appd_params", [
     ("M = [(1.0 + 1.0 / Lc) if chunks else 3.0]", "M = [" + m1 + "]"),
     ("leaf = min(leaf, (1 + delta) * (1 + M[0] / 2) / r[0])", "leaf = min(leaf, (1 + delta) * (1 + %r + M[0] / 2) / r[0])" % XC),
     ("        q = 126.0 * Lc - 1.0\n", "        q = " + QEXPR + "\n"),
